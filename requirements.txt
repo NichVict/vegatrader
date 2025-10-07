@@ -1,0 +1,17 @@
+streamlit
+pandas
+matplotlib
+seaborn
+requests
+numpy
+lxml
+altair
+plotly
+yfinance
+polygon-api-client
+scipy
+oplab-client-python
+streamlit-aggrid
+yfinance
+bokeh
+streamlit-extras
