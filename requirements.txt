@@ -15,3 +15,7 @@ streamlit-aggrid
 yfinance
 bokeh
 streamlit-extras
+yahooquery
+tenacity
+requests
+python-telegram-bot==13.15
