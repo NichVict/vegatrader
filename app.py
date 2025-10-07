@@ -13,14 +13,14 @@ import pandas as pd
 import plotly.graph_objects as go
 
 # -----------------------------
-# CONFIGURAÇÕES GERAIS
+# CONFIGURAÇÕES
 # -----------------------------
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(23, 0, 0)
-INTERVALO_VERIFICACAO = 60   # 5 minutos
-TEMPO_ACUMULADO_MAXIMO = 240 # 25 minutos
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
+INTERVALO_VERIFICACAO = 300   # 5 minutos
+TEMPO_ACUMULADO_MAXIMO = 1500 # 25 minutos
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -83,15 +83,15 @@ async def testar_telegram(token_telegram, chat_id):
 # ESTADOS GLOBAIS
 # -----------------------------
 for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado", 
-            "em_contagem", "status", "precos_historicos"]:
+            "em_contagem", "status", "precos_historicos", "monitorando"]:
     if var not in st.session_state:
         if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"]:
             st.session_state[var] = {}
         else:
-            st.session_state[var] = []
+            st.session_state[var] = [] if var != "monitorando" else False
 
 # -----------------------------
-# SIDEBAR - CONFIGURAÇÕES E TESTES
+# SIDEBAR - CONFIGURAÇÕES E TESTE TELEGRAM
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
@@ -106,7 +106,6 @@ if st.sidebar.button("📤 Testar Envio Telegram"):
     else:
         st.sidebar.error(f"❌ Falha: {erro}")
 
-# Histórico
 st.sidebar.header("📜 Histórico de Alertas")
 if st.session_state.historico_alertas:
     for alerta in reversed(st.session_state.historico_alertas):
@@ -146,55 +145,41 @@ if st.button("➕ Adicionar ativo"):
         st.success(f"Ativo {ticker} adicionado com sucesso!")
 
 # -----------------------------
-# TABELA DE STATUS
+# COMPONENTES DINÂMICOS
 # -----------------------------
 st.subheader("📊 Status dos Ativos Monitorados")
 tabela_status = st.empty()
-
-if st.session_state.ativos:
-    data = []
-    for ativo in st.session_state.ativos:
-        t = ativo["ticker"]
-        preco_atual = "-"
-        try:
-            preco_atual = obter_preco_atual(f"{t}.SA")
-        except:
-            pass
-        tempo = st.session_state.tempo_acumulado.get(t, 0)
-        minutos = tempo / 60
-        data.append({
-            "Ticker": t,
-            "Operação": ativo["operacao"].upper(),
-            "Preço Alvo": f"R$ {ativo['preco']:.2f}",
-            "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
-            "Status": st.session_state.status.get(t, "🟢 Monitorando"),
-            "Tempo Acumulado": f"{int(minutos)} min"
-        })
-    df = pd.DataFrame(data)
-    tabela_status.table(df)
-else:
-    st.info("Nenhum ativo cadastrado ainda.")
-
-# -----------------------------
-# LOG E GRÁFICO EM TEMPO REAL
-# -----------------------------
-st.subheader("🕒 Log de Monitoramento")
-log_box = st.empty()
 st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
+st.subheader("🕒 Log de Monitoramento")
+log_box = st.empty()
+
+# -----------------------------
+# BOTÕES DE CONTROLE
+# -----------------------------
+colA, colB = st.columns(2)
+iniciar = colA.button("🚀 Iniciar monitoramento")
+parar = colB.button("🛑 Parar monitoramento")
+
+if parar:
+    st.session_state.monitorando = False
+    st.warning("⏹ Monitoramento interrompido manualmente.")
 
 # -----------------------------
 # LOOP DE MONITORAMENTO
 # -----------------------------
-if st.button("🚀 Iniciar monitoramento"):
+if iniciar:
     if not st.session_state.ativos:
         st.error("Adicione pelo menos um ativo antes de iniciar.")
     else:
         st.success("Monitoramento iniciado...")
-        while True:
+        st.session_state.monitorando = True
+
+        while st.session_state.monitorando:
             now = datetime.datetime.now()
             horario = now.time()
 
+            # Atualiza tabela e gráfico
             data = []
             for ativo in st.session_state.ativos:
                 t = ativo["ticker"]
@@ -203,11 +188,10 @@ if st.button("🚀 Iniciar monitoramento"):
                     preco_atual = obter_preco_atual(f"{t}.SA")
                 except:
                     pass
+
                 # Armazena histórico para gráfico
                 if preco_atual != "-":
-                    if t not in st.session_state.precos_historicos:
-                        st.session_state.precos_historicos[t] = []
-                    st.session_state.precos_historicos[t].append((now, preco_atual))
+                    st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
 
                 tempo = st.session_state.tempo_acumulado.get(t, 0)
                 minutos = tempo / 60
@@ -222,7 +206,7 @@ if st.button("🚀 Iniciar monitoramento"):
             df = pd.DataFrame(data)
             tabela_status.table(df)
 
-            # MONITORAMENTO PRINCIPAL
+            # Verifica pregão
             if HORARIO_INICIO_PREGAO <= horario <= HORARIO_FIM_PREGAO:
                 for ativo in st.session_state.ativos:
                     t = ativo["ticker"]
@@ -278,13 +262,18 @@ if st.button("🚀 Iniciar monitoramento"):
                             st.session_state.log_monitoramento.append(
                                 f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada.")
 
-                # Atualiza gráfico
+                # Gráfico com cores por status
                 fig = go.Figure()
                 for t, dados in st.session_state.precos_historicos.items():
                     if len(dados) > 1:
                         tempos, precos = zip(*dados)
-                        fig.add_trace(go.Scatter(x=tempos, y=precos, mode="lines+markers", name=t))
-                fig.update_layout(title="Evolução dos Preços Monitorados", xaxis_title="Tempo", yaxis_title="Preço (R$)")
+                        status = st.session_state.status.get(t, "🟢 Monitorando")
+                        cor = "green" if "🟢" in status else "orange" if "🟡" in status else "red"
+                        fig.add_trace(go.Scatter(x=tempos, y=precos, mode="lines+markers",
+                                                 name=t, line=dict(color=cor)))
+                fig.update_layout(title="📉 Evolução dos Preços Monitorados",
+                                  xaxis_title="Tempo", yaxis_title="Preço (R$)",
+                                  legend_title="Ticker")
                 grafico.plotly_chart(fig, use_container_width=True)
 
                 time.sleep(INTERVALO_VERIFICACAO)
@@ -294,6 +283,7 @@ if st.button("🚀 Iniciar monitoramento"):
                     f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão.")
                 log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
                 time.sleep(300)
+
 
 
 
