@@ -1,0 +1,1598 @@
+import streamlit as st
+import requests
+import pandas as pd
+from math import log, sqrt, exp
+from datetime import datetime, date
+from scipy.stats import norm
+from scipy.optimize import brentq
+import numpy as np
+import plotly.graph_objects as go
+
+st.set_page_config(page_title="Calculadora Black–Scholes", layout="centered")
+st.title("📈 Calculadora Black–Scholes")
+
+TOKEN = "fSFuq/876/hItIxNprPz/1/Wvvd8snH1yLVVVKPQbGO4K78AAuShUWFFYG/rUdx8--0M/Ya7In/d/Go2SyUDZ7pw==--YzUzNWRlZjE0YmRiNjU3MTc2NDRiZGMyYzQ2N2NmNDA="
+
+# Função para consultar a API da Oplab - Details endpoint (opção)
+def get_option_details(symbol):
+    url = f"https://api.oplab.com.br/v3/market/options/details/{symbol}"
+    headers = {"Access-Token": TOKEN}
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()
+        data = response.json()
+        return data
+    except requests.exceptions.RequestException as e:
+        st.error(f"Erro ao consultar details API: {e}")
+        return None
+
+# Função para calcular volatilidade implícita localmente
+def implied_vol(S, K, T, r, premium, option_type):
+    def objective(sigma):
+        price, _, _, _, _, _ = black_scholes(S, K, T, r, sigma, option_type)
+        return price - premium
+    if not all(isinstance(x, (int, float)) and x > 0 for x in [S, K, T, premium]):
+        return 0.0
+    try:
+        vol = brentq(objective, 0.001, 5.0)
+        return vol * 100  # Converter para porcentagem
+    except:
+        return 0.0
+
+# Função para calcular dias úteis até o vencimento
+def calculate_business_days(expiry_date_str):
+    if not expiry_date_str:
+        return 30
+    today = date.today()
+    try:
+        expiry = datetime.strptime(expiry_date_str, "%Y-%m-%d").date()
+        business_days = len(pd.bdate_range(start=today, end=expiry))
+        return max(0, business_days)
+    except:
+        return 30
+
+# Função Black-Scholes
+def black_scholes(S, K, T, r, sigma, option_type="call"):
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return 0, 0, 0, 0, 0, 0
+    d1 = (log(S/K) + (r + 0.5*sigma**2)*T) / (sigma*sqrt(T))
+    d2 = d1 - sigma*sqrt(T)
+
+    if option_type == "call":
+        price = S*norm.cdf(d1) - K*exp(-r*T)*norm.cdf(d2)
+        delta = norm.cdf(d1)
+        theta = -(S*norm.pdf(d1)*sigma/(2*sqrt(T))) - r*K*exp(-r*T)*norm.cdf(d2)
+        rho   =  K*T*exp(-r*T)*norm.cdf(d2)
+    else:
+        price = K*exp(-r*T)*norm.cdf(-d2) - S*norm.cdf(-d1)
+        delta = -norm.cdf(-d1)
+        theta = -(S*norm.pdf(d1)*sigma/(2*sqrt(T))) + r*K*exp(-r*T)*norm.cdf(-d2)
+        rho   = -K*T*exp(-r*T)*norm.cdf(-d2)
+
+    gamma = norm.pdf(d1)/(S*sigma*sqrt(T))
+    vega  = S*norm.pdf(d1)*sqrt(T)
+
+    return price, delta, gamma, vega, theta, rho
+
+# Sidebar para seleção da estrutura
+with st.sidebar:
+    st.header("Filtro")
+    estrutura = st.selectbox(
+        "Estrutura",
+        [
+            "Opção Simples",
+            "Trava de Alta de Débito",
+            "Trava de Alta de Crédito",
+            "Trava de Baixa de Débito",
+            "Trava de Baixa de Crédito",
+            "Colar",
+            "Compra Sintética",
+            "Venda Sintética"
+        ]
+    )
+
+# Função para formatar em estilo brasileiro
+def format_br(value):
+    if np.isinf(value):
+        return "Infinito"
+    s = f"{abs(value):,.2f}"
+    s = s.replace(",", "X").replace(".", ",").replace("X", ".")
+    return s
+
+# Estilizar o botão Calcular
+st.markdown("""
+    <style>
+    div.stButton > button {
+        border: 2px solid green;
+        color: green;
+        background-color: transparent;
+        padding: 8px 16px;
+        font-size: 16px;
+        border-radius: 5px;
+    }
+    div.stButton > button:hover {
+        background-color: rgba(0, 255, 0, 0.1);
+        border-color: limegreen;
+        color: limegreen;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+if estrutura == "Opção Simples":
+    # Código original para opção simples
+    st.subheader("Digite o ticker da opção")
+    ticker = st.text_input("Ticker da opção (ex: ITUBJ384)").upper()
+
+    # Valores padrão iniciais
+    default_spot_price = 0.0
+    default_strike = 0.0
+    default_dias_uteis = 30
+    default_volatilidade = 0.0
+    default_option_type = "CALL"
+
+    # Consultar API para preencher os valores padrão
+    if ticker:
+        details_data = get_option_details(ticker)
+        if details_data:
+            default_spot_price = float(details_data.get("spot_price", 0.0)) if isinstance(details_data.get("spot_price"), (int, float, str)) and str(details_data.get("spot_price")).replace(".", "").isdigit() else 0.0
+            default_strike = float(details_data.get("strike", 0.0)) if isinstance(details_data.get("strike"), (int, float, str)) and str(details_data.get("strike")).replace(".", "").isdigit() else 0.0
+            due_date = details_data.get("due_date", details_data.get("expiration_date", None))
+            default_dias_uteis = details_data.get("days_to_maturity", calculate_business_days(due_date))
+            premium = float(details_data.get("premium", details_data.get("close", details_data.get("last_price", 0.0)))) if isinstance(details_data.get("premium", details_data.get("close", details_data.get("last_price"))), (int, float, str)) and str(details_data.get("premium", details_data.get("close", details_data.get("last_price")))).replace(".", "").isdigit() else 0.0
+            default_option_type = "CALL" if details_data.get("type", "call").lower() == "call" else "PUT"
+            
+            if all(isinstance(x, (int, float)) and x > 0 for x in [default_spot_price, default_strike, premium, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade = implied_vol(
+                    default_spot_price, default_strike, T, 0.149, premium, default_option_type.lower()
+                )
+
+    # Campos editáveis
+    st.subheader("Parâmetros da opção")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        spot_price = st.number_input("Preço do ativo alvo", value=float(default_spot_price), step=0.01)
+        dias_uteis = st.number_input("Dias úteis para o vencimento", value=int(default_dias_uteis), step=1)
+        taxa_juros = st.number_input("Taxa de juros (%)", value=14.9, step=0.1)/100
+
+    with col2:
+        strike = st.number_input("Strike", value=float(default_strike), step=0.01)
+        volatilidade = st.number_input("Volatilidade (%)", value=float(default_volatilidade), step=0.1)/100
+        quantidade = st.number_input("Quantidade", value=100, step=1)
+
+    tipo = st.selectbox("Tipo da opção", ["CALL", "PUT"], index=0 if default_option_type == "CALL" else 1)
+    posicao = st.selectbox("Posição", ["Comprada", "Vendida"], index=0)
+
+    if st.button("Calcular"):
+        T = dias_uteis / 252
+        price, delta, gamma, vega, theta, rho = black_scholes(spot_price, strike, T, taxa_juros, volatilidade, tipo.lower())
+
+        signal = 1 if posicao == "Comprada" else -1
+        delta *= signal
+        gamma *= signal
+        vega *= signal
+        theta *= signal
+        rho *= signal
+
+        st.subheader("Resultados")
+        st.dataframe({
+            "Métrica": ["Preço B&S", "Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Unitário": [f"R$ {price:.2f}", f"{delta:.4f}", f"{gamma:.4f}", f"{vega/100:.4f}", f"{theta/100:.4f}", f"{rho/100:.4f}"],
+            "Total": [f"R$ {price*quantidade:.2f}", f"{delta*quantidade:.4f}", f"{gamma*quantidade:.4f}", f"{(vega/100)*quantidade:.4f}", f"{(theta/100)*quantidade:.4f}", f"{(rho/100)*quantidade:.4f}"]
+        })
+
+        st.subheader("📊 Gráfico de Payoff")
+
+        S_range_graph = np.linspace(spot_price*0.8, spot_price*1.2, 100)
+
+        if tipo.upper() == "CALL":
+            payoff_unit_graph = np.maximum(S_range_graph - strike, 0)
+        else:
+            payoff_unit_graph = np.maximum(strike - S_range_graph, 0)
+
+        payoff_total_graph = signal * (payoff_unit_graph - price) * quantidade
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=S_range_graph,
+            y=payoff_total_graph,
+            mode='lines',
+            name='Payoff Total',
+            line=dict(color='cyan', width=3),
+            hovertemplate="Preço do Ativo: R$ %{x:.2f}<br>Payoff: R$ %{y:.2f}<extra></extra>"
+        ))
+        fig.add_trace(go.Scatter(
+            x=S_range_graph, 
+            y=np.zeros_like(S_range_graph),
+            mode='lines',
+            name='Linha Zero',
+            line=dict(color='white', width=1, dash='dash')
+        ))
+        fig.update_layout(
+            xaxis_title="Preço do Ativo (R$)",
+            yaxis_title="Payoff Total (R$)",
+            plot_bgcolor='black',
+            paper_bgcolor='black',
+            font=dict(color='white'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        initial_position = price * quantidade
+
+        if tipo.upper() == "CALL":
+            if signal == 1:
+                max_profit_est = float('inf')
+                max_risk_est = -initial_position
+            else:
+                max_profit_est = initial_position
+                max_risk_est = -float('inf')
+        else:
+            if signal == 1:
+                max_profit_est = (strike - price) * quantidade
+                max_risk_est = -initial_position
+            else:
+                max_profit_est = initial_position
+                max_risk_est = -((strike - 0.01) - price) * quantidade
+
+        profit_percent = float('inf') if np.isinf(max_profit_est) else (max_profit_est / initial_position * 100) if initial_position > 0 else 0
+        risk_percent = -float('inf') if np.isinf(-max_risk_est) else (max_risk_est / initial_position * 100) if initial_position > 0 else 0
+
+        if np.isinf(max_profit_est) and np.isinf(-max_risk_est):
+            ratio = 1.0
+        elif np.isinf(max_profit_est):
+            ratio = float('inf')
+        elif np.isinf(-max_risk_est):
+            ratio = 0.0
+        else:
+            ratio = max_profit_est / (-max_risk_est) if max_risk_est < 0 else 0
+
+        simetria_type = "assimétrico positivo" if ratio > 1 else "assimétrico negativo" if ratio < 1 else "simétrico"
+        simetria_value = f"({ratio:.2f})" if not np.isinf(ratio) else "(inf)" if ratio == float('inf') else "(0)"
+
+        if np.isinf(max_profit_est):
+            risco_retorno = "1:inf"
+        elif np.isinf(-max_risk_est):
+            risco_retorno = "inf:1"
+        else:
+            if ratio >= 1:
+                risco_retorno = f"1:{int(ratio)}"
+            else:
+                risco_retorno = f"{int(1/ratio) if ratio > 0 else 0}:1"
+
+        if tipo.upper() == "CALL":
+            break_even = strike + price if signal == 1 else strike - price
+        else:
+            break_even = strike - price if signal == 1 else strike + price
+
+        st.subheader("Dados da Posição")
+        profit_value = 'Infinito' if np.isinf(max_profit_est) else format_br(max_profit_est)
+        profit_percent_str = 'Infinito' if np.isinf(profit_percent) else f"{profit_percent:.2f}"
+        risk_value = 'Infinito' if np.isinf(-max_risk_est) else format_br(-max_risk_est)
+        risk_percent_str = '-Infinito' if np.isinf(risk_percent) and risk_percent < 0 else f"{risk_percent:.2f}"
+
+        st.markdown(
+            f"""
+            <div style='display: flex; flex-direction: column; gap: 10px;'>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Posição inicial:</span> R$ {format_br(initial_position)}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Lucro máximo no vencimento:</span> 
+                    <span style='color: {'green' if max_profit_est >= 0 else 'red'}'>{'R$ ' if not np.isinf(max_profit_est) else ''}{profit_value} ({profit_percent_str}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco máximo no vencimento:</span> 
+                    <span style='color: {'red' if max_risk_est < 0 else 'green'}'>-R$ {risk_value} ({risk_percent_str}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Simetria de risco:</span> {simetria_type} {simetria_value}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco/Retorno:</span> {risco_retorno}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Break-even:</span> {format_br(break_even)}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.subheader("📊 Gráfico de Payoff")
+        st.write("")  
+        st.subheader("Dados da Posição")
+        st.write("")  
+
+elif estrutura == "Trava de Alta de Débito":
+    # Código para Trava de Alta de Débito (Bull Call Spread)
+    st.subheader("Digite os tickers das opções para a Trava de Alta de Débito")
+    col_ticker1, col_ticker2 = st.columns(2)
+    with col_ticker1:
+        ticker_buy = st.text_input("Ticker da CALL Comprada (strike baixo)").upper()
+    with col_ticker2:
+        ticker_sell = st.text_input("Ticker da CALL Vendida (strike alto)").upper()
+
+    default_spot_price = 0.0
+    default_strike_buy = 0.0
+    default_strike_sell = 0.0
+    default_dias_uteis = 30
+    default_volatilidade_buy = 0.0
+    default_volatilidade_sell = 0.0
+    premium_buy = 0.0
+    premium_sell = 0.0
+
+    if ticker_buy:
+        details_buy = get_option_details(ticker_buy)
+        if details_buy and details_buy.get("type", "").lower() == "call":
+            default_spot_price = float(details_buy.get("spot_price", 0.0))
+            default_strike_buy = float(details_buy.get("strike", 0.0))
+            due_date = details_buy.get("due_date", details_buy.get("expiration_date", None))
+            default_dias_uteis = details_buy.get("days_to_maturity", calculate_business_days(due_date))
+            premium_buy = float(details_buy.get("premium", details_buy.get("close", details_buy.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_buy, premium_buy, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_buy = implied_vol(default_spot_price, default_strike_buy, T, 0.149, premium_buy, "call")
+        else:
+            st.warning("Ticker da comprada deve ser uma CALL válida.")
+
+    if ticker_sell:
+        details_sell = get_option_details(ticker_sell)
+        if details_sell and details_sell.get("type", "").lower() == "call":
+            default_spot_price = default_spot_price or float(details_sell.get("spot_price", 0.0))
+            default_strike_sell = float(details_sell.get("strike", 0.0))
+            default_dias_uteis = default_dias_uteis or details_sell.get("days_to_maturity", calculate_business_days(details_sell.get("due_date", details_sell.get("expiration_date", None))))
+            premium_sell = float(details_sell.get("premium", details_sell.get("close", details_sell.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_sell, premium_sell, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_sell = implied_vol(default_spot_price, default_strike_sell, T, 0.149, premium_sell, "call")
+        else:
+            st.warning("Ticker da vendida deve ser uma CALL válida.")
+
+    if default_strike_buy >= default_strike_sell and ticker_buy and ticker_sell:
+        st.error("Strike da comprada deve ser menor que o da vendida.")
+
+    st.subheader("Parâmetros da estratégia")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        spot_price = st.number_input("Preço do ativo alvo", value=float(default_spot_price), step=0.01)
+        dias_uteis = st.number_input("Dias úteis para o vencimento", value=int(default_dias_uteis), step=1)
+        taxa_juros = st.number_input("Taxa de juros (%)", value=14.9, step=0.1)/100
+
+    with col2:
+        volatilidade_buy = st.number_input("Volatilidade Comprada (%)", value=float(default_volatilidade_buy), step=0.1)/100
+        volatilidade_sell = st.number_input("Volatilidade Vendida (%)", value=float(default_volatilidade_sell), step=0.1)/100
+        quantidade = st.number_input("Quantidade (para cada perna)", value=100, step=1)
+
+    if st.button("Calcular") and ticker_buy and ticker_sell:
+        T = dias_uteis / 252
+        
+        price_buy, delta_buy, gamma_buy, vega_buy, theta_buy, rho_buy = black_scholes(spot_price, default_strike_buy, T, taxa_juros, volatilidade_buy, "call")
+        
+        price_sell, delta_sell, gamma_sell, vega_sell, theta_sell, rho_sell = black_scholes(spot_price, default_strike_sell, T, taxa_juros, volatilidade_sell, "call")
+        delta_sell *= -1
+        gamma_sell *= -1
+        vega_sell *= -1
+        theta_sell *= -1
+        rho_sell *= -1
+        price_sell *= -1  # Recebe prêmio pela vendida
+
+        st.subheader("Métricas Individuais")
+        df_individual = pd.DataFrame({
+            "Métrica": ["Preço B&S", "Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Comprada (Unit)": [f"R$ {price_buy:.2f}", f"{delta_buy:.4f}", f"{gamma_buy:.4f}", f"{vega_buy/100:.4f}", f"{theta_buy/100:.4f}", f"{rho_buy/100:.4f}"],
+            "Comprada (Total)": [f"R$ {price_buy*quantidade:.2f}", f"{delta_buy*quantidade:.4f}", f"{gamma_buy*quantidade:.4f}", f"{(vega_buy/100)*quantidade:.4f}", f"{(theta_buy/100)*quantidade:.4f}", f"{(rho_buy/100)*quantidade:.4f}"],
+            "Vendida (Unit)": [f"R$ {price_sell:.2f}", f"{delta_sell:.4f}", f"{gamma_sell:.4f}", f"{vega_sell/100:.4f}", f"{theta_sell/100:.4f}", f"{rho_sell/100:.4f}"],
+            "Vendida (Total)": [f"R$ {price_sell*quantidade:.2f}", f"{delta_sell*quantidade:.4f}", f"{gamma_sell*quantidade:.4f}", f"{(vega_sell/100)*quantidade:.4f}", f"{(theta_sell/100)*quantidade:.4f}", f"{(rho_sell/100)*quantidade:.4f}"]
+        })
+        st.dataframe(df_individual)
+
+        # Greeks combinados
+        delta_combined = delta_buy + delta_sell
+        gamma_combined = gamma_buy + gamma_sell
+        vega_combined = vega_buy + vega_sell
+        theta_combined = theta_buy + theta_sell
+        rho_combined = rho_buy + rho_sell
+
+        delta_combined_total = delta_combined * quantidade
+        gamma_combined_total = gamma_combined * quantidade
+        vega_combined_total = (vega_combined / 100) * quantidade
+        theta_combined_total = (theta_combined / 100) * quantidade
+        rho_combined_total = (rho_combined / 100) * quantidade
+
+        st.subheader("Greeks Combinados da Trava")
+        st.dataframe({
+            "Métrica": ["Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Unitário": [f"{delta_combined:.4f}", f"{gamma_combined:.4f}", f"{vega_combined / 100:.4f}", f"{theta_combined / 100:.4f}", f"{rho_combined / 100:.4f}"],
+            "Total": [f"{delta_combined_total:.4f}", f"{gamma_combined_total:.4f}", f"{vega_combined_total:.4f}", f"{theta_combined_total:.4f}", f"{rho_combined_total:.4f}"]
+        })
+
+        debit_unit = premium_buy - premium_sell
+        debit_total = debit_unit * quantidade
+        max_profit_unit = (default_strike_sell - default_strike_buy) - debit_unit
+        max_profit_total = max_profit_unit * quantidade
+        max_risk_total = -debit_total
+        break_even = default_strike_buy + debit_unit
+        profit_percent = (max_profit_unit / abs(debit_unit) * 100) if debit_unit != 0 else 0
+        risk_percent = -100.0
+        ratio = max_profit_unit / abs(debit_unit) if debit_unit != 0 else 0
+        simetria_type = "assimétrico positivo" if ratio > 1 else "assimétrico negativo" if ratio < 1 else "simétrico"
+        simetria_value = f"({ratio:.2f})"
+        risco_retorno = f"1:{ratio:.0f}" if ratio >= 1 else f"{1/ratio:.0f}:1" if ratio > 0 else "0:0"
+
+        st.subheader("📊 Gráfico de Payoff da Trava")
+
+        min_strike = min(default_strike_buy, default_strike_sell)
+        max_strike = max(default_strike_buy, default_strike_sell)
+        S_range_graph = np.linspace(min_strike * 0.8, max_strike * 1.2, 100)
+
+        payoff_buy_graph = (np.maximum(S_range_graph - default_strike_buy, 0) - premium_buy) * quantidade
+        payoff_sell_graph = - (np.maximum(S_range_graph - default_strike_sell, 0) - premium_sell) * quantidade
+        payoff_total_graph = payoff_buy_graph + payoff_sell_graph
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=S_range_graph,
+            y=payoff_total_graph,
+            mode='lines',
+            name='Payoff Trava',
+            line=dict(color='cyan', width=3),
+            hovertemplate="Preço do Ativo: R$ %{x:.2f}<br>Payoff: R$ %{y:.2f}<extra></extra>"
+        ))
+        fig.add_trace(go.Scatter(
+            x=S_range_graph, 
+            y=np.zeros_like(S_range_graph),
+            mode='lines',
+            name='Linha Zero',
+            line=dict(color='white', width=1, dash='dash')
+        ))
+        fig.update_layout(
+            xaxis_title="Preço do Ativo (R$)",
+            yaxis_title="Payoff Total (R$)",
+            plot_bgcolor='black',
+            paper_bgcolor='black',
+            font=dict(color='white'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Dados da Trava de Alta de Débito")
+        st.markdown(
+            f"""
+            <div style='display: flex; flex-direction: column; gap: 10px;'>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Posição inicial (Débito):</span> R$ {format_br(debit_total)}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Lucro máximo no vencimento:</span> 
+                    <span style='color: green'>R$ {format_br(max_profit_total)} ({profit_percent:.2f}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco máximo no vencimento:</span> 
+                    <span style='color: red'>-R$ {format_br(-max_risk_total)} ({risk_percent:.2f}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Simetria de risco:</span> {simetria_type} {simetria_value}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco/Retorno:</span> {risco_retorno}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Break-even:</span> {format_br(break_even)}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.subheader("📊 Gráfico de Payoff da Trava")
+        st.write("")  
+        st.subheader("Dados da Trava de Alta de Débito")
+        st.write("")  
+
+elif estrutura == "Trava de Alta de Crédito":
+    # Trava de Alta de Crédito (Bull Put Spread): Comprar PUT strike baixo, Vender PUT strike alto (net credit)
+    st.subheader("Digite os tickers das opções para a Trava de Alta de Crédito")
+    col_ticker1, col_ticker2 = st.columns(2)
+    with col_ticker1:
+        ticker_buy = st.text_input("Ticker da PUT Comprada (strike baixo)").upper()
+    with col_ticker2:
+        ticker_sell = st.text_input("Ticker da PUT Vendida (strike alto)").upper()
+
+    default_spot_price = 0.0
+    default_strike_buy = 0.0
+    default_strike_sell = 0.0
+    default_dias_uteis = 30
+    default_volatilidade_buy = 0.0
+    default_volatilidade_sell = 0.0
+    premium_buy = 0.0
+    premium_sell = 0.0
+
+    if ticker_buy:
+        details_buy = get_option_details(ticker_buy)
+        if details_buy and details_buy.get("type", "").lower() == "put":
+            default_spot_price = float(details_buy.get("spot_price", 0.0))
+            default_strike_buy = float(details_buy.get("strike", 0.0))
+            due_date = details_buy.get("due_date", details_buy.get("expiration_date", None))
+            default_dias_uteis = details_buy.get("days_to_maturity", calculate_business_days(due_date))
+            premium_buy = float(details_buy.get("premium", details_buy.get("close", details_buy.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_buy, premium_buy, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_buy = implied_vol(default_spot_price, default_strike_buy, T, 0.149, premium_buy, "put")
+        else:
+            st.warning("Ticker da comprada deve ser uma PUT válida.")
+
+    if ticker_sell:
+        details_sell = get_option_details(ticker_sell)
+        if details_sell and details_sell.get("type", "").lower() == "put":
+            default_spot_price = default_spot_price or float(details_sell.get("spot_price", 0.0))
+            default_strike_sell = float(details_sell.get("strike", 0.0))
+            default_dias_uteis = default_dias_uteis or details_sell.get("days_to_maturity", calculate_business_days(details_sell.get("due_date", details_sell.get("expiration_date", None))))
+            premium_sell = float(details_sell.get("premium", details_sell.get("close", details_sell.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_sell, premium_sell, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_sell = implied_vol(default_spot_price, default_strike_sell, T, 0.149, premium_sell, "put")
+        else:
+            st.warning("Ticker da vendida deve ser uma PUT válida.")
+
+    if default_strike_buy >= default_strike_sell and ticker_buy and ticker_sell:
+        st.error("Strike da comprada deve ser menor que o da vendida.")
+
+    st.subheader("Parâmetros da estratégia")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        spot_price = st.number_input("Preço do ativo alvo", value=float(default_spot_price), step=0.01)
+        dias_uteis = st.number_input("Dias úteis para o vencimento", value=int(default_dias_uteis), step=1)
+        taxa_juros = st.number_input("Taxa de juros (%)", value=14.9, step=0.1)/100
+
+    with col2:
+        volatilidade_buy = st.number_input("Volatilidade Comprada (%)", value=float(default_volatilidade_buy), step=0.1)/100
+        volatilidade_sell = st.number_input("Volatilidade Vendida (%)", value=float(default_volatilidade_sell), step=0.1)/100
+        quantidade = st.number_input("Quantidade (para cada perna)", value=100, step=1)
+
+    if st.button("Calcular") and ticker_buy and ticker_sell:
+        T = dias_uteis / 252
+        
+        price_buy, delta_buy, gamma_buy, vega_buy, theta_buy, rho_buy = black_scholes(spot_price, default_strike_buy, T, taxa_juros, volatilidade_buy, "put")
+        
+        price_sell, delta_sell, gamma_sell, vega_sell, theta_sell, rho_sell = black_scholes(spot_price, default_strike_sell, T, taxa_juros, volatilidade_sell, "put")
+        delta_sell *= -1
+        gamma_sell *= -1
+        vega_sell *= -1
+        theta_sell *= -1
+        rho_sell *= -1
+        price_sell *= -1  # Recebe prêmio pela vendida
+
+        st.subheader("Métricas Individuais")
+        df_individual = pd.DataFrame({
+            "Métrica": ["Preço B&S", "Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Comprada (Unit)": [f"R$ {price_buy:.2f}", f"{delta_buy:.4f}", f"{gamma_buy:.4f}", f"{vega_buy/100:.4f}", f"{theta_buy/100:.4f}", f"{rho_buy/100:.4f}"],
+            "Comprada (Total)": [f"R$ {price_buy*quantidade:.2f}", f"{delta_buy*quantidade:.4f}", f"{gamma_buy*quantidade:.4f}", f"{(vega_buy/100)*quantidade:.4f}", f"{(theta_buy/100)*quantidade:.4f}", f"{(rho_buy/100)*quantidade:.4f}"],
+            "Vendida (Unit)": [f"R$ {price_sell:.2f}", f"{delta_sell:.4f}", f"{gamma_sell:.4f}", f"{vega_sell/100:.4f}", f"{theta_sell/100:.4f}", f"{rho_sell/100:.4f}"],
+            "Vendida (Total)": [f"R$ {price_sell*quantidade:.2f}", f"{delta_sell*quantidade:.4f}", f"{gamma_sell*quantidade:.4f}", f"{(vega_sell/100)*quantidade:.4f}", f"{(theta_sell/100)*quantidade:.4f}", f"{(rho_sell/100)*quantidade:.4f}"]
+        })
+        st.dataframe(df_individual)
+
+        # Greeks combinados
+        delta_combined = delta_buy + delta_sell
+        gamma_combined = gamma_buy + gamma_sell
+        vega_combined = vega_buy + vega_sell
+        theta_combined = theta_buy + theta_sell
+        rho_combined = rho_buy + rho_sell
+
+        delta_combined_total = delta_combined * quantidade
+        gamma_combined_total = gamma_combined * quantidade
+        vega_combined_total = (vega_combined / 100) * quantidade
+        theta_combined_total = (theta_combined / 100) * quantidade
+        rho_combined_total = (rho_combined / 100) * quantidade
+
+        st.subheader("Greeks Combinados da Trava")
+        st.dataframe({
+            "Métrica": ["Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Unitário": [f"{delta_combined:.4f}", f"{gamma_combined:.4f}", f"{vega_combined / 100:.4f}", f"{theta_combined / 100:.4f}", f"{rho_combined / 100:.4f}"],
+            "Total": [f"{delta_combined_total:.4f}", f"{gamma_combined_total:.4f}", f"{vega_combined_total:.4f}", f"{theta_combined_total:.4f}", f"{rho_combined_total:.4f}"]
+        })
+
+        credit_unit = premium_sell - premium_buy  # Crédito líquido (positivo)
+        credit_total = credit_unit * quantidade
+        max_profit_unit = credit_unit
+        max_profit_total = max_profit_unit * quantidade
+        max_risk_unit = (default_strike_sell - default_strike_buy) - credit_unit
+        max_risk_total = -max_risk_unit * quantidade
+        break_even = default_strike_sell - credit_unit
+        profit_percent = (max_profit_unit / max_risk_unit * 100) if max_risk_unit != 0 else 0
+        risk_percent = -100.0
+        ratio = max_profit_unit / max_risk_unit if max_risk_unit != 0 else 0
+        simetria_type = "assimétrico positivo" if ratio > 1 else "assimétrico negativo" if ratio < 1 else "simétrico"
+        simetria_value = f"({ratio:.2f})"
+        risco_retorno = f"1:{1/ratio:.0f}" if ratio < 1 else f"{ratio:.0f}:1" if ratio > 0 else "0:0"
+
+        st.subheader("📊 Gráfico de Payoff da Trava")
+
+        min_strike = min(default_strike_buy, default_strike_sell)
+        max_strike = max(default_strike_buy, default_strike_sell)
+        S_range_graph = np.linspace(min_strike * 0.8, max_strike * 1.2, 100)
+
+        payoff_buy_graph = (np.maximum(default_strike_buy - S_range_graph, 0) - premium_buy) * quantidade
+        payoff_sell_graph = - (np.maximum(default_strike_sell - S_range_graph, 0) - premium_sell) * quantidade
+        payoff_total_graph = payoff_buy_graph + payoff_sell_graph
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=S_range_graph,
+            y=payoff_total_graph,
+            mode='lines',
+            name='Payoff Trava',
+            line=dict(color='cyan', width=3),
+            hovertemplate="Preço do Ativo: R$ %{x:.2f}<br>Payoff: R$ %{y:.2f}<extra></extra>"
+        ))
+        fig.add_trace(go.Scatter(
+            x=S_range_graph, 
+            y=np.zeros_like(S_range_graph),
+            mode='lines',
+            name='Linha Zero',
+            line=dict(color='white', width=1, dash='dash')
+        ))
+        fig.update_layout(
+            xaxis_title="Preço do Ativo (R$)",
+            yaxis_title="Payoff Total (R$)",
+            plot_bgcolor='black',
+            paper_bgcolor='black',
+            font=dict(color='white'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Dados da Trava de Alta de Crédito")
+        st.markdown(
+            f"""
+            <div style='display: flex; flex-direction: column; gap: 10px;'>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Posição inicial (Crédito):</span> R$ {format_br(credit_total)}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Lucro máximo no vencimento:</span> 
+                    <span style='color: green'>R$ {format_br(max_profit_total)} ({profit_percent:.2f}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco máximo no vencimento:</span> 
+                    <span style='color: red'>R$ {format_br(max_risk_total)} ({risk_percent:.2f}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Simetria de risco:</span> {simetria_type} {simetria_value}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco/Retorno:</span> {risco_retorno}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Break-even:</span> {format_br(break_even)}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.subheader("📊 Gráfico de Payoff da Trava")
+        st.write("")  
+        st.subheader("Dados da Trava de Alta de Crédito")
+        st.write("")  
+
+elif estrutura == "Trava de Baixa de Débito":
+    # Trava de Baixa de Débito (Bear Put Spread): Comprar PUT strike alto, Vender PUT strike baixo (net debit)
+    st.subheader("Digite os tickers das opções para a Trava de Baixa de Débito")
+    col_ticker1, col_ticker2 = st.columns(2)
+    with col_ticker1:
+        ticker_buy = st.text_input("Ticker da PUT Comprada (strike alto)").upper()
+    with col_ticker2:
+        ticker_sell = st.text_input("Ticker da PUT Vendida (strike baixo)").upper()
+
+    default_spot_price = 0.0
+    default_strike_buy = 0.0
+    default_strike_sell = 0.0
+    default_dias_uteis = 30
+    default_volatilidade_buy = 0.0
+    default_volatilidade_sell = 0.0
+    premium_buy = 0.0
+    premium_sell = 0.0
+
+    if ticker_buy:
+        details_buy = get_option_details(ticker_buy)
+        if details_buy and details_buy.get("type", "").lower() == "put":
+            default_spot_price = float(details_buy.get("spot_price", 0.0))
+            default_strike_buy = float(details_buy.get("strike", 0.0))
+            due_date = details_buy.get("due_date", details_buy.get("expiration_date", None))
+            default_dias_uteis = details_buy.get("days_to_maturity", calculate_business_days(due_date))
+            premium_buy = float(details_buy.get("premium", details_buy.get("close", details_buy.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_buy, premium_buy, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_buy = implied_vol(default_spot_price, default_strike_buy, T, 0.149, premium_buy, "put")
+        else:
+            st.warning("Ticker da comprada deve ser uma PUT válida.")
+
+    if ticker_sell:
+        details_sell = get_option_details(ticker_sell)
+        if details_sell and details_sell.get("type", "").lower() == "put":
+            default_spot_price = default_spot_price or float(details_sell.get("spot_price", 0.0))
+            default_strike_sell = float(details_sell.get("strike", 0.0))
+            default_dias_uteis = default_dias_uteis or details_sell.get("days_to_maturity", calculate_business_days(details_sell.get("due_date", details_sell.get("expiration_date", None))))
+            premium_sell = float(details_sell.get("premium", details_sell.get("close", details_sell.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_sell, premium_sell, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_sell = implied_vol(default_spot_price, default_strike_sell, T, 0.149, premium_sell, "put")
+        else:
+            st.warning("Ticker da vendida deve ser uma PUT válida.")
+
+    if default_strike_buy <= default_strike_sell and ticker_buy and ticker_sell:
+        st.error("Strike da comprada deve ser maior que o da vendida.")
+
+    st.subheader("Parâmetros da estratégia")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        spot_price = st.number_input("Preço do ativo alvo", value=float(default_spot_price), step=0.01)
+        dias_uteis = st.number_input("Dias úteis para o vencimento", value=int(default_dias_uteis), step=1)
+        taxa_juros = st.number_input("Taxa de juros (%)", value=14.9, step=0.1)/100
+
+    with col2:
+        volatilidade_buy = st.number_input("Volatilidade Comprada (%)", value=float(default_volatilidade_buy), step=0.1)/100
+        volatilidade_sell = st.number_input("Volatilidade Vendida (%)", value=float(default_volatilidade_sell), step=0.1)/100
+        quantidade = st.number_input("Quantidade (para cada perna)", value=100, step=1)
+
+    if st.button("Calcular") and ticker_buy and ticker_sell:
+        T = dias_uteis / 252
+        
+        price_buy, delta_buy, gamma_buy, vega_buy, theta_buy, rho_buy = black_scholes(spot_price, default_strike_buy, T, taxa_juros, volatilidade_buy, "put")
+        
+        price_sell, delta_sell, gamma_sell, vega_sell, theta_sell, rho_sell = black_scholes(spot_price, default_strike_sell, T, taxa_juros, volatilidade_sell, "put")
+        delta_sell *= -1
+        gamma_sell *= -1
+        vega_sell *= -1
+        theta_sell *= -1
+        rho_sell *= -1
+        price_sell *= -1  # Recebe prêmio pela vendida
+
+        st.subheader("Métricas Individuais")
+        df_individual = pd.DataFrame({
+            "Métrica": ["Preço B&S", "Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Comprada (Unit)": [f"R$ {price_buy:.2f}", f"{delta_buy:.4f}", f"{gamma_buy:.4f}", f"{vega_buy/100:.4f}", f"{theta_buy/100:.4f}", f"{rho_buy/100:.4f}"],
+            "Comprada (Total)": [f"R$ {price_buy*quantidade:.2f}", f"{delta_buy*quantidade:.4f}", f"{gamma_buy*quantidade:.4f}", f"{(vega_buy/100)*quantidade:.4f}", f"{(theta_buy/100)*quantidade:.4f}", f"{(rho_buy/100)*quantidade:.4f}"],
+            "Vendida (Unit)": [f"R$ {price_sell:.2f}", f"{delta_sell:.4f}", f"{gamma_sell:.4f}", f"{vega_sell/100:.4f}", f"{theta_sell/100:.4f}", f"{rho_sell/100:.4f}"],
+            "Vendida (Total)": [f"R$ {price_sell*quantidade:.2f}", f"{delta_sell*quantidade:.4f}", f"{gamma_sell*quantidade:.4f}", f"{(vega_sell/100)*quantidade:.4f}", f"{(theta_sell/100)*quantidade:.4f}", f"{(rho_sell/100)*quantidade:.4f}"]
+        })
+        st.dataframe(df_individual)
+
+        # Greeks combinados
+        delta_combined = delta_buy + delta_sell
+        gamma_combined = gamma_buy + gamma_sell
+        vega_combined = vega_buy + vega_sell
+        theta_combined = theta_buy + theta_sell
+        rho_combined = rho_buy + rho_sell
+
+        delta_combined_total = delta_combined * quantidade
+        gamma_combined_total = gamma_combined * quantidade
+        vega_combined_total = (vega_combined / 100) * quantidade
+        theta_combined_total = (theta_combined / 100) * quantidade
+        rho_combined_total = (rho_combined / 100) * quantidade
+
+        st.subheader("Greeks Combinados da Trava")
+        st.dataframe({
+            "Métrica": ["Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Unitário": [f"{delta_combined:.4f}", f"{gamma_combined:.4f}", f"{vega_combined / 100:.4f}", f"{theta_combined / 100:.4f}", f"{rho_combined / 100:.4f}"],
+            "Total": [f"{delta_combined_total:.4f}", f"{gamma_combined_total:.4f}", f"{vega_combined_total:.4f}", f"{theta_combined_total:.4f}", f"{rho_combined_total:.4f}"]
+        })
+
+        debit_unit = premium_buy - premium_sell  # Débito líquido (positivo)
+        debit_total = debit_unit * quantidade
+        max_profit_unit = (default_strike_buy - default_strike_sell) - debit_unit
+        max_profit_total = max_profit_unit * quantidade
+        max_risk_total = -debit_total
+        break_even = default_strike_buy - debit_unit
+        profit_percent = (max_profit_unit / abs(debit_unit) * 100) if debit_unit != 0 else 0
+        risk_percent = -100.0
+        ratio = max_profit_unit / abs(debit_unit) if debit_unit != 0 else 0
+        simetria_type = "assimétrico positivo" if ratio > 1 else "assimétrico negativo" if ratio < 1 else "simétrico"
+        simetria_value = f"({ratio:.2f})"
+        risco_retorno = f"1:{ratio:.0f}" if ratio >= 1 else f"{1/ratio:.0f}:1" if ratio > 0 else "0:0"
+
+        st.subheader("📊 Gráfico de Payoff da Trava")
+
+        min_strike = min(default_strike_buy, default_strike_sell)
+        max_strike = max(default_strike_buy, default_strike_sell)
+        S_range_graph = np.linspace(min_strike * 0.8, max_strike * 1.2, 100)
+
+        payoff_buy_graph = (np.maximum(default_strike_buy - S_range_graph, 0) - premium_buy) * quantidade
+        payoff_sell_graph = - (np.maximum(default_strike_sell - S_range_graph, 0) - premium_sell) * quantidade
+        payoff_total_graph = payoff_buy_graph + payoff_sell_graph
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=S_range_graph,
+            y=payoff_total_graph,
+            mode='lines',
+            name='Payoff Trava',
+            line=dict(color='cyan', width=3),
+            hovertemplate="Preço do Ativo: R$ %{x:.2f}<br>Payoff: R$ %{y:.2f}<extra></extra>"
+        ))
+        fig.add_trace(go.Scatter(
+            x=S_range_graph, 
+            y=np.zeros_like(S_range_graph),
+            mode='lines',
+            name='Linha Zero',
+            line=dict(color='white', width=1, dash='dash')
+        ))
+        fig.update_layout(
+            xaxis_title="Preço do Ativo (R$)",
+            yaxis_title="Payoff Total (R$)",
+            plot_bgcolor='black',
+            paper_bgcolor='black',
+            font=dict(color='white'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Dados da Trava de Baixa de Débito")
+        st.markdown(
+            f"""
+            <div style='display: flex; flex-direction: column; gap: 10px;'>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Posição inicial (Débito):</span> R$ {format_br(debit_total)}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Lucro máximo no vencimento:</span> 
+                    <span style='color: green'>R$ {format_br(max_profit_total)} ({profit_percent:.2f}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco máximo no vencimento:</span> 
+                    <span style='color: red'>-R$ {format_br(-max_risk_total)} ({risk_percent:.2f}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Simetria de risco:</span> {simetria_type} {simetria_value}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco/Retorno:</span> {risco_retorno}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Break-even:</span> {format_br(break_even)}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.subheader("📊 Gráfico de Payoff da Trava")
+        st.write("")  
+        st.subheader("Dados da Trava de Baixa de Débito")
+        st.write("")  
+
+elif estrutura == "Trava de Baixa de Crédito":
+    # Trava de Baixa de Crédito (Bear Call Spread): Vender CALL strike baixo, Comprar CALL strike alto (net credit)
+    st.subheader("Digite os tickers das opções para a Trava de Baixa de Crédito")
+    col_ticker1, col_ticker2 = st.columns(2)
+    with col_ticker1:
+        ticker_sell = st.text_input("Ticker da CALL Vendida (strike baixo)").upper()
+    with col_ticker2:
+        ticker_buy = st.text_input("Ticker da CALL Comprada (strike alto)").upper()
+
+    default_spot_price = 0.0
+    default_strike_sell = 0.0
+    default_strike_buy = 0.0
+    default_dias_uteis = 30
+    default_volatilidade_sell = 0.0
+    default_volatilidade_buy = 0.0
+    premium_sell = 0.0
+    premium_buy = 0.0
+
+    if ticker_sell:
+        details_sell = get_option_details(ticker_sell)
+        if details_sell and details_sell.get("type", "").lower() == "call":
+            default_spot_price = float(details_sell.get("spot_price", 0.0))
+            default_strike_sell = float(details_sell.get("strike", 0.0))
+            due_date = details_sell.get("due_date", details_sell.get("expiration_date", None))
+            default_dias_uteis = details_sell.get("days_to_maturity", calculate_business_days(due_date))
+            premium_sell = float(details_sell.get("premium", details_sell.get("close", details_sell.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_sell, premium_sell, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_sell = implied_vol(default_spot_price, default_strike_sell, T, 0.149, premium_sell, "call")
+        else:
+            st.warning("Ticker da vendida deve ser uma CALL válida.")
+
+    if ticker_buy:
+        details_buy = get_option_details(ticker_buy)
+        if details_buy and details_buy.get("type", "").lower() == "call":
+            default_spot_price = default_spot_price or float(details_buy.get("spot_price", 0.0))
+            default_strike_buy = float(details_buy.get("strike", 0.0))
+            default_dias_uteis = default_dias_uteis or details_buy.get("days_to_maturity", calculate_business_days(details_buy.get("due_date", details_buy.get("expiration_date", None))))
+            premium_buy = float(details_buy.get("premium", details_buy.get("close", details_buy.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_buy, premium_buy, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_buy = implied_vol(default_spot_price, default_strike_buy, T, 0.149, premium_buy, "call")
+        else:
+            st.warning("Ticker da comprada deve ser uma CALL válida.")
+
+    if default_strike_sell >= default_strike_buy and ticker_sell and ticker_buy:
+        st.error("Strike da vendida deve ser menor que o da comprada.")
+
+    st.subheader("Parâmetros da estratégia")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        spot_price = st.number_input("Preço do ativo alvo", value=float(default_spot_price), step=0.01)
+        dias_uteis = st.number_input("Dias úteis para o vencimento", value=int(default_dias_uteis), step=1)
+        taxa_juros = st.number_input("Taxa de juros (%)", value=14.9, step=0.1)/100
+
+    with col2:
+        volatilidade_sell = st.number_input("Volatilidade Vendida (%)", value=float(default_volatilidade_sell), step=0.1)/100
+        volatilidade_buy = st.number_input("Volatilidade Comprada (%)", value=float(default_volatilidade_buy), step=0.1)/100
+        quantidade = st.number_input("Quantidade (para cada perna)", value=100, step=1)
+
+    if st.button("Calcular") and ticker_sell and ticker_buy:
+        T = dias_uteis / 252
+        
+        price_sell, delta_sell, gamma_sell, vega_sell, theta_sell, rho_sell = black_scholes(spot_price, default_strike_sell, T, taxa_juros, volatilidade_sell, "call")
+        delta_sell *= -1
+        gamma_sell *= -1
+        vega_sell *= -1
+        theta_sell *= -1
+        rho_sell *= -1
+        price_sell *= -1  # Recebe prêmio pela vendida
+        
+        price_buy, delta_buy, gamma_buy, vega_buy, theta_buy, rho_buy = black_scholes(spot_price, default_strike_buy, T, taxa_juros, volatilidade_buy, "call")
+
+        st.subheader("Métricas Individuais")
+        df_individual = pd.DataFrame({
+            "Métrica": ["Preço B&S", "Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Vendida (Unit)": [f"R$ {price_sell:.2f}", f"{delta_sell:.4f}", f"{gamma_sell:.4f}", f"{vega_sell/100:.4f}", f"{theta_sell/100:.4f}", f"{rho_sell/100:.4f}"],
+            "Vendida (Total)": [f"R$ {price_sell*quantidade:.2f}", f"{delta_sell*quantidade:.4f}", f"{gamma_sell*quantidade:.4f}", f"{(vega_sell/100)*quantidade:.4f}", f"{(theta_sell/100)*quantidade:.4f}", f"{(rho_sell/100)*quantidade:.4f}"],
+            "Comprada (Unit)": [f"R$ {price_buy:.2f}", f"{delta_buy:.4f}", f"{gamma_buy:.4f}", f"{vega_buy/100:.4f}", f"{theta_buy/100:.4f}", f"{rho_buy/100:.4f}"],
+            "Comprada (Total)": [f"R$ {price_buy*quantidade:.2f}", f"{delta_buy*quantidade:.4f}", f"{gamma_buy*quantidade:.4f}", f"{(vega_buy/100)*quantidade:.4f}", f"{(theta_buy/100)*quantidade:.4f}", f"{(rho_buy/100)*quantidade:.4f}"]
+        })
+        st.dataframe(df_individual)
+
+        # Greeks combinados
+        delta_combined = delta_sell + delta_buy
+        gamma_combined = gamma_sell + gamma_buy
+        vega_combined = vega_sell + vega_buy
+        theta_combined = theta_sell + theta_buy
+        rho_combined = rho_sell + rho_buy
+
+        delta_combined_total = delta_combined * quantidade
+        gamma_combined_total = gamma_combined * quantidade
+        vega_combined_total = (vega_combined / 100) * quantidade
+        theta_combined_total = (theta_combined / 100) * quantidade
+        rho_combined_total = (rho_combined / 100) * quantidade
+
+        st.subheader("Greeks Combinados da Trava")
+        st.dataframe({
+            "Métrica": ["Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Unitário": [f"{delta_combined:.4f}", f"{gamma_combined:.4f}", f"{vega_combined / 100:.4f}", f"{theta_combined / 100:.4f}", f"{rho_combined / 100:.4f}"],
+            "Total": [f"{delta_combined_total:.4f}", f"{gamma_combined_total:.4f}", f"{vega_combined_total:.4f}", f"{theta_combined_total:.4f}", f"{rho_combined_total:.4f}"]
+        })
+
+        credit_unit = premium_sell - premium_buy  # Crédito líquido (positivo)
+        credit_total = credit_unit * quantidade
+        max_profit_unit = credit_unit
+        max_profit_total = max_profit_unit * quantidade
+        max_risk_unit = (default_strike_buy - default_strike_sell) - credit_unit
+        max_risk_total = -max_risk_unit * quantidade
+        break_even = default_strike_sell + credit_unit
+        profit_percent = (max_profit_unit / max_risk_unit * 100) if max_risk_unit != 0 else 0
+        risk_percent = -100.0
+        ratio = max_profit_unit / max_risk_unit if max_risk_unit != 0 else 0
+        simetria_type = "assimétrico positivo" if ratio > 1 else "assimétrico negativo" if ratio < 1 else "simétrico"
+        simetria_value = f"({ratio:.2f})"
+        risco_retorno = f"1:{1/ratio:.0f}" if ratio < 1 else f"{ratio:.0f}:1" if ratio > 0 else "0:0"
+
+        st.subheader("📊 Gráfico de Payoff da Trava")
+
+        min_strike = min(default_strike_sell, default_strike_buy)
+        max_strike = max(default_strike_sell, default_strike_buy)
+        S_range_graph = np.linspace(min_strike * 0.8, max_strike * 1.2, 100)
+
+        payoff_sell_graph = - (np.maximum(S_range_graph - default_strike_sell, 0) - premium_sell) * quantidade
+        payoff_buy_graph = (np.maximum(S_range_graph - default_strike_buy, 0) - premium_buy) * quantidade
+        payoff_total_graph = payoff_sell_graph + payoff_buy_graph
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=S_range_graph,
+            y=payoff_total_graph,
+            mode='lines',
+            name='Payoff Trava',
+            line=dict(color='cyan', width=3),
+            hovertemplate="Preço do Ativo: R$ %{x:.2f}<br>Payoff: R$ %{y:.2f}<extra></extra>"
+        ))
+        fig.add_trace(go.Scatter(
+            x=S_range_graph, 
+            y=np.zeros_like(S_range_graph),
+            mode='lines',
+            name='Linha Zero',
+            line=dict(color='white', width=1, dash='dash')
+        ))
+        fig.update_layout(
+            xaxis_title="Preço do Ativo (R$)",
+            yaxis_title="Payoff Total (R$)",
+            plot_bgcolor='black',
+            paper_bgcolor='black',
+            font=dict(color='white'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Dados da Trava de Baixa de Crédito")
+        st.markdown(
+            f"""
+            <div style='display: flex; flex-direction: column; gap: 10px;'>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Posição inicial (Crédito):</span> R$ {format_br(credit_total)}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Lucro máximo no vencimento:</span> 
+                    <span style='color: green'>R$ {format_br(max_profit_total)} ({profit_percent:.2f}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco máximo no vencimento:</span> 
+                    <span style='color: red'>R$ {format_br(max_risk_total)} ({risk_percent:.2f}%)</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Simetria de risco:</span> {simetria_type} {simetria_value}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco/Retorno:</span> {risco_retorno}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Break-even:</span> {format_br(break_even)}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.subheader("📊 Gráfico de Payoff da Trava")
+        st.write("")  
+        st.subheader("Dados da Trava de Baixa de Crédito")
+        st.write("")  
+
+elif estrutura == "Colar":
+    st.subheader("Digite os tickers das opções para a Estrutura Colar")
+    col_ticker1, col_ticker2 = st.columns(2)
+    with col_ticker1:
+        ticker_put_buy = st.text_input("Ticker da PUT Comprada (strike baixo)").upper()
+    with col_ticker2:
+        ticker_call_sell = st.text_input("Ticker da CALL Vendida (strike alto)").upper()
+
+    default_spot_price = 0.0
+    default_strike_put = 0.0
+    default_strike_call = 0.0
+    default_dias_uteis = 30
+    default_volatilidade_put = 0.0
+    default_volatilidade_call = 0.0
+    premium_put = 0.0
+    premium_call = 0.0
+
+    if ticker_put_buy:
+        details_put = get_option_details(ticker_put_buy)
+        if details_put and details_put.get("type", "").lower() == "put":
+            default_spot_price = float(details_put.get("spot_price", 0.0))
+            default_strike_put = float(details_put.get("strike", 0.0))
+            due_date = details_put.get("due_date", details_put.get("expiration_date", None))
+            default_dias_uteis = details_put.get("days_to_maturity", calculate_business_days(due_date))
+            premium_put = float(details_put.get("premium", details_put.get("close", details_put.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_put, premium_put, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_put = implied_vol(default_spot_price, default_strike_put, T, 0.149, premium_put, "put")
+        else:
+            st.warning("Ticker da PUT comprada deve ser uma PUT válida.")
+
+    if ticker_call_sell:
+        details_call = get_option_details(ticker_call_sell)
+        if details_call and details_call.get("type", "").lower() == "call":
+            default_spot_price = default_spot_price or float(details_call.get("spot_price", 0.0))
+            default_strike_call = float(details_call.get("strike", 0.0))
+            default_dias_uteis = default_dias_uteis or details_call.get("days_to_maturity", calculate_business_days(details_call.get("due_date", details_call.get("expiration_date", None))))
+            premium_call = float(details_call.get("premium", details_call.get("close", details_call.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike_call, premium_call, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_call = implied_vol(default_spot_price, default_strike_call, T, 0.149, premium_call, "call")
+        else:
+            st.warning("Ticker da CALL vendida deve ser uma CALL válida.")
+
+    if default_strike_put >= default_strike_call and ticker_put_buy and ticker_call_sell:
+        st.error("Strike da PUT comprada deve ser menor que o da CALL vendida.")
+
+    incluir_ativo = st.checkbox("Incluir o Ativo Subjacente (Long Stock)")
+
+    default_stock_ticker = ""
+    default_stock_quantity = 100 if incluir_ativo else 0
+
+    if incluir_ativo:
+        stock_ticker = st.text_input("Ticker do Ativo Subjacente", value=default_stock_ticker).upper()
+        stock_quantity = st.number_input("Quantidade do Ativo", value=default_stock_quantity, step=1)
+
+    st.subheader("Parâmetros da estratégia")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        spot_price = st.number_input("Preço do ativo alvo", value=float(default_spot_price), step=0.01)
+        dias_uteis = st.number_input("Dias úteis para o vencimento", value=int(default_dias_uteis), step=1)
+        taxa_juros = st.number_input("Taxa de juros (%)", value=14.9, step=0.1)/100
+
+    with col2:
+        volatilidade_put = st.number_input("Volatilidade PUT Comprada (%)", value=float(default_volatilidade_put), step=0.1)/100
+        volatilidade_call = st.number_input("Volatilidade CALL Vendida (%)", value=float(default_volatilidade_call), step=0.1)/100
+        quantidade = st.number_input("Quantidade de Opções (para cada perna)", value=100, step=1)
+
+    if st.button("Calcular") and ticker_put_buy and ticker_call_sell:
+        T = dias_uteis / 252
+        
+        # Cálculo para PUT comprada
+        price_put, delta_put, gamma_put, vega_put, theta_put, rho_put = black_scholes(spot_price, default_strike_put, T, taxa_juros, volatilidade_put, "put")
+        
+        # Cálculo para CALL vendida
+        price_call, delta_call, gamma_call, vega_call, theta_call, rho_call = black_scholes(spot_price, default_strike_call, T, taxa_juros, volatilidade_call, "call")
+        delta_call *= -1
+        gamma_call *= -1
+        vega_call *= -1
+        theta_call *= -1
+        rho_call *= -1
+        price_call *= -1  # Recebe prêmio pela vendida
+
+        # Greeks do ativo subjacente, se incluído
+        delta_stock = 1 if incluir_ativo else 0
+        gamma_stock = 0
+        vega_stock = 0
+        theta_stock = 0
+        rho_stock = 0
+        stock_cost = spot_price if incluir_ativo else 0
+
+        st.subheader("Métricas Individuais")
+        df_individual = pd.DataFrame({
+            "Métrica": ["Preço B&S", "Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "PUT Comprada (Unit)": [f"R$ {price_put:.2f}", f"{delta_put:.4f}", f"{gamma_put:.4f}", f"{vega_put/100:.4f}", f"{theta_put/100:.4f}", f"{rho_put/100:.4f}"],
+            "PUT Comprada (Total)": [f"R$ {price_put*quantidade:.2f}", f"{delta_put*quantidade:.4f}", f"{gamma_put*quantidade:.4f}", f"{(vega_put/100)*quantidade:.4f}", f"{(theta_put/100)*quantidade:.4f}", f"{(rho_put/100)*quantidade:.4f}"],
+            "CALL Vendida (Unit)": [f"R$ {price_call:.2f}", f"{delta_call:.4f}", f"{gamma_call:.4f}", f"{vega_call/100:.4f}", f"{theta_call/100:.4f}", f"{rho_call/100:.4f}"],
+            "CALL Vendida (Total)": [f"R$ {price_call*quantidade:.2f}", f"{delta_call*quantidade:.4f}", f"{gamma_call*quantidade:.4f}", f"{(vega_call/100)*quantidade:.4f}", f"{(theta_call/100)*quantidade:.4f}", f"{(rho_call/100)*quantidade:.4f}"]
+        })
+        if incluir_ativo:
+            df_individual["Ativo (Unit)"] = [f"R$ {spot_price:.2f}", f"{delta_stock:.4f}", f"{gamma_stock:.4f}", f"{vega_stock/100:.4f}", f"{theta_stock/100:.4f}", f"{rho_stock/100:.4f}"]
+            df_individual["Ativo (Total)"] = [f"R$ {spot_price*stock_quantity:.2f}", f"{delta_stock*stock_quantity:.4f}", f"{gamma_stock*stock_quantity:.4f}", f"{(vega_stock/100)*stock_quantity:.4f}", f"{(theta_stock/100)*stock_quantity:.4f}", f"{(rho_stock/100)*stock_quantity:.4f}"]
+        st.dataframe(df_individual)
+
+        # Greeks combinados
+        delta_combined = delta_put + delta_call + (delta_stock if incluir_ativo else 0)
+        gamma_combined = gamma_put + gamma_call + gamma_stock
+        vega_combined = vega_put + vega_call + vega_stock
+        theta_combined = theta_put + theta_call + theta_stock
+        rho_combined = rho_put + rho_call + rho_stock
+
+        delta_combined_total = delta_combined * quantidade + (delta_stock * stock_quantity if incluir_ativo else 0)
+        gamma_combined_total = gamma_combined * quantidade
+        vega_combined_total = (vega_combined / 100) * quantidade
+        theta_combined_total = (theta_combined / 100) * quantidade
+        rho_combined_total = (rho_combined / 100) * quantidade
+
+        st.subheader("Greeks Combinados da Estrutura")
+        st.dataframe({
+            "Métrica": ["Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Unitário": [f"{delta_combined:.4f}", f"{gamma_combined:.4f}", f"{vega_combined / 100:.4f}", f"{theta_combined / 100:.4f}", f"{rho_combined / 100:.4f}"],
+            "Total": [f"{delta_combined_total:.4f}", f"{gamma_combined_total:.4f}", f"{vega_combined_total:.4f}", f"{theta_combined_total:.4f}", f"{rho_combined_total:.4f}"]
+        })
+
+        # Métricas da estrutura
+        net_premium = premium_put - premium_call
+        initial_position = net_premium * quantidade + (stock_cost * stock_quantity if incluir_ativo else 0)
+        if incluir_ativo:
+            max_profit = (default_strike_call - spot_price - net_premium) * quantidade
+            max_loss = (spot_price - default_strike_put - net_premium) * quantidade
+            break_even_lower = default_strike_put + net_premium
+            break_even_upper = default_strike_call + net_premium
+        else:
+            max_profit = float('inf')  # Lucro máximo teoricamente ilimitado para baixo
+            max_loss = float('inf')    # Risco máximo teoricamente ilimitado para cima
+            break_even_lower = default_strike_put - net_premium
+            break_even_upper = default_strike_call + net_premium
+
+        profit_percent = float('inf') if np.isinf(max_profit) else (max_profit / abs(initial_position) * 100) if initial_position != 0 else 0
+        risk_percent = float('-inf') if np.isinf(max_loss) else (max_loss / abs(initial_position) * 100) if initial_position != 0 else 0
+        ratio = max_profit / abs(max_loss) if max_loss != 0 and not np.isinf(max_loss) else float('inf')
+        simetria_type = "assimétrico positivo" if ratio > 1 else "assimétrico negativo" if ratio < 1 else "simétrico"
+        simetria_value = f"({ratio:.2f})" if not np.isinf(ratio) else "(inf)"
+        risco_retorno = "1:inf" if np.isinf(ratio) else f"1:{int(ratio)}" if ratio >= 1 else f"{int(1/ratio)}:1" if ratio > 0 else "0:0"
+
+        st.subheader("📊 Gráfico de Payoff da Estrutura")
+
+        min_strike = min(default_strike_put, default_strike_call)
+        max_strike = max(default_strike_put, default_strike_call)
+        S_range_graph = np.linspace(min_strike * 0.8, max_strike * 1.2, 100)
+
+        payoff_put_graph = (np.maximum(default_strike_put - S_range_graph, 0) - premium_put) * quantidade
+        payoff_call_graph = - (np.maximum(S_range_graph - default_strike_call, 0) - premium_call) * quantidade
+        payoff_total_graph = payoff_put_graph + payoff_call_graph
+        if incluir_ativo:
+            payoff_stock_graph = (S_range_graph - spot_price) * stock_quantity
+            payoff_total_graph += payoff_stock_graph
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=S_range_graph,
+            y=payoff_total_graph,
+            mode='lines',
+            name='Payoff Colar',
+            line=dict(color='cyan', width=3),
+            hovertemplate="Preço do Ativo: R$ %{x:.2f}<br>Payoff: R$ %{y:.2f}<extra></extra>"
+        ))
+        fig.add_trace(go.Scatter(
+            x=S_range_graph, 
+            y=np.zeros_like(S_range_graph),
+            mode='lines',
+            name='Linha Zero',
+            line=dict(color='white', width=1, dash='dash')
+        ))
+        fig.update_layout(
+            xaxis_title="Preço do Ativo (R$)",
+            yaxis_title="Payoff Total (R$)",
+            plot_bgcolor='black',
+            paper_bgcolor='black',
+            font=dict(color='white'),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Dados da Estrutura Colar")
+        st.markdown(
+            f"""
+            <div style='display: flex; flex-direction: column; gap: 10px;'>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Posição inicial:</span> R$ {format_br(initial_position)}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Lucro máximo no vencimento:</span> 
+                    <span style='color: green'>R$ {format_br(max_profit)}</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco máximo no vencimento:</span> 
+                    <span style='color: red'>-R$ {format_br(max_loss)}</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Simetria de risco:</span> {simetria_type} {simetria_value}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco/Retorno:</span> {risco_retorno}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Break-even Inferior:</span> {format_br(break_even_lower)}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Break-even Superior:</span> {format_br(break_even_upper)}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+    else:
+        st.subheader("📊 Gráfico de Payoff da Estrutura")
+        st.write("")  
+        st.subheader("Dados da Estrutura Colar")
+        st.write("")  
+
+elif estrutura == "Compra Sintética":
+    st.subheader("Digite os tickers das opções para a Compra Sintética")
+    col_ticker1, col_ticker2 = st.columns(2)
+    with col_ticker1:
+        ticker_call_buy = st.text_input("Ticker da CALL Comprada").upper()
+    with col_ticker2:
+        ticker_put_sell = st.text_input("Ticker da PUT Vendida").upper()
+
+    default_spot_price = 0.0
+    default_strike = 0.0
+    default_dias_uteis = 30
+    default_volatilidade_call = 0.0
+    default_volatilidade_put = 0.0
+    premium_call = 0.0
+    premium_put = 0.0
+
+    if ticker_call_buy:
+        details_call = get_option_details(ticker_call_buy)
+        if details_call and details_call.get("type", "").lower() == "call":
+            default_spot_price = float(details_call.get("spot_price", 0.0))
+            default_strike = float(details_call.get("strike", 0.0))
+            due_date = details_call.get("due_date", details_call.get("expiration_date", None))
+            default_dias_uteis = details_call.get("days_to_maturity", calculate_business_days(due_date))
+            premium_call = float(details_call.get("premium", details_call.get("close", details_call.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike, premium_call, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_call = implied_vol(default_spot_price, default_strike, T, 0.149, premium_call, "call")
+        else:
+            st.warning("Ticker da CALL comprada deve ser uma CALL válida.")
+
+    if ticker_put_sell:
+        details_put = get_option_details(ticker_put_sell)
+        if details_put and details_put.get("type", "").lower() == "put":
+            default_spot_price = default_spot_price or float(details_put.get("spot_price", 0.0))
+            default_strike = default_strike or float(details_put.get("strike", 0.0))
+            default_dias_uteis = default_dias_uteis or details_put.get("days_to_maturity", calculate_business_days(details_put.get("due_date", details_put.get("expiration_date", None))))
+            premium_put = float(details_put.get("premium", details_put.get("close", details_put.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike, premium_put, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_put = implied_vol(default_spot_price, default_strike, T, 0.149, premium_put, "put")
+        else:
+            st.warning("Ticker da PUT vendida deve ser uma PUT válida.")
+
+    if ticker_call_buy and ticker_put_sell and float(ticker_call_buy[-2:]) != float(ticker_put_sell[-2:]):
+        st.error("Strikes da CALL e PUT devem ser iguais.")
+
+    st.subheader("Parâmetros da estratégia")
+    col1, col2 = st.columns(2)
+    with col1:
+        spot_price = st.number_input("Preço do ativo alvo", value=float(default_spot_price), step=0.01)
+        dias_uteis = st.number_input("Dias úteis para o vencimento", value=int(default_dias_uteis), step=1)
+        taxa_juros = st.number_input("Taxa de juros (%)", value=14.9, step=0.1)/100
+    with col2:
+        volatilidade_call = st.number_input("Volatilidade CALL Comprada (%)", value=float(default_volatilidade_call), step=0.1)/100
+        volatilidade_put = st.number_input("Volatilidade PUT Vendida (%)", value=float(default_volatilidade_put), step=0.1)/100
+        quantidade = st.number_input("Quantidade de Opções (para cada perna)", value=100, step=1)
+
+    if st.button("Calcular") and ticker_call_buy and ticker_put_sell:
+        T = dias_uteis / 252
+        
+        # Cálculo para CALL comprada
+        price_call, delta_call, gamma_call, vega_call, theta_call, rho_call = black_scholes(spot_price, default_strike, T, taxa_juros, volatilidade_call, "call")
+        
+        # Cálculo para PUT vendida
+        price_put, delta_put, gamma_put, vega_put, theta_put, rho_put = black_scholes(spot_price, default_strike, T, taxa_juros, volatilidade_put, "put")
+        delta_put *= -1
+        gamma_put *= -1
+        vega_put *= -1
+        theta_put *= -1
+        rho_put *= -1
+        price_put *= -1  # Recebe prêmio pela vendida
+
+        st.subheader("Métricas Individuais")
+        df_individual = pd.DataFrame({
+            "Métrica": ["Preço B&S", "Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "CALL Comprada (Unit)": [f"R$ {price_call:.2f}", f"{delta_call:.4f}", f"{gamma_call:.4f}", f"{vega_call/100:.4f}", f"{theta_call/100:.4f}", f"{rho_call/100:.4f}"],
+            "CALL Comprada (Total)": [f"R$ {price_call*quantidade:.2f}", f"{delta_call*quantidade:.4f}", f"{gamma_call*quantidade:.4f}", f"{(vega_call/100)*quantidade:.4f}", f"{(theta_call/100)*quantidade:.4f}", f"{(rho_call/100)*quantidade:.4f}"],
+            "PUT Vendida (Unit)": [f"R$ {price_put:.2f}", f"{delta_put:.4f}", f"{gamma_put:.4f}", f"{vega_put/100:.4f}", f"{theta_put/100:.4f}", f"{rho_put/100:.4f}"],
+            "PUT Vendida (Total)": [f"R$ {price_put*quantidade:.2f}", f"{delta_put*quantidade:.4f}", f"{gamma_put*quantidade:.4f}", f"{(vega_put/100)*quantidade:.4f}", f"{(theta_put/100)*quantidade:.4f}", f"{(rho_put/100)*quantidade:.4f}"]
+        })
+        st.dataframe(df_individual)
+
+        # Greeks combinados
+        delta_combined = delta_call + delta_put
+        gamma_combined = gamma_call + gamma_put
+        vega_combined = vega_call + vega_put
+        theta_combined = theta_call + theta_put
+        rho_combined = rho_call + rho_put
+
+        delta_combined_total = delta_combined * quantidade
+        gamma_combined_total = gamma_combined * quantidade
+        vega_combined_total = (vega_combined / 100) * quantidade
+        theta_combined_total = (theta_combined / 100) * quantidade
+        rho_combined_total = (rho_combined / 100) * quantidade
+
+        st.subheader("Greeks Combinados da Estrutura")
+        st.dataframe({
+            "Métrica": ["Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Unitário": [f"{delta_combined:.4f}", f"{gamma_combined:.4f}", f"{vega_combined / 100:.4f}", f"{theta_combined / 100:.4f}", f"{rho_combined / 100:.4f}"],
+            "Total": [f"{delta_combined_total:.4f}", f"{gamma_combined_total:.4f}", f"{vega_combined_total:.4f}", f"{theta_combined_total:.4f}", f"{rho_combined_total:.4f}"]
+        })
+
+        # Métricas da estrutura
+        net_premium = premium_call - premium_put
+        initial_position = net_premium * quantidade
+        max_profit = float('inf')  # Lucro ilimitado para cima
+        max_loss = float('inf')    # Risco ilimitado para baixo (limitado por S_T = 0)
+        break_even = default_strike + net_premium
+
+        profit_percent = float('inf') if np.isinf(max_profit) else (max_profit / abs(initial_position) * 100) if initial_position != 0 else 0
+        risk_percent = float('-inf') if np.isinf(max_loss) else (max_loss / abs(initial_position) * 100) if initial_position != 0 else 0
+        ratio = max_profit / abs(max_loss) if max_loss != 0 and not np.isinf(max_loss) else float('inf')
+        simetria_type = "assimétrico positivo" if ratio > 1 else "assimétrico negativo" if ratio < 1 else "simétrico"
+        simetria_value = f"({ratio:.2f})" if not np.isinf(ratio) else "(inf)"
+        risco_retorno = "1:inf" if np.isinf(ratio) else f"1:{int(ratio)}" if ratio >= 1 else f"{int(1/ratio)}:1" if ratio > 0 else "0:0"
+
+        st.subheader("📊 Gráfico de Payoff da Estrutura")
+        S_range_graph = np.linspace(0, default_strike * 2, 100)
+        payoff_call_graph = (np.maximum(S_range_graph - default_strike, 0) - premium_call) * quantidade
+        payoff_put_graph = - (np.maximum(default_strike - S_range_graph, 0) - premium_put) * quantidade
+        payoff_total_graph = payoff_call_graph + payoff_put_graph
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=S_range_graph, y=payoff_total_graph, mode='lines', name='Payoff Compra Sintética', line=dict(color='cyan', width=3), hovertemplate="Preço do Ativo: R$ %{x:.2f}<br>Payoff: R$ %{y:.2f}<extra></extra>"))
+        fig.add_trace(go.Scatter(x=S_range_graph, y=np.zeros_like(S_range_graph), mode='lines', name='Linha Zero', line=dict(color='white', width=1, dash='dash')))
+        fig.update_layout(xaxis_title="Preço do Ativo (R$)", yaxis_title="Payoff Total (R$)", plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white'), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Dados da Estrutura Compra Sintética")
+        st.markdown(
+            f"""
+            <div style='display: flex; flex-direction: column; gap: 10px;'>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Posição inicial:</span> R$ {format_br(initial_position)}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Lucro máximo no vencimento:</span> 
+                    <span style='color: green'>Infinito</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco máximo no vencimento:</span> 
+                    <span style='color: red'>-Infinito</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Simetria de risco:</span> {simetria_type} {simetria_value}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco/Retorno:</span> {risco_retorno}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Break-even:</span> {format_br(break_even)}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.subheader("📊 Gráfico de Payoff da Estrutura")
+        st.write("")  
+        st.subheader("Dados da Estrutura Compra Sintética")
+        st.write("")  
+
+elif estrutura == "Venda Sintética":
+    st.subheader("Digite os tickers das opções para a Venda Sintética")
+    col_ticker1, col_ticker2 = st.columns(2)
+    with col_ticker1:
+        ticker_put_buy = st.text_input("Ticker da PUT Comprada").upper()
+    with col_ticker2:
+        ticker_call_sell = st.text_input("Ticker da CALL Vendida").upper()
+
+    default_spot_price = 0.0
+    default_strike = 0.0
+    default_dias_uteis = 30
+    default_volatilidade_put = 0.0
+    default_volatilidade_call = 0.0
+    premium_put = 0.0
+    premium_call = 0.0
+
+    if ticker_put_buy:
+        details_put = get_option_details(ticker_put_buy)
+        if details_put and details_put.get("type", "").lower() == "put":
+            default_spot_price = float(details_put.get("spot_price", 0.0))
+            default_strike = float(details_put.get("strike", 0.0))
+            due_date = details_put.get("due_date", details_put.get("expiration_date", None))
+            default_dias_uteis = details_put.get("days_to_maturity", calculate_business_days(due_date))
+            premium_put = float(details_put.get("premium", details_put.get("close", details_put.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike, premium_put, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_put = implied_vol(default_spot_price, default_strike, T, 0.149, premium_put, "put")
+        else:
+            st.warning("Ticker da PUT comprada deve ser uma PUT válida.")
+
+    if ticker_call_sell:
+        details_call = get_option_details(ticker_call_sell)
+        if details_call and details_call.get("type", "").lower() == "call":
+            default_spot_price = default_spot_price or float(details_call.get("spot_price", 0.0))
+            default_strike = default_strike or float(details_call.get("strike", 0.0))
+            default_dias_uteis = default_dias_uteis or details_call.get("days_to_maturity", calculate_business_days(details_call.get("due_date", details_call.get("expiration_date", None))))
+            premium_call = float(details_call.get("premium", details_call.get("close", details_call.get("last_price", 0.0))))
+            if all(x > 0 for x in [default_spot_price, default_strike, premium_call, default_dias_uteis]):
+                T = default_dias_uteis / 252
+                default_volatilidade_call = implied_vol(default_spot_price, default_strike, T, 0.149, premium_call, "call")
+        else:
+            st.warning("Ticker da CALL vendida deve ser uma CALL válida.")
+
+    if ticker_put_buy and ticker_call_sell and float(ticker_put_buy[-2:]) != float(ticker_call_sell[-2:]):
+        st.error("Strikes da PUT e CALL devem ser iguais.")
+
+    st.subheader("Parâmetros da estratégia")
+    col1, col2 = st.columns(2)
+    with col1:
+        spot_price = st.number_input("Preço do ativo alvo", value=float(default_spot_price), step=0.01)
+        dias_uteis = st.number_input("Dias úteis para o vencimento", value=int(default_dias_uteis), step=1)
+        taxa_juros = st.number_input("Taxa de juros (%)", value=14.9, step=0.1)/100
+    with col2:
+        volatilidade_put = st.number_input("Volatilidade PUT Comprada (%)", value=float(default_volatilidade_put), step=0.1)/100
+        volatilidade_call = st.number_input("Volatilidade CALL Vendida (%)", value=float(default_volatilidade_call), step=0.1)/100
+        quantidade = st.number_input("Quantidade de Opções (para cada perna)", value=100, step=1)
+
+    if st.button("Calcular") and ticker_put_buy and ticker_call_sell:
+        T = dias_uteis / 252
+        
+        # Cálculo para PUT comprada
+        price_put, delta_put, gamma_put, vega_put, theta_put, rho_put = black_scholes(spot_price, default_strike, T, taxa_juros, volatilidade_put, "put")
+        
+        # Cálculo para CALL vendida
+        price_call, delta_call, gamma_call, vega_call, theta_call, rho_call = black_scholes(spot_price, default_strike, T, taxa_juros, volatilidade_call, "call")
+        delta_call *= -1
+        gamma_call *= -1
+        vega_call *= -1
+        theta_call *= -1
+        rho_call *= -1
+        price_call *= -1  # Recebe prêmio pela vendida
+
+        st.subheader("Métricas Individuais")
+        df_individual = pd.DataFrame({
+            "Métrica": ["Preço B&S", "Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "PUT Comprada (Unit)": [f"R$ {price_put:.2f}", f"{delta_put:.4f}", f"{gamma_put:.4f}", f"{vega_put/100:.4f}", f"{theta_put/100:.4f}", f"{rho_put/100:.4f}"],
+            "PUT Comprada (Total)": [f"R$ {price_put*quantidade:.2f}", f"{delta_put*quantidade:.4f}", f"{gamma_put*quantidade:.4f}", f"{(vega_put/100)*quantidade:.4f}", f"{(theta_put/100)*quantidade:.4f}", f"{(rho_put/100)*quantidade:.4f}"],
+            "CALL Vendida (Unit)": [f"R$ {price_call:.2f}", f"{delta_call:.4f}", f"{gamma_call:.4f}", f"{vega_call/100:.4f}", f"{theta_call/100:.4f}", f"{rho_call/100:.4f}"],
+            "CALL Vendida (Total)": [f"R$ {price_call*quantidade:.2f}", f"{delta_call*quantidade:.4f}", f"{gamma_call*quantidade:.4f}", f"{(vega_call/100)*quantidade:.4f}", f"{(theta_call/100)*quantidade:.4f}", f"{(rho_call/100)*quantidade:.4f}"]
+        })
+        st.dataframe(df_individual)
+
+        # Greeks combinados
+        delta_combined = delta_put + delta_call
+        gamma_combined = gamma_put + gamma_call
+        vega_combined = vega_put + vega_call
+        theta_combined = theta_put + theta_call
+        rho_combined = rho_put + rho_call
+
+        delta_combined_total = delta_combined * quantidade
+        gamma_combined_total = gamma_combined * quantidade
+        vega_combined_total = (vega_combined / 100) * quantidade
+        theta_combined_total = (theta_combined / 100) * quantidade
+        rho_combined_total = (rho_combined / 100) * quantidade
+
+        st.subheader("Greeks Combinados da Estrutura")
+        st.dataframe({
+            "Métrica": ["Delta", "Gamma", "Vega", "Theta", "Rho"],
+            "Unitário": [f"{delta_combined:.4f}", f"{gamma_combined:.4f}", f"{vega_combined / 100:.4f}", f"{theta_combined / 100:.4f}", f"{rho_combined / 100:.4f}"],
+            "Total": [f"{delta_combined_total:.4f}", f"{gamma_combined_total:.4f}", f"{vega_combined_total:.4f}", f"{theta_combined_total:.4f}", f"{rho_combined_total:.4f}"]
+        })
+
+        # Métricas da estrutura
+        net_premium = premium_put - premium_call
+        initial_position = net_premium * quantidade
+        max_profit = float('inf')  # Lucro ilimitado para baixo
+        max_loss = float('inf')    # Risco ilimitado para cima
+        break_even = default_strike - net_premium
+
+        profit_percent = float('inf') if np.isinf(max_profit) else (max_profit / abs(initial_position) * 100) if initial_position != 0 else 0
+        risk_percent = float('-inf') if np.isinf(max_loss) else (max_loss / abs(initial_position) * 100) if initial_position != 0 else 0
+        ratio = max_profit / abs(max_loss) if max_loss != 0 and not np.isinf(max_loss) else float('inf')
+        simetria_type = "assimétrico positivo" if ratio > 1 else "assimétrico negativo" if ratio < 1 else "simétrico"
+        simetria_value = f"({ratio:.2f})" if not np.isinf(ratio) else "(inf)"
+        risco_retorno = "1:inf" if np.isinf(ratio) else f"1:{int(ratio)}" if ratio >= 1 else f"{int(1/ratio)}:1" if ratio > 0 else "0:0"
+
+        st.subheader("📊 Gráfico de Payoff da Estrutura")
+        S_range_graph = np.linspace(0, default_strike * 2, 100)
+        payoff_put_graph = (np.maximum(default_strike - S_range_graph, 0) - premium_put) * quantidade
+        payoff_call_graph = - (np.maximum(S_range_graph - default_strike, 0) - premium_call) * quantidade
+        payoff_total_graph = payoff_put_graph + payoff_call_graph
+
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(x=S_range_graph, y=payoff_total_graph, mode='lines', name='Payoff Venda Sintética', line=dict(color='cyan', width=3), hovertemplate="Preço do Ativo: R$ %{x:.2f}<br>Payoff: R$ %{y:.2f}<extra></extra>"))
+        fig.add_trace(go.Scatter(x=S_range_graph, y=np.zeros_like(S_range_graph), mode='lines', name='Linha Zero', line=dict(color='white', width=1, dash='dash')))
+        fig.update_layout(xaxis_title="Preço do Ativo (R$)", yaxis_title="Payoff Total (R$)", plot_bgcolor='black', paper_bgcolor='black', font=dict(color='white'), legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+        st.plotly_chart(fig, use_container_width=True)
+
+        st.subheader("Dados da Estrutura Venda Sintética")
+        st.markdown(
+            f"""
+            <div style='display: flex; flex-direction: column; gap: 10px;'>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Posição inicial:</span> R$ {format_br(initial_position)}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Lucro máximo no vencimento:</span> 
+                    <span style='color: green'>Infinito</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco máximo no vencimento:</span> 
+                    <span style='color: red'>-Infinito</span>
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Simetria de risco:</span> {simetria_type} {simetria_value}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Risco/Retorno:</span> {risco_retorno}
+                </div>
+                <div style='background-color: #1e1e1e; padding: 10px; border-radius: 5px;'>
+                    <span style='color: yellow'>Break-even:</span> {format_br(break_even)}
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+    else:
+        st.subheader("📊 Gráfico de Payoff da Estrutura")
+        st.write("")  
+        st.subheader("Dados da Estrutura Venda Sintética")
+        st.write("")  
