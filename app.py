@@ -20,7 +20,7 @@ import re
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
+HORARIO_FIM_PREGAO = datetime.time(23, 0, 0)
 INTERVALO_VERIFICACAO = 300
 TEMPO_ACUMULADO_MAXIMO = 1500
 
