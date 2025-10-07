@@ -18,9 +18,9 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(23, 0, 0)
-INTERVALO_VERIFICACAO = 60   # 5 minutos
-TEMPO_ACUMULADO_MAXIMO = 300 # 25 minutos
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
+INTERVALO_VERIFICACAO = 300   # 5 minutos
+TEMPO_ACUMULADO_MAXIMO = 1500 # 25 minutos
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -37,7 +37,7 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
         servidor.send_message(mensagem)
 
 def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
-    """Envia e-mail e Telegram (assíncrono, compatível com python-telegram-bot v20+)"""
+    """Envia e-mail e Telegram"""
     enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
     async def send_telegram():
         try:
@@ -45,7 +45,7 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
             for chat_id in chat_ids:
                 await bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest.")
         except Exception as e:
-            print(f"Erro ao enviar Telegram: {e}")
+            print(f"Erro Telegram: {e}")
     asyncio.run(send_telegram())
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
@@ -91,7 +91,7 @@ for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado
             st.session_state[var] = [] if var != "monitorando" else False
 
 # -----------------------------
-# SIDEBAR - CONFIGURAÇÕES E TESTE TELEGRAM
+# SIDEBAR - CONFIGURAÇÕES E TELEGRAM
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
@@ -149,6 +149,32 @@ if st.button("➕ Adicionar ativo"):
 # -----------------------------
 st.subheader("📊 Status dos Ativos Monitorados")
 tabela_status = st.empty()
+
+# Exibe tabela antes de iniciar
+if st.session_state.ativos:
+    data = []
+    for ativo in st.session_state.ativos:
+        t = ativo["ticker"]
+        preco_atual = "-"
+        try:
+            preco_atual = obter_preco_atual(f"{t}.SA")
+        except:
+            pass
+        tempo = st.session_state.tempo_acumulado.get(t, 0)
+        minutos = tempo / 60
+        data.append({
+            "Ticker": t,
+            "Operação": ativo["operacao"].upper(),
+            "Preço Alvo": f"R$ {ativo['preco']:.2f}",
+            "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
+            "Status": st.session_state.status.get(t, "🟢 Monitorando"),
+            "Tempo Acumulado": f"{int(minutos)} min"
+        })
+    df = pd.DataFrame(data)
+    tabela_status.table(df)
+else:
+    st.info("Nenhum ativo cadastrado ainda.")
+
 st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
 st.subheader("🕒 Log de Monitoramento")
@@ -179,7 +205,6 @@ if iniciar:
             now = datetime.datetime.now()
             horario = now.time()
 
-            # Atualiza tabela e gráfico
             data = []
             for ativo in st.session_state.ativos:
                 t = ativo["ticker"]
@@ -189,7 +214,7 @@ if iniciar:
                 except:
                     pass
 
-                # Armazena histórico para gráfico
+                # Atualiza histórico
                 if preco_atual != "-":
                     st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
 
@@ -206,7 +231,6 @@ if iniciar:
             df = pd.DataFrame(data)
             tabela_status.table(df)
 
-            # Verifica pregão
             if HORARIO_INICIO_PREGAO <= horario <= HORARIO_FIM_PREGAO:
                 for ativo in st.session_state.ativos:
                     t = ativo["ticker"]
@@ -262,7 +286,7 @@ if iniciar:
                             st.session_state.log_monitoramento.append(
                                 f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada.")
 
-                # Gráfico com cores por status
+                # Gráfico colorido
                 fig = go.Figure()
                 for t, dados in st.session_state.precos_historicos.items():
                     if len(dados) > 1:
