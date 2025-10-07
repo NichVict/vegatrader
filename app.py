@@ -10,17 +10,17 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 import requests
 
 # -----------------------------
-# Configurações
+# CONFIGURAÇÕES
 # -----------------------------
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(23, 0, 0)
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
 INTERVALO_VERIFICACAO = 300   # 5 minutos
 TEMPO_ACUMULADO_MAXIMO = 1500 # 25 minutos
 
 # -----------------------------
-# Funções auxiliares
+# FUNÇÕES AUXILIARES
 # -----------------------------
 def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
     mensagem = MIMEMultipart()
@@ -66,7 +66,7 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     return mensagem
 
 # -----------------------------
-# Estado da aplicação
+# ESTADO DA APLICAÇÃO
 # -----------------------------
 if "ativos" not in st.session_state:
     st.session_state.ativos = []
@@ -77,8 +77,14 @@ if "historico_alertas" not in st.session_state:
 if "log_monitoramento" not in st.session_state:
     st.session_state.log_monitoramento = []
 
+if "tempo_acumulado" not in st.session_state:
+    st.session_state.tempo_acumulado = {}
+
+if "em_contagem" not in st.session_state:
+    st.session_state.em_contagem = {}
+
 # -----------------------------
-# Barra lateral (histórico)
+# BARRA LATERAL - HISTÓRICO
 # -----------------------------
 st.sidebar.header("📜 Histórico de Alertas")
 
@@ -95,12 +101,11 @@ if st.sidebar.button("🧹 Limpar histórico"):
     st.sidebar.success("Histórico limpo!")
 
 # -----------------------------
-# Interface principal
+# INTERFACE PRINCIPAL
 # -----------------------------
 st.title("📈 CLUBE - COMPRA E VENDA")
 st.write("Cadastre tickers, operações e preços alvo. Depois inicie o monitoramento automático.")
 
-# Entradas de ativo
 col1, col2, col3 = st.columns([1, 1, 1])
 with col1:
     ticker = st.text_input("Ticker (ex: PETR4)").upper()
@@ -118,8 +123,10 @@ if adicionar:
         ativo = {"ticker": ticker, "operacao": operacao, "preco": preco}
         st.session_state.ativos.append(ativo)
         st.success(f"Ativo {ticker} adicionado para {operacao.upper()} a R$ {preco:.2f}")
+        st.session_state.tempo_acumulado[ticker] = 0
+        st.session_state.em_contagem[ticker] = False
 
-# Exibe tabela de ativos cadastrados
+# Exibe tabela de ativos
 if st.session_state.ativos:
     st.subheader("📋 Ativos cadastrados")
     st.table(st.session_state.ativos)
@@ -128,11 +135,13 @@ if st.session_state.ativos:
 token_telegram = st.text_input("Token do Telegram", type="password",
                                value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
 
-# Caixa de log do monitoramento
+# Caixa de log
 st.subheader("📊 Atualizações de monitoramento")
 log_box = st.empty()
 
-# Botão iniciar
+# -----------------------------
+# LOOP DE MONITORAMENTO
+# -----------------------------
 iniciar = st.button("🚀 Iniciar monitoramento")
 
 if iniciar:
@@ -140,7 +149,6 @@ if iniciar:
         st.error("Adicione pelo menos um ativo antes de iniciar.")
     else:
         st.success("Monitoramento iniciado...")
-        tempo_acumulado = {a["ticker"]: 0 for a in st.session_state.ativos}
 
         while True:
             now = datetime.datetime.now()
@@ -161,19 +169,35 @@ if iniciar:
 
                     msg = f"{now.strftime('%H:%M:%S')} | {ticker_symbol_full}: R$ {preco_atual:.2f}"
                     st.session_state.log_monitoramento.append(msg)
-
-                    # Mostra últimas 20 linhas do log
                     log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
-                    if (operacao == "compra" and preco_atual >= preco_alvo) or (operacao == "venda" and preco_atual <= preco_alvo):
-                        tempo_acumulado[ativo["ticker"]] += INTERVALO_VERIFICACAO
-                        if tempo_acumulado[ativo["ticker"]] >= TEMPO_ACUMULADO_MAXIMO:
+                    condicao_atingida = (
+                        (operacao == "compra" and preco_atual >= preco_alvo) or
+                        (operacao == "venda" and preco_atual <= preco_alvo)
+                    )
+
+                    # Se o preço atingiu o alvo
+                    if condicao_atingida:
+                        if not st.session_state.em_contagem[ativo["ticker"]]:
+                            st.session_state.em_contagem[ativo["ticker"]] = True
+                            st.session_state.tempo_acumulado[ativo["ticker"]] = 0
+                            st.session_state.log_monitoramento.append(
+                                f"⚠️ {ativo['ticker']} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
+                            )
+
+                        st.session_state.tempo_acumulado[ativo["ticker"]] += INTERVALO_VERIFICACAO
+                        st.session_state.log_monitoramento.append(
+                            f"⏱ {ativo['ticker']}: {st.session_state.tempo_acumulado[ativo['ticker']]}s acumulados"
+                        )
+
+                        log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
+
+                        if st.session_state.tempo_acumulado[ativo["ticker"]] >= TEMPO_ACUMULADO_MAXIMO:
                             alerta_msg = notificar_preco_alvo_alcancado(
                                 ticker_symbol_full, preco_alvo, preco_atual, operacao, token_telegram
                             )
                             st.warning(alerta_msg)
 
-                            # Salva no histórico
                             st.session_state.historico_alertas.append({
                                 "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
                                 "ticker": ativo["ticker"],
@@ -182,11 +206,21 @@ if iniciar:
                                 "preco_atual": preco_atual
                             })
 
-                            tempo_acumulado[ativo["ticker"]] = 0
+                            st.session_state.em_contagem[ativo["ticker"]] = False
+                            st.session_state.tempo_acumulado[ativo["ticker"]] = 0
+
                     else:
-                        tempo_acumulado[ativo["ticker"]] = 0
+                        # Se o preço voltar, reseta contagem
+                        if st.session_state.em_contagem[ativo["ticker"]]:
+                            st.session_state.em_contagem[ativo["ticker"]] = False
+                            st.session_state.tempo_acumulado[ativo["ticker"]] = 0
+                            st.session_state.log_monitoramento.append(
+                                f"❌ {ativo['ticker']} saiu da zona de preço alvo. Contagem reiniciada."
+                            )
+                            log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
                 time.sleep(INTERVALO_VERIFICACAO)
+
             else:
                 msg = f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão. Aguardando..."
                 st.session_state.log_monitoramento.append(msg)
