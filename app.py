@@ -17,9 +17,9 @@ import pandas as pd
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(23, 0, 0)
-INTERVALO_VERIFICACAO = 150   # 5 minutos
-TEMPO_ACUMULADO_MAXIMO = 600 # 25 minutos
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
+INTERVALO_VERIFICACAO = 300   # 5 minutos
+TEMPO_ACUMULADO_MAXIMO = 1500 # 25 minutos
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -62,7 +62,7 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     mensagem_operacao = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
     mensagem = (
         f"Operação de {mensagem_operacao} em {ticker_symbol_sem_ext} ativada! "
-        f"Preço alvo: {preco_alvo:.2f} Preço atual: {preco_atual:.2f}\n\n"
+        f"Preço alvo: {preco_alvo:.2f} | Preço atual: {preco_atual:.2f}\n\n"
         "COMPLIANCE: AGUARDAR CANDLE 60 MIN."
     )
 
@@ -120,9 +120,7 @@ with col2:
 with col3:
     preco = st.number_input("Preço alvo", min_value=0.01, step=0.01)
 
-adicionar = st.button("➕ Adicionar ativo")
-
-if adicionar:
+if st.button("➕ Adicionar ativo"):
     if not ticker:
         st.error("Digite um ticker válido.")
     else:
@@ -137,7 +135,8 @@ if adicionar:
 # TESTE TELEGRAM
 # -----------------------------
 st.subheader("🤖 Teste do Telegram")
-token_telegram = st.text_input("Token do Bot", type="password", value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+token_telegram = st.text_input("Token do Bot", type="password",
+                               value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
 chat_id_teste = st.text_input("Chat ID para teste", value="-1002533284493")
 
 if st.button("📤 Enviar mensagem de teste"):
@@ -149,36 +148,14 @@ if st.button("📤 Enviar mensagem de teste"):
         st.error(f"❌ Falha ao enviar: {erro}")
 
 # -----------------------------
-# STATUS DOS ATIVOS
+# MONITORAMENTO
 # -----------------------------
-if st.session_state.ativos:
-    st.subheader("📊 Status dos Ativos Monitorados")
-    data = []
-    for ativo in st.session_state.ativos:
-        t = ativo["ticker"]
-        preco_atual = "-"
-        try:
-            preco_atual = obter_preco_atual(f"{t}.SA")
-        except:
-            pass
-        data.append({
-            "Ticker": t,
-            "Operação": ativo["operacao"].upper(),
-            "Preço Alvo": f"R$ {ativo['preco']:.2f}",
-            "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
-            "Status": st.session_state.status.get(t, "🟢 Monitorando")
-        })
-    df = pd.DataFrame(data)
-    st.table(df)
-
-# -----------------------------
-# LOOP DE MONITORAMENTO
-# -----------------------------
+st.subheader("📊 Status dos Ativos Monitorados")
+tabela_status = st.empty()
 st.subheader("🕒 Log de Monitoramento")
 log_box = st.empty()
-iniciar = st.button("🚀 Iniciar monitoramento")
 
-if iniciar:
+if st.button("🚀 Iniciar monitoramento"):
     if not st.session_state.ativos:
         st.error("Adicione pelo menos um ativo antes de iniciar.")
     else:
@@ -188,12 +165,36 @@ if iniciar:
             now = datetime.datetime.now()
             horario = now.time()
 
+            # Atualiza tabela de status
+            data = []
+            for ativo in st.session_state.ativos:
+                t = ativo["ticker"]
+                preco_atual = "-"
+                try:
+                    preco_atual = obter_preco_atual(f"{t}.SA")
+                except:
+                    pass
+
+                tempo = st.session_state.tempo_acumulado.get(t, 0)
+                minutos = tempo / 60
+                data.append({
+                    "Ticker": t,
+                    "Operação": ativo["operacao"].upper(),
+                    "Preço Alvo": f"R$ {ativo['preco']:.2f}",
+                    "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
+                    "Status": st.session_state.status.get(t, "🟢 Monitorando"),
+                    "Tempo Acumulado": f"{int(minutos)} min"
+                })
+            df = pd.DataFrame(data)
+            tabela_status.table(df)
+
+            # Monitoramento em tempo real
             if HORARIO_INICIO_PREGAO <= horario <= HORARIO_FIM_PREGAO:
                 for ativo in st.session_state.ativos:
-                    ticker_symbol_full = f"{ativo['ticker']}.SA"
+                    t = ativo["ticker"]
                     preco_alvo = ativo["preco"]
                     operacao = ativo["operacao"]
-                    t = ativo["ticker"]
+                    ticker_symbol_full = f"{t}.SA"
 
                     try:
                         preco_atual = obter_preco_atual(ticker_symbol_full)
@@ -221,7 +222,8 @@ if iniciar:
                         st.session_state.log_monitoramento.append(f"⏱ {t}: {st.session_state.tempo_acumulado[t]}s acumulados")
 
                         if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
-                            alerta_msg = notificar_preco_alvo_alcancado(ticker_symbol_full, preco_alvo, preco_atual, operacao, token_telegram)
+                            alerta_msg = notificar_preco_alvo_alcancado(
+                                ticker_symbol_full, preco_alvo, preco_atual, operacao, token_telegram)
                             st.warning(alerta_msg)
                             st.session_state.historico_alertas.append({
                                 "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -241,8 +243,12 @@ if iniciar:
                             st.session_state.status[t] = "🔴 Fora da zona"
                             st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada.")
 
-                time.sleep(INTERVALO_VERIFICACAO)
+                # Atualiza tabela e log a cada ciclo
+                df["Tempo Acumulado"] = df["Ticker"].apply(lambda x: f"{int(st.session_state.tempo_acumulado.get(x, 0)/60)} min")
+                tabela_status.table(df)
+                log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
+                time.sleep(INTERVALO_VERIFICACAO)
             else:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão.")
                 log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
