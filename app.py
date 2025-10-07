@@ -18,7 +18,7 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(24, 0, 0)
+HORARIO_FIM_PREGAO = datetime.time(23, 0, 0)
 INTERVALO_VERIFICACAO = 60   # 5 minutos
 TEMPO_ACUMULADO_MAXIMO = 300 # 25 minutos
 
