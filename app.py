@@ -10,9 +10,10 @@ import requests
 import asyncio
 from telegram import Bot
 import pandas as pd
+import plotly.graph_objects as go
 
 # -----------------------------
-# CONFIGURAÇÕES
+# CONFIGURAÇÕES GERAIS
 # -----------------------------
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
@@ -30,7 +31,6 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
     mensagem["To"] = destinatario
     mensagem["Subject"] = assunto
     mensagem.attach(MIMEText(corpo, "plain"))
-
     with smtplib.SMTP("smtp.gmail.com", 587) as servidor:
         servidor.starttls()
         servidor.login(remetente, senha_ou_token)
@@ -39,7 +39,6 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
 def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
     """Envia e-mail e Telegram (assíncrono, compatível com python-telegram-bot v20+)"""
     enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
-
     async def send_telegram():
         try:
             bot = Bot(token=token_telegram)
@@ -47,7 +46,6 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
                 await bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest.")
         except Exception as e:
             print(f"Erro ao enviar Telegram: {e}")
-
     asyncio.run(send_telegram())
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
@@ -61,16 +59,14 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
     mensagem_operacao = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
     mensagem = (
-        f"Operação de {mensagem_operacao} em {ticker_symbol_sem_ext} ativada! "
+        f"Operação de {mensagem_operacao} em {ticker_symbol_sem_ext} ativada!\n"
         f"Preço alvo: {preco_alvo:.2f} | Preço atual: {preco_atual:.2f}\n\n"
         "COMPLIANCE: AGUARDAR CANDLE 60 MIN."
     )
-
     remetente = "avisoscanal1milhao@gmail.com"
     senha_ou_token = "anoe gegm boqj ldzo"
     destinatario = "docs1milhao@gmail.com"
     assunto = f"ALERTA: {mensagem_operacao} em {ticker_symbol_sem_ext}"
-
     chat_ids = ["-1002533284493"]
     enviar_notificacao(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
     return mensagem
@@ -84,23 +80,40 @@ async def testar_telegram(token_telegram, chat_id):
         return False, str(e)
 
 # -----------------------------
-# ESTADO DA APLICAÇÃO
+# ESTADOS GLOBAIS
 # -----------------------------
-for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado", "em_contagem", "status"]:
+for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado", 
+            "em_contagem", "status", "precos_historicos"]:
     if var not in st.session_state:
-        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status"] else []
+        if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"]:
+            st.session_state[var] = {}
+        else:
+            st.session_state[var] = []
 
 # -----------------------------
-# BARRA LATERAL - HISTÓRICO
+# SIDEBAR - CONFIGURAÇÕES E TESTES
 # -----------------------------
+st.sidebar.header("⚙️ Configurações")
+token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
+                                       value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+chat_id_teste = st.sidebar.text_input("Chat ID (grupo ou usuário)", value="-1002533284493")
+
+if st.sidebar.button("📤 Testar Envio Telegram"):
+    st.sidebar.info("Enviando mensagem de teste...")
+    ok, erro = asyncio.run(testar_telegram(token_telegram, chat_id_teste))
+    if ok:
+        st.sidebar.success("✅ Mensagem enviada com sucesso!")
+    else:
+        st.sidebar.error(f"❌ Falha: {erro}")
+
+# Histórico
 st.sidebar.header("📜 Histórico de Alertas")
-
 if st.session_state.historico_alertas:
     for alerta in reversed(st.session_state.historico_alertas):
         st.sidebar.write(f"**{alerta['ticker']}** - {alerta['operacao'].upper()}")
         st.sidebar.caption(f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}")
 else:
-    st.sidebar.info("Nenhum alerta enviado ainda.")
+    st.sidebar.info("Nenhum alerta ainda.")
 
 if st.sidebar.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
@@ -112,7 +125,7 @@ if st.sidebar.button("🧹 Limpar histórico"):
 st.title("📈 CLUBE - COMPRA E VENDA")
 st.write("Cadastre tickers, operações e preços alvo. Depois inicie o monitoramento automático.")
 
-col1, col2, col3 = st.columns([1, 1, 1])
+col1, col2, col3 = st.columns(3)
 with col1:
     ticker = st.text_input("Ticker (ex: PETR4)").upper()
 with col2:
@@ -129,26 +142,11 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.tempo_acumulado[ticker] = 0
         st.session_state.em_contagem[ticker] = False
         st.session_state.status[ticker] = "🟢 Monitorando"
+        st.session_state.precos_historicos[ticker] = []
         st.success(f"Ativo {ticker} adicionado com sucesso!")
 
 # -----------------------------
-# TESTE TELEGRAM
-# -----------------------------
-st.subheader("🤖 Teste do Telegram")
-token_telegram = st.text_input("Token do Bot", type="password",
-                               value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
-chat_id_teste = st.text_input("Chat ID para teste", value="-1002533284493")
-
-if st.button("📤 Enviar mensagem de teste"):
-    st.info("Enviando mensagem de teste...")
-    ok, erro = asyncio.run(testar_telegram(token_telegram, chat_id_teste))
-    if ok:
-        st.success("✅ Mensagem enviada com sucesso ao Telegram!")
-    else:
-        st.error(f"❌ Falha ao enviar: {erro}")
-
-# -----------------------------
-# EXIBIÇÃO INICIAL DA TABELA
+# TABELA DE STATUS
 # -----------------------------
 st.subheader("📊 Status dos Ativos Monitorados")
 tabela_status = st.empty()
@@ -178,10 +176,12 @@ else:
     st.info("Nenhum ativo cadastrado ainda.")
 
 # -----------------------------
-# LOG DE MONITORAMENTO
+# LOG E GRÁFICO EM TEMPO REAL
 # -----------------------------
 st.subheader("🕒 Log de Monitoramento")
 log_box = st.empty()
+st.subheader("📉 Gráfico em Tempo Real dos Preços")
+grafico = st.empty()
 
 # -----------------------------
 # LOOP DE MONITORAMENTO
@@ -191,7 +191,6 @@ if st.button("🚀 Iniciar monitoramento"):
         st.error("Adicione pelo menos um ativo antes de iniciar.")
     else:
         st.success("Monitoramento iniciado...")
-
         while True:
             now = datetime.datetime.now()
             horario = now.time()
@@ -204,6 +203,11 @@ if st.button("🚀 Iniciar monitoramento"):
                     preco_atual = obter_preco_atual(f"{t}.SA")
                 except:
                     pass
+                # Armazena histórico para gráfico
+                if preco_atual != "-":
+                    if t not in st.session_state.precos_historicos:
+                        st.session_state.precos_historicos[t] = []
+                    st.session_state.precos_historicos[t].append((now, preco_atual))
 
                 tempo = st.session_state.tempo_acumulado.get(t, 0)
                 minutos = tempo / 60
@@ -218,7 +222,7 @@ if st.button("🚀 Iniciar monitoramento"):
             df = pd.DataFrame(data)
             tabela_status.table(df)
 
-            # Monitoramento ativo
+            # MONITORAMENTO PRINCIPAL
             if HORARIO_INICIO_PREGAO <= horario <= HORARIO_FIM_PREGAO:
                 for ativo in st.session_state.ativos:
                     t = ativo["ticker"]
@@ -248,7 +252,6 @@ if st.button("🚀 Iniciar monitoramento"):
                             st.session_state.tempo_acumulado[t] = 0
                             st.session_state.log_monitoramento.append(
                                 f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem...")
-
                         st.session_state.tempo_acumulado[t] += INTERVALO_VERIFICACAO
                         st.session_state.log_monitoramento.append(
                             f"⏱ {t}: {st.session_state.tempo_acumulado[t]}s acumulados")
@@ -267,7 +270,6 @@ if st.button("🚀 Iniciar monitoramento"):
                             st.session_state.status[t] = "🟢 Monitorando"
                             st.session_state.em_contagem[t] = False
                             st.session_state.tempo_acumulado[t] = 0
-
                     else:
                         if st.session_state.em_contagem[t]:
                             st.session_state.em_contagem[t] = False
@@ -276,9 +278,17 @@ if st.button("🚀 Iniciar monitoramento"):
                             st.session_state.log_monitoramento.append(
                                 f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada.")
 
-                tabela_status.table(df)
-                log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
+                # Atualiza gráfico
+                fig = go.Figure()
+                for t, dados in st.session_state.precos_historicos.items():
+                    if len(dados) > 1:
+                        tempos, precos = zip(*dados)
+                        fig.add_trace(go.Scatter(x=tempos, y=precos, mode="lines+markers", name=t))
+                fig.update_layout(title="Evolução dos Preços Monitorados", xaxis_title="Tempo", yaxis_title="Preço (R$)")
+                grafico.plotly_chart(fig, use_container_width=True)
+
                 time.sleep(INTERVALO_VERIFICACAO)
+
             else:
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão.")
