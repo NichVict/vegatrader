@@ -9,6 +9,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 import requests
 import asyncio
 from telegram import Bot
+import pandas as pd
 
 # -----------------------------
 # CONFIGURAÇÕES
@@ -16,9 +17,9 @@ from telegram import Bot
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
-INTERVALO_VERIFICACAO = 300   # 5 minutos
-TEMPO_ACUMULADO_MAXIMO = 1500 # 25 minutos
+HORARIO_FIM_PREGAO = datetime.time(23, 0, 0)
+INTERVALO_VERIFICACAO = 150   # 5 minutos
+TEMPO_ACUMULADO_MAXIMO = 600 # 25 minutos
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -74,9 +75,6 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     enviar_notificacao(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
     return mensagem
 
-# -----------------------------
-# TESTE TELEGRAM
-# -----------------------------
 async def testar_telegram(token_telegram, chat_id):
     try:
         bot = Bot(token=token_telegram)
@@ -88,20 +86,9 @@ async def testar_telegram(token_telegram, chat_id):
 # -----------------------------
 # ESTADO DA APLICAÇÃO
 # -----------------------------
-if "ativos" not in st.session_state:
-    st.session_state.ativos = []
-
-if "historico_alertas" not in st.session_state:
-    st.session_state.historico_alertas = []
-
-if "log_monitoramento" not in st.session_state:
-    st.session_state.log_monitoramento = []
-
-if "tempo_acumulado" not in st.session_state:
-    st.session_state.tempo_acumulado = {}
-
-if "em_contagem" not in st.session_state:
-    st.session_state.em_contagem = {}
+for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado", "em_contagem", "status"]:
+    if var not in st.session_state:
+        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status"] else []
 
 # -----------------------------
 # BARRA LATERAL - HISTÓRICO
@@ -141,28 +128,19 @@ if adicionar:
     else:
         ativo = {"ticker": ticker, "operacao": operacao, "preco": preco}
         st.session_state.ativos.append(ativo)
-        st.success(f"Ativo {ticker} adicionado para {operacao.upper()} a R$ {preco:.2f}")
         st.session_state.tempo_acumulado[ticker] = 0
         st.session_state.em_contagem[ticker] = False
-
-if st.session_state.ativos:
-    st.subheader("📋 Ativos cadastrados")
-    st.table(st.session_state.ativos)
+        st.session_state.status[ticker] = "🟢 Monitorando"
+        st.success(f"Ativo {ticker} adicionado com sucesso!")
 
 # -----------------------------
 # TESTE TELEGRAM
 # -----------------------------
 st.subheader("🤖 Teste do Telegram")
-
-token_telegram = st.text_input(
-    "Token do Bot",
-    type="password",
-    value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY"
-)
+token_telegram = st.text_input("Token do Bot", type="password", value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
 chat_id_teste = st.text_input("Chat ID para teste", value="-1002533284493")
-testar = st.button("📤 Enviar mensagem de teste")
 
-if testar:
+if st.button("📤 Enviar mensagem de teste"):
     st.info("Enviando mensagem de teste...")
     ok, erro = asyncio.run(testar_telegram(token_telegram, chat_id_teste))
     if ok:
@@ -171,11 +149,33 @@ if testar:
         st.error(f"❌ Falha ao enviar: {erro}")
 
 # -----------------------------
-# MONITORAMENTO
+# STATUS DOS ATIVOS
 # -----------------------------
-st.subheader("📊 Atualizações de monitoramento")
-log_box = st.empty()
+if st.session_state.ativos:
+    st.subheader("📊 Status dos Ativos Monitorados")
+    data = []
+    for ativo in st.session_state.ativos:
+        t = ativo["ticker"]
+        preco_atual = "-"
+        try:
+            preco_atual = obter_preco_atual(f"{t}.SA")
+        except:
+            pass
+        data.append({
+            "Ticker": t,
+            "Operação": ativo["operacao"].upper(),
+            "Preço Alvo": f"R$ {ativo['preco']:.2f}",
+            "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
+            "Status": st.session_state.status.get(t, "🟢 Monitorando")
+        })
+    df = pd.DataFrame(data)
+    st.table(df)
 
+# -----------------------------
+# LOOP DE MONITORAMENTO
+# -----------------------------
+st.subheader("🕒 Log de Monitoramento")
+log_box = st.empty()
 iniciar = st.button("🚀 Iniciar monitoramento")
 
 if iniciar:
@@ -193,12 +193,12 @@ if iniciar:
                     ticker_symbol_full = f"{ativo['ticker']}.SA"
                     preco_alvo = ativo["preco"]
                     operacao = ativo["operacao"]
+                    t = ativo["ticker"]
 
                     try:
                         preco_atual = obter_preco_atual(ticker_symbol_full)
                     except Exception as e:
-                        msg_erro = f"{now.strftime('%H:%M:%S')} | Erro ao buscar {ativo['ticker']}: {e}"
-                        st.session_state.log_monitoramento.append(msg_erro)
+                        st.session_state.log_monitoramento.append(f"Erro ao buscar {t}: {e}")
                         continue
 
                     msg = f"{now.strftime('%H:%M:%S')} | {ticker_symbol_full}: R$ {preco_atual:.2f}"
@@ -211,52 +211,42 @@ if iniciar:
                     )
 
                     if condicao_atingida:
-                        if not st.session_state.em_contagem[ativo["ticker"]]:
-                            st.session_state.em_contagem[ativo["ticker"]] = True
-                            st.session_state.tempo_acumulado[ativo["ticker"]] = 0
-                            st.session_state.log_monitoramento.append(
-                                f"⚠️ {ativo['ticker']} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
-                            )
+                        st.session_state.status[t] = "🟡 Em contagem"
+                        if not st.session_state.em_contagem[t]:
+                            st.session_state.em_contagem[t] = True
+                            st.session_state.tempo_acumulado[t] = 0
+                            st.session_state.log_monitoramento.append(f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem...")
 
-                        st.session_state.tempo_acumulado[ativo["ticker"]] += INTERVALO_VERIFICACAO
-                        st.session_state.log_monitoramento.append(
-                            f"⏱ {ativo['ticker']}: {st.session_state.tempo_acumulado[ativo['ticker']]}s acumulados"
-                        )
+                        st.session_state.tempo_acumulado[t] += INTERVALO_VERIFICACAO
+                        st.session_state.log_monitoramento.append(f"⏱ {t}: {st.session_state.tempo_acumulado[t]}s acumulados")
 
-                        log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
-
-                        if st.session_state.tempo_acumulado[ativo["ticker"]] >= TEMPO_ACUMULADO_MAXIMO:
-                            alerta_msg = notificar_preco_alvo_alcancado(
-                                ticker_symbol_full, preco_alvo, preco_atual, operacao, token_telegram
-                            )
+                        if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
+                            alerta_msg = notificar_preco_alvo_alcancado(ticker_symbol_full, preco_alvo, preco_atual, operacao, token_telegram)
                             st.warning(alerta_msg)
-
                             st.session_state.historico_alertas.append({
                                 "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
-                                "ticker": ativo["ticker"],
+                                "ticker": t,
                                 "operacao": operacao,
                                 "preco_alvo": preco_alvo,
                                 "preco_atual": preco_atual
                             })
-
-                            st.session_state.em_contagem[ativo["ticker"]] = False
-                            st.session_state.tempo_acumulado[ativo["ticker"]] = 0
+                            st.session_state.status[t] = "🟢 Monitorando"
+                            st.session_state.em_contagem[t] = False
+                            st.session_state.tempo_acumulado[t] = 0
 
                     else:
-                        if st.session_state.em_contagem[ativo["ticker"]]:
-                            st.session_state.em_contagem[ativo["ticker"]] = False
-                            st.session_state.tempo_acumulado[ativo["ticker"]] = 0
-                            st.session_state.log_monitoramento.append(
-                                f"❌ {ativo['ticker']} saiu da zona de preço alvo. Contagem reiniciada."
-                            )
-                            log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
+                        if st.session_state.em_contagem[t]:
+                            st.session_state.em_contagem[t] = False
+                            st.session_state.tempo_acumulado[t] = 0
+                            st.session_state.status[t] = "🔴 Fora da zona"
+                            st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada.")
 
                 time.sleep(INTERVALO_VERIFICACAO)
 
             else:
-                msg = f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão. Aguardando..."
-                st.session_state.log_monitoramento.append(msg)
+                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão.")
                 log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
                 time.sleep(300)
+
 
 
