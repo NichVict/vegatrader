@@ -5,9 +5,10 @@ import time
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from telegram import Bot
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests
+import asyncio
+from telegram import Bot
 
 # -----------------------------
 # CONFIGURAÇÕES
@@ -35,10 +36,18 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
         servidor.send_message(mensagem)
 
 def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
+    """Envia e-mail e Telegram (assíncrono, compatível com python-telegram-bot v20+)"""
     enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
-    bot = Bot(token=token_telegram)
-    for chat_id in chat_ids:
-        bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest.")
+
+    async def send_telegram():
+        try:
+            bot = Bot(token=token_telegram)
+            for chat_id in chat_ids:
+                await bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest.")
+        except Exception as e:
+            print(f"Erro ao enviar Telegram: {e}")
+
+    asyncio.run(send_telegram())
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
@@ -51,8 +60,8 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
     mensagem_operacao = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
     mensagem = (
-        f"Operação de {mensagem_operacao} em {ticker_symbol_sem_ext} ativada!\n"
-        f"Preço alvo: {preco_alvo:.2f}\nPreço atual: {preco_atual:.2f}\n\n"
+        f"Operação de {mensagem_operacao} em {ticker_symbol_sem_ext} ativada! "
+        f"Preço alvo: {preco_alvo:.2f} Preço atual: {preco_atual:.2f}\n\n"
         "COMPLIANCE: AGUARDAR CANDLE 60 MIN."
     )
 
@@ -64,6 +73,17 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     chat_ids = ["-1002533284493"]
     enviar_notificacao(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
     return mensagem
+
+# -----------------------------
+# TESTE TELEGRAM
+# -----------------------------
+async def testar_telegram(token_telegram, chat_id):
+    try:
+        bot = Bot(token=token_telegram)
+        await bot.send_message(chat_id=chat_id, text="✅ Teste de alerta CLUBE funcionando!")
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 # -----------------------------
 # ESTADO DA APLICAÇÃO
@@ -95,7 +115,6 @@ if st.session_state.historico_alertas:
 else:
     st.sidebar.info("Nenhum alerta enviado ainda.")
 
-# Botão para limpar histórico
 if st.sidebar.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
     st.sidebar.success("Histórico limpo!")
@@ -126,22 +145,37 @@ if adicionar:
         st.session_state.tempo_acumulado[ticker] = 0
         st.session_state.em_contagem[ticker] = False
 
-# Exibe tabela de ativos
 if st.session_state.ativos:
     st.subheader("📋 Ativos cadastrados")
     st.table(st.session_state.ativos)
 
-# Token Telegram
-token_telegram = st.text_input("Token do Telegram", type="password",
-                               value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+# -----------------------------
+# TESTE TELEGRAM
+# -----------------------------
+st.subheader("🤖 Teste do Telegram")
 
-# Caixa de log
+token_telegram = st.text_input(
+    "Token do Bot",
+    type="password",
+    value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY"
+)
+chat_id_teste = st.text_input("Chat ID para teste", value="-1002533284493")
+testar = st.button("📤 Enviar mensagem de teste")
+
+if testar:
+    st.info("Enviando mensagem de teste...")
+    ok, erro = asyncio.run(testar_telegram(token_telegram, chat_id_teste))
+    if ok:
+        st.success("✅ Mensagem enviada com sucesso ao Telegram!")
+    else:
+        st.error(f"❌ Falha ao enviar: {erro}")
+
+# -----------------------------
+# MONITORAMENTO
+# -----------------------------
 st.subheader("📊 Atualizações de monitoramento")
 log_box = st.empty()
 
-# -----------------------------
-# LOOP DE MONITORAMENTO
-# -----------------------------
 iniciar = st.button("🚀 Iniciar monitoramento")
 
 if iniciar:
@@ -176,7 +210,6 @@ if iniciar:
                         (operacao == "venda" and preco_atual <= preco_alvo)
                     )
 
-                    # Se o preço atingiu o alvo
                     if condicao_atingida:
                         if not st.session_state.em_contagem[ativo["ticker"]]:
                             st.session_state.em_contagem[ativo["ticker"]] = True
@@ -210,7 +243,6 @@ if iniciar:
                             st.session_state.tempo_acumulado[ativo["ticker"]] = 0
 
                     else:
-                        # Se o preço voltar, reseta contagem
                         if st.session_state.em_contagem[ativo["ticker"]]:
                             st.session_state.em_contagem[ativo["ticker"]] = False
                             st.session_state.tempo_acumulado[ativo["ticker"]] = 0
