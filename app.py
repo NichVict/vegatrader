@@ -325,19 +325,56 @@ if st.session_state.log_monitoramento:
 # 3) AUTO-REFRESH INTELIGENTE (SEM BLOQUEAR)
 # -----------------------------
 now = datetime.datetime.now()
+
+# Se estiver fora do pregão, mostre contagem regressiva até a abertura
+if st.session_state.monitorando and not dentro_pregao(now):
+    seg_ate_abertura = max(1, segundos_ate_proxima_abertura(now))
+    h = seg_ate_abertura // 3600
+    m = (seg_ate_abertura % 3600) // 60
+    s = seg_ate_abertura % 60
+
+    st.info(
+        f"⏳ Pregão fechado. Reabre em **{h:02d}:{m:02d}:{s:02d}** "
+        f"(às {HORARIO_INICIO_PREGAO.strftime('%H:%M')})."
+    )
+
+    # Contador ao vivo (JS) até a abertura
+    target_ts_ms = int((now + datetime.timedelta(seconds=seg_ate_abertura)).timestamp() * 1000)
+    st.markdown(f"""
+    <div style="font-size:1.05rem;margin:4px 0 10px;">
+      ⏱️ Contagem regressiva: <b><span id="cd">--:--:--</span></b>
+    </div>
+    <script>
+    (function() {{
+      const target = {target_ts_ms};
+      function pad(n) {{ return n.toString().padStart(2, '0'); }}
+      function tick() {{
+        const now = Date.now();
+        let diff = Math.max(0, Math.floor((target - now) / 1000));
+        const h = Math.floor(diff / 3600);
+        diff %= 3600;
+        const m = Math.floor(diff / 60);
+        const s = diff % 60;
+        const el = document.getElementById('cd');
+        if (el) el.textContent = pad(h) + ":" + pad(m) + ":" + pad(s);
+      }}
+      tick();
+      setInterval(tick, 1000);
+    }})();
+    </script>
+    """, unsafe_allow_html=True)
+
+# Lógica de intervalo para o próximo refresh
 if st.session_state.monitorando:
     if dentro_pregao(now):
-        prox_segundos = INTERVALO_VERIFICACAO               # em pregão: 5 min (ou o que você definiu)
+        prox_segundos = INTERVALO_VERIFICACAO
     else:
-        # fora do pregão: ping leve de keep-alive até abrir
         seg_ate_abertura = max(1, segundos_ate_proxima_abertura(now))
-        prox_segundos = min(seg_ate_abertura, 300)          # ex.: a cada 5 min até abrir
+        prox_segundos = min(seg_ate_abertura, 300)  # ping leve até abrir (5 min)
 else:
-    # sem monitoramento ligado: atualiza raramente só pra manter sessão fresca
-    prox_segundos = 600  # 10 min
+    prox_segundos = 600  # sem monitoramento ligado, refresca a cada 10 min
 
 st.caption(f"🔄 Próxima atualização automática em ~{prox_segundos} segundos.")
-# Força recarregar o app no navegador (mantém sessão viva sem while/sleep)
 st.markdown(
     f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox_segundos*1000});</script>",
     unsafe_allow_html=True
