@@ -489,7 +489,10 @@ else:
             f"""
 <div style="background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:12px 14px;">
   <span style="color:#9ca3af;">⏸️ Pregão fechado.</span>
-  <span style="margin-left:8px;">Reabre em <b id="{elem_id}">--:--:--</b> (às {prox_abertura.strftime('%H:%M')}).</span>
+  <span style="margin-left:8px; color:#e5e7eb;">
+  Reabre em <b id="{elem_id}" style="color:#ffffff;">--:--:--</b>
+  (às {prox_abertura.strftime('%H:%M')}). 
+</span>
 </div>
 <script>
 (function(){{
