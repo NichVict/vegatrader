@@ -11,7 +11,7 @@ import asyncio
 from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo  # fuso com DST
 import re
 
 # -----------------------------
@@ -19,14 +19,14 @@ import re
 # -----------------------------
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
-TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST ok)
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00
-HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00
+TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
+HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 INTERVALO_VERIFICACAO = 300                       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 900                      # 15 min (use 1500 p/ 25 min)
-LOG_MAX_LINHAS = 120                              # limite de linhas guardadas
+TEMPO_ACUMULADO_MAXIMO = 900                      # 15 min (mude p/ 1500=25min se quiser)
+LOG_MAX_LINHAS = 1000                             # limite de linhas do log
 
-# Paleta de cores p/ tickers (rotaciona)
+# Paleta de cores (rotaciona entre tickers)
 PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
@@ -36,17 +36,18 @@ PALETTE = [
 # FUNÇÕES AUXILIARES
 # -----------------------------
 def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
-    msg = MIMEMultipart()
-    msg["From"] = remetente
-    msg["To"] = destinatario
-    msg["Subject"] = assunto
-    msg.attach(MIMEText(corpo, "plain"))
+    mensagem = MIMEMultipart()
+    mensagem["From"] = remetente
+    mensagem["To"] = destinatario
+    mensagem["Subject"] = assunto
+    mensagem.attach(MIMEText(corpo, "plain"))
     with smtplib.SMTP("smtp.gmail.com", 587) as servidor:
         servidor.starttls()
         servidor.login(remetente, senha_ou_token)
-        servidor.send_message(msg)
+        servidor.send_message(mensagem)
 
 def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
+    """Envia e-mail e Telegram"""
     enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
     async def send_telegram():
         try:
@@ -57,11 +58,11 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
             print(f"Erro Telegram: {e}")
     asyncio.run(send_telegram())
 
-@retry(stop=stop_after_attempt(5),
-       wait=wait_exponential(multiplier=1, min=4, max=60),
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
     tk = Ticker(ticker_symbol)
+    # tenta preço em tempo real; fallback: fechamento
     try:
         p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
         if p is not None:
@@ -73,19 +74,20 @@ def obter_preco_atual(ticker_symbol):
 
 def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, operacao, token_telegram):
     ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
-    op = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
-    msg = (
-        f"Operação de {op} em {ticker_symbol_sem_ext} ativada!\n"
+    msg_op = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
+    mensagem = (
+        f"Operação de {msg_op} em {ticker_symbol_sem_ext} ativada!\n"
         f"Preço alvo: {preco_alvo:.2f} | Preço atual: {preco_atual:.2f}\n\n"
         "COMPLIANCE: AGUARDAR CANDLE 60 MIN."
     )
     remetente = "avisoscanal1milhao@gmail.com"
-    senha_ou_token = "anoe gegm boqj ldzo"  # ideal: st.secrets["gmail_app_password"]
+    # dica: coloque em st.secrets["gmail_app_password"]
+    senha_ou_token = "anoe gegm boqj ldzo"
     destinatario = "docs1milhao@gmail.com"
-    assunto = f"ALERTA: {op} em {ticker_symbol_sem_ext}"
+    assunto = f"ALERTA: {msg_op} em {ticker_symbol_sem_ext}"
     chat_ids = ["-1002533284493"]
-    enviar_notificacao(destinatario, assunto, msg, remetente, senha_ou_token, token_telegram, chat_ids)
-    return msg
+    enviar_notificacao(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
+    return mensagem
 
 async def testar_telegram(token_telegram, chat_id):
     try:
@@ -113,7 +115,7 @@ def segundos_ate_abertura(dt_now):
     else:
         return 0
 
-# ---- util p/ LOG colorido ----
+# ---------- LOG: cor por ticker + box rolável + ordem decrescente ----------
 def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
@@ -125,65 +127,66 @@ def color_for_ticker(ticker: str) -> str:
         st.session_state.ticker_colors[ticker] = PALETTE[idx]
     return st.session_state.ticker_colors[ticker]
 
-TICKER_PAT = re.compile(r"\b([A-Z]{4,6}\d{0,2})\.SA\b")  # ex: PETR4.SA, ITUB4.SA, VALE3.SA
+TICKER_PAT = re.compile(r"\b([A-Z]{4,6}\d{0,2})\.SA\b")  # ex: PETR4.SA, ITUB4.SA
+PLAIN_TICKER_PAT = re.compile(r"\b([A-Z]{4,6}\d{0,2})\b")  # ex: PETR4, VALE3
 
 def extract_ticker(line: str) -> str | None:
     m = TICKER_PAT.search(line)
     if m:
         return m.group(1)
-    # também tenta padrões do tipo "⏱ ITUB4:" ou "⚠️ ITUB4"
-    m2 = re.search(r"\b([A-Z]{4,6}\d{0,2})\b(?=:| |$)", line)
-    if m2:
-        return m2.group(1)
-    return None
+    # tenta pegar padrão simples quando não tem .SA
+    m2 = PLAIN_TICKER_PAT.search(line)
+    return m2.group(1) if m2 else None
 
-def render_log(lines: list[str], selected_tickers: list[str] | None, max_lines: int = 50):
-    """Renderiza o log em ordem decrescente, com cor por ticker."""
+def render_log_html(lines: list[str], max_lines: int = 200):
+    """Renderiza o log com cores por ticker, box rolável e ordem decrescente."""
     if not lines:
         st.write("—")
         return
-    # limita e reverte (mais novo no topo)
+    # Pega últimas N e inverte (mais novo no topo)
     subset = lines[-max_lines:][::-1]
 
-    # filtra por ticker se necessário
-    rendered = []
-    for l in subset:
-        tk = extract_ticker(l)
-        if selected_tickers and tk and tk not in selected_tickers:
-            continue
-        rendered.append((l, tk))
-
-    if not rendered:
-        st.write("—")
-        return
-
-    # CSS leve
     css = """
     <style>
-      .log-line{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-                font-size: 13px; margin: 2px 0; line-height: 1.35;}
-      .ts{color:#9ca3af; margin-right:6px;}
-      .badge{display:inline-block; padding:1px 6px; font-size:12px; border-radius:9999px; color:white; margin-right:6px;}
-      .msg{color:#e5e7eb;}
-      .wrap{white-space: pre-wrap;}
+      .log-card {
+        background: #0b1220;
+        border: 1px solid #1f2937;
+        border-radius: 10px;
+        padding: 10px 12px;
+        max-height: 320px;
+        overflow-y: auto;
+      }
+      .log-line{
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 1.35;
+        margin: 2px 0;
+        color: #e5e7eb;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .ts{ color:#9ca3af; min-width:64px; text-align:right; }
+      .badge{
+        display:inline-block; padding:1px 8px; font-size:12px; border-radius:9999px; color:white;
+      }
+      .msg{ white-space: pre-wrap; }
     </style>
     """
-    html = [css]
-    for l, tk in rendered:
+    html = [css, "<div class='log-card'>"]
+    for l in subset:
         # quebra "HH:MM:SS | resto"
         if " | " in l:
             ts, rest = l.split(" | ", 1)
         else:
             ts, rest = "", l
-
-        # badge do ticker
+        tk = extract_ticker(l)
         badge_html = ""
         if tk:
-            c = color_for_ticker(tk)
-            badge_html = f"<span class='badge' style='background:{c}'>{tk}</span>"
-
-        html.append(f"<div class='log-line wrap'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
-
+            color = color_for_ticker(tk)
+            badge_html = f"<span class='badge' style='background:{color}'>{tk}</span>"
+        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
+    html.append("</div>")
     st.markdown("\n".join(html), unsafe_allow_html=True)
 
 # -----------------------------
@@ -194,9 +197,13 @@ for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado
     if var not in st.session_state:
         st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
 
-# Modo edição/pausa
+# Modo edição/pausa (começa pausado para cadastrar vários tickers)
 if "pausado" not in st.session_state:
-    st.session_state.pausado = True  # comece pausado para cadastrar com calma
+    st.session_state.pausado = True
+
+# Pontos de disparo (para marcar ⭐ no gráfico)
+if "disparos" not in st.session_state:
+    st.session_state.disparos = {}  # { 'TICKER': [(datetime, preco), ...] }
 
 ensure_color_map()
 
@@ -224,24 +231,27 @@ if st.session_state.historico_alertas:
         st.sidebar.caption(f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}")
 else:
     st.sidebar.info("Nenhum alerta ainda.")
-if st.sidebar.button("🧹 Limpar histórico"):
+col_limp, col_limp2 = st.sidebar.columns(2)
+if col_limp.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
     st.sidebar.success("Histórico limpo!")
-
-# --- Filtro do LOG + limpar LOG
-tickers_existentes = [a["ticker"] for a in st.session_state.ativos] if st.session_state.ativos else []
-selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", sorted(set(tickers_existentes)))
-if st.sidebar.button("🧽 Limpar LOG"):
+if col_limp2.button("🧽 Limpar LOG"):
     st.session_state.log_monitoramento.clear()
     st.sidebar.success("Log limpo!")
+
+if st.sidebar.button("🧼 Limpar marcadores ⭐"):
+    st.session_state.disparos = {}
+    st.sidebar.success("Marcadores limpos!")
 
 # -----------------------------
 # INTERFACE PRINCIPAL
 # -----------------------------
 now = agora_lx()
 st.title("📈 CLUBE - COMPRA E VENDA")
-st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
-           f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}")
+st.caption(
+    f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
+    f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}"
+)
 st.write("Cadastre tickers, operações e preços alvo. O monitor roda automaticamente no horário do pregão (ou quando você despausar).")
 
 col1, col2, col3 = st.columns(3)
@@ -298,7 +308,7 @@ st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
 
 st.subheader("🕒 Log de Monitoramento")
-log_container = st.empty()  # renderizamos em HTML estilizado
+log_container = st.empty()  # HTML estilizado (rolável, cores, descendente)
 
 # -----------------------------
 # CICLO ÚNICO + REEXECUÇÃO AUTOMÁTICA
@@ -384,6 +394,11 @@ else:
                         "preco_alvo": preco_alvo,
                         "preco_atual": preco_atual
                     })
+
+                    # ⭐ guarda o ponto do disparo p/ marcar no gráfico
+                    st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
+
+                    # resets
                     st.session_state.status[t] = "🟢 Monitorando"
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
@@ -396,17 +411,46 @@ else:
                         f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
 
-        # Gráfico por status
+        # Gráfico: linhas por ticker (cor consistente) + marcadores de disparo ⭐
         fig = go.Figure()
         for t, dados in st.session_state.precos_historicos.items():
             if len(dados) > 1:
-                tempos, precos = zip(*dados)
-                status = st.session_state.status.get(t, "🟢 Monitorando")
-                cor = "green" if "🟢" in status else "orange" if "🟡" in status else "red"
-                fig.add_trace(go.Scatter(x=tempos, y=precos, mode="lines+markers", name=t, line=dict(color=cor)))
-        fig.update_layout(title="📉 Evolução dos Preços Monitorados",
-                          xaxis_title="Tempo", yaxis_title="Preço (R$)",
-                          legend_title="Ticker")
+                xs, ys = zip(*dados)
+                fig.add_trace(go.Scatter(
+                    x=xs, y=ys,
+                    mode="lines+markers",
+                    name=t,
+                    line=dict(color=color_for_ticker(t), width=2)
+                ))
+
+        # ⭐ marcadores de disparo
+        for t, pontos in st.session_state.disparos.items():
+            if not pontos:
+                continue
+            xs, ys = zip(*pontos)
+            fig.add_trace(go.Scatter(
+                x=xs, y=ys,
+                mode="markers",
+                name=f"Disparo {t}",
+                marker=dict(
+                    symbol="star",
+                    size=12,
+                    color=color_for_ticker(t),       # mesma cor do ticker
+                    line=dict(width=2, color="white")
+                ),
+                hovertemplate=(
+                    f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
+                    "<br><b>DISPARO</b>"
+                    "<br>Preço: R$ %{y:.2f}<extra></extra>"
+                ),
+            ))
+
+        fig.update_layout(
+            title="📉 Evolução dos Preços (com disparos ⭐)",
+            xaxis_title="Tempo", yaxis_title="Preço (R$)",
+            legend_title="Legenda",
+            template="plotly_dark"
+        )
         grafico.plotly_chart(fig, use_container_width=True)
 
         sleep_segundos = INTERVALO_VERIFICACAO  # 5 min
@@ -423,9 +467,9 @@ else:
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
 
-# Renderiza LOG estilizado (decrescente + cores + filtro)
+# Renderiza LOG estilizado (descendente, cores, box rolável)
 with log_container:
-    render_log(st.session_state.log_monitoramento, selected_tickers, max_lines=60)
+    render_log_html(st.session_state.log_monitoramento, max_lines=250)
 
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
