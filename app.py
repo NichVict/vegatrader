@@ -11,16 +11,18 @@ import asyncio
 from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
+from zoneinfo import ZoneInfo  # fuso com DST
 
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
+TZ = ZoneInfo("Europe/Lisbon")                    # usa Lisboa (horário de verão automático)
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
+HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 INTERVALO_VERIFICACAO = 300   # 5 minutos
-TEMPO_ACUMULADO_MAXIMO = 900 # 25 minutos
+TEMPO_ACUMULADO_MAXIMO = 900  # 15 minutos (mude para 1500 = 25 min se quiser)
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -52,8 +54,15 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
     ticker_data = Ticker(ticker_symbol)
+    # tenta preço em tempo real; fallback: fechamento
+    try:
+        p = ticker_data.price.get(ticker_symbol, {}).get("regularMarketPrice")
+        if p is not None:
+            return float(p)
+    except Exception:
+        pass
     preco_atual = ticker_data.history(period="1d")["close"].iloc[-1]
-    return preco_atual
+    return float(preco_atual)
 
 def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, operacao, token_telegram):
     ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
@@ -64,6 +73,7 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
         "COMPLIANCE: AGUARDAR CANDLE 60 MIN."
     )
     remetente = "avisoscanal1milhao@gmail.com"
+    # dica: coloque em st.secrets["gmail_app_password"]
     senha_ou_token = "anoe gegm boqj ldzo"
     destinatario = "docs1milhao@gmail.com"
     assunto = f"ALERTA: {mensagem_operacao} em {ticker_symbol_sem_ext}"
@@ -79,16 +89,35 @@ async def testar_telegram(token_telegram, chat_id):
     except Exception as e:
         return False, str(e)
 
+def agora_lx():
+    return datetime.datetime.now(TZ)
+
+def dentro_pregao(dt_now):
+    t = dt_now.time()
+    return HORARIO_INICIO_PREGAO <= t <= HORARIO_FIM_PREGAO
+
+def segundos_ate_abertura(dt_now):
+    hoje_abre = dt_now.replace(hour=HORARIO_INICIO_PREGAO.hour, minute=0, second=0, microsecond=0)
+    hoje_fecha = dt_now.replace(hour=HORARIO_FIM_PREGAO.hour, minute=0, second=0, microsecond=0)
+    if dt_now < hoje_abre:
+        return int((hoje_abre - dt_now).total_seconds())
+    elif dt_now > hoje_fecha:
+        amanha_abre = hoje_abre + datetime.timedelta(days=1)
+        return int((amanha_abre - dt_now).total_seconds())
+    else:
+        return 0
+
 # -----------------------------
 # ESTADOS GLOBAIS
 # -----------------------------
-for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado", 
-            "em_contagem", "status", "precos_historicos", "monitorando"]:
+for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
+            "em_contagem", "status", "precos_historicos"]:
     if var not in st.session_state:
-        if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"]:
-            st.session_state[var] = {}
-        else:
-            st.session_state[var] = [] if var != "monitorando" else False
+        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
+
+# Modo edição/pausa (permite cadastrar vários tickers antes de monitorar)
+if "pausado" not in st.session_state:
+    st.session_state.pausado = True  # inicia pausado; desmarque para começar quando quiser
 
 # -----------------------------
 # SIDEBAR - CONFIGURAÇÕES E TELEGRAM
@@ -97,6 +126,7 @@ st.sidebar.header("⚙️ Configurações")
 token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
                                        value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
 chat_id_teste = st.sidebar.text_input("Chat ID (grupo ou usuário)", value="-1002533284493")
+st.sidebar.checkbox("⏸️ Pausar monitoramento (modo edição)", key="pausado")
 
 if st.sidebar.button("📤 Testar Envio Telegram"):
     st.sidebar.info("Enviando mensagem de teste...")
@@ -121,8 +151,11 @@ if st.sidebar.button("🧹 Limpar histórico"):
 # -----------------------------
 # INTERFACE PRINCIPAL
 # -----------------------------
+now = agora_lx()
 st.title("📈 CLUBE - COMPRA E VENDA")
-st.write("Cadastre tickers, operações e preços alvo. Depois inicie o monitoramento automático.")
+st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
+           f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}")
+st.write("Cadastre tickers, operações e preços alvo. O monitor roda automaticamente no horário do pregão (ou quando você despausar).")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -145,12 +178,11 @@ if st.button("➕ Adicionar ativo"):
         st.success(f"Ativo {ticker} adicionado com sucesso!")
 
 # -----------------------------
-# COMPONENTES DINÂMICOS
+# STATUS + GRÁFICO + LOG
 # -----------------------------
 st.subheader("📊 Status dos Ativos Monitorados")
 tabela_status = st.empty()
 
-# Exibe tabela antes de iniciar
 if st.session_state.ativos:
     data = []
     for ativo in st.session_state.ativos:
@@ -177,136 +209,138 @@ else:
 
 st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
+
 st.subheader("🕒 Log de Monitoramento")
 log_box = st.empty()
 
 # -----------------------------
-# BOTÕES DE CONTROLE
+# CICLO ÚNICO + REEXECUÇÃO AUTOMÁTICA
 # -----------------------------
-colA, colB = st.columns(2)
-iniciar = colA.button("🚀 Iniciar monitoramento")
-parar = colB.button("🛑 Parar monitoramento")
+sleep_segundos = 60  # padrão fora do pregão / pausado
 
-if parar:
-    st.session_state.monitorando = False
-    st.warning("⏹ Monitoramento interrompido manualmente.")
+# Modo edição/pausa: não monitora; só mantém a página viva
+if st.session_state.pausado:
+    st.session_state.log_monitoramento.append(
+        f"{now.strftime('%H:%M:%S')} | ⏸ Pausado (modo edição)."
+    )
+else:
+    if dentro_pregao(now):
+        # 1) Atualiza tabela/gráfico e monitora
+        data = []
+        for ativo in st.session_state.ativos:
+            t = ativo["ticker"]
+            st.session_state.em_contagem.setdefault(t, False)
+            st.session_state.status.setdefault(t, "🟢 Monitorando")
 
-# -----------------------------
-# LOOP DE MONITORAMENTO
-# -----------------------------
-if iniciar:
-    if not st.session_state.ativos:
-        st.error("Adicione pelo menos um ativo antes de iniciar.")
-    else:
-        st.success("Monitoramento iniciado...")
-        st.session_state.monitorando = True
+            preco_atual = "-"
+            try:
+                preco_atual = obter_preco_atual(f"{t}.SA")
+            except Exception as e:
+                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
 
-        while st.session_state.monitorando:
-            now = datetime.datetime.now()
-            horario = now.time()
+            if preco_atual != "-":
+                st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
 
-            data = []
-            for ativo in st.session_state.ativos:
-                t = ativo["ticker"]
-                preco_atual = "-"
-                try:
-                    preco_atual = obter_preco_atual(f"{t}.SA")
-                except:
-                    pass
+            tempo = st.session_state.tempo_acumulado.get(t, 0)
+            minutos = tempo / 60
+            data.append({
+                "Ticker": t,
+                "Operação": ativo["operacao"].upper(),
+                "Preço Alvo": f"R$ {ativo['preco']:.2f}",
+                "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
+                "Status": st.session_state.status.get(t, "🟢 Monitorando"),
+                "Tempo Acumulado": f"{int(minutos)} min"
+            })
+        if data:
+            tabela_status.table(pd.DataFrame(data))
 
-                # Atualiza histórico
-                if preco_atual != "-":
-                    st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
+        # Lógica por ativo
+        for ativo in st.session_state.ativos:
+            t = ativo["ticker"]
+            preco_alvo = ativo["preco"]
+            operacao = ativo["operacao"]
+            tk_full = f"{t}.SA"
 
-                tempo = st.session_state.tempo_acumulado.get(t, 0)
-                minutos = tempo / 60
-                data.append({
-                    "Ticker": t,
-                    "Operação": ativo["operacao"].upper(),
-                    "Preço Alvo": f"R$ {ativo['preco']:.2f}",
-                    "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
-                    "Status": st.session_state.status.get(t, "🟢 Monitorando"),
-                    "Tempo Acumulado": f"{int(minutos)} min"
-                })
-            df = pd.DataFrame(data)
-            tabela_status.table(df)
+            try:
+                preco_atual = obter_preco_atual(tk_full)
+            except Exception as e:
+                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
+                continue
 
-            if HORARIO_INICIO_PREGAO <= horario <= HORARIO_FIM_PREGAO:
-                for ativo in st.session_state.ativos:
-                    t = ativo["ticker"]
-                    preco_alvo = ativo["preco"]
-                    operacao = ativo["operacao"]
-                    ticker_symbol_full = f"{t}.SA"
+            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
 
-                    try:
-                        preco_atual = obter_preco_atual(ticker_symbol_full)
-                    except Exception as e:
-                        st.session_state.log_monitoramento.append(f"Erro ao buscar {t}: {e}")
-                        continue
+            condicao = (
+                (operacao == "compra" and preco_atual >= preco_alvo) or
+                (operacao == "venda" and preco_atual <= preco_alvo)
+            )
 
-                    msg = f"{now.strftime('%H:%M:%S')} | {ticker_symbol_full}: R$ {preco_atual:.2f}"
-                    st.session_state.log_monitoramento.append(msg)
-                    log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
+            if condicao:
+                st.session_state.status[t] = "🟡 Em contagem"
+                if not st.session_state.em_contagem[t]:
+                    st.session_state.em_contagem[t] = True
+                    st.session_state.tempo_acumulado[t] = 0
+                    st.session_state.log_monitoramento.append(
+                        f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
+                    )
+                st.session_state.tempo_acumulado[t] += INTERVALO_VERIFICACAO
+                st.session_state.log_monitoramento.append(
+                    f"⏱ {t}: {st.session_state.tempo_acumulado[t]}s acumulados"
+                )
 
-                    condicao_atingida = (
-                        (operacao == "compra" and preco_atual >= preco_alvo) or
-                        (operacao == "venda" and preco_atual <= preco_alvo)
+                if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
+                    alerta_msg = notificar_preco_alvo_alcancado(tk_full, preco_alvo, preco_atual, operacao, token_telegram)
+                    st.warning(alerta_msg)
+                    st.session_state.historico_alertas.append({
+                        "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
+                        "ticker": t,
+                        "operacao": operacao,
+                        "preco_alvo": preco_alvo,
+                        "preco_atual": preco_atual
+                    })
+                    st.session_state.status[t] = "🟢 Monitorando"
+                    st.session_state.em_contagem[t] = False
+                    st.session_state.tempo_acumulado[t] = 0
+            else:
+                if st.session_state.em_contagem[t]:
+                    st.session_state.em_contagem[t] = False
+                    st.session_state.tempo_acumulado[t] = 0
+                    st.session_state.status[t] = "🔴 Fora da zona"
+                    st.session_state.log_monitoramento.append(
+                        f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
 
-                    if condicao_atingida:
-                        st.session_state.status[t] = "🟡 Em contagem"
-                        if not st.session_state.em_contagem[t]:
-                            st.session_state.em_contagem[t] = True
-                            st.session_state.tempo_acumulado[t] = 0
-                            st.session_state.log_monitoramento.append(
-                                f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem...")
-                        st.session_state.tempo_acumulado[t] += INTERVALO_VERIFICACAO
-                        st.session_state.log_monitoramento.append(
-                            f"⏱ {t}: {st.session_state.tempo_acumulado[t]}s acumulados")
+        # Gráfico por status
+        fig = go.Figure()
+        for t, dados in st.session_state.precos_historicos.items():
+            if len(dados) > 1:
+                tempos, precos = zip(*dados)
+                status = st.session_state.status.get(t, "🟢 Monitorando")
+                cor = "green" if "🟢" in status else "orange" if "🟡" in status else "red"
+                fig.add_trace(go.Scatter(x=tempos, y=precos, mode="lines+markers", name=t, line=dict(color=cor)))
+        fig.update_layout(title="📉 Evolução dos Preços Monitorados",
+                          xaxis_title="Tempo", yaxis_title="Preço (R$)",
+                          legend_title="Ticker")
+        grafico.plotly_chart(fig, use_container_width=True)
 
-                        if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
-                            alerta_msg = notificar_preco_alvo_alcancado(
-                                ticker_symbol_full, preco_alvo, preco_atual, operacao, token_telegram)
-                            st.warning(alerta_msg)
-                            st.session_state.historico_alertas.append({
-                                "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
-                                "ticker": t,
-                                "operacao": operacao,
-                                "preco_alvo": preco_alvo,
-                                "preco_atual": preco_atual
-                            })
-                            st.session_state.status[t] = "🟢 Monitorando"
-                            st.session_state.em_contagem[t] = False
-                            st.session_state.tempo_acumulado[t] = 0
-                    else:
-                        if st.session_state.em_contagem[t]:
-                            st.session_state.em_contagem[t] = False
-                            st.session_state.tempo_acumulado[t] = 0
-                            st.session_state.status[t] = "🔴 Fora da zona"
-                            st.session_state.log_monitoramento.append(
-                                f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada.")
+        sleep_segundos = INTERVALO_VERIFICACAO  # próximo ciclo em 5 min
 
-                # Gráfico colorido
-                fig = go.Figure()
-                for t, dados in st.session_state.precos_historicos.items():
-                    if len(dados) > 1:
-                        tempos, precos = zip(*dados)
-                        status = st.session_state.status.get(t, "🟢 Monitorando")
-                        cor = "green" if "🟢" in status else "orange" if "🟡" in status else "red"
-                        fig.add_trace(go.Scatter(x=tempos, y=precos, mode="lines+markers",
-                                                 name=t, line=dict(color=cor)))
-                fig.update_layout(title="📉 Evolução dos Preços Monitorados",
-                                  xaxis_title="Tempo", yaxis_title="Preço (R$)",
-                                  legend_title="Ticker")
-                grafico.plotly_chart(fig, use_container_width=True)
+    else:
+        # Fora do pregão: countdown simples no log e aguarda próximo ciclo
+        faltam = segundos_ate_abertura(now)
+        st.session_state.log_monitoramento.append(
+            f"{now.strftime('%H:%M:%S')} | ⏸ Fora do pregão. Abre em ~{faltam}s."
+        )
+        # Se faltar pouco, acorda mais rápido
+        sleep_segundos = min(60, max(1, faltam))
 
-                time.sleep(INTERVALO_VERIFICACAO)
+# Atualiza log no fim do ciclo
+if st.session_state.log_monitoramento:
+    log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
-            else:
-                st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão.")
-                log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
-                time.sleep(300)
+# Dorme e reexecuta (server-side; não depende do navegador)
+time.sleep(sleep_segundos)
+st.experimental_rerun()
+
 
 
 
