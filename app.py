@@ -19,7 +19,7 @@ from streamlit.components.v1 import html  # contador ao vivo (sem recarregar)
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")  # DST automático
-HORARIO_INICIO_PREGAO = dt.time(14, 0, 0)   # ajuste se precisar testar
+HORARIO_INICIO_PREGAO = dt.time(10, 45, 0)   # ajuste se precisar testar
 HORARIO_FIM_PREGAO    = dt.time(21, 0, 0)
 INTERVALO_VERIFICACAO = 300                 # 5 min
 TEMPO_ACUMULADO_MAXIMO = 900                # 15 min (use 1500 = 25 min em produção)
