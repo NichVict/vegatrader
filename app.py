@@ -11,7 +11,7 @@ from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
 from zoneinfo import ZoneInfo
-from streamlit.components.v1 import html  # para contador ao vivo
+from streamlit.components.v1 import html  # contador ao vivo com JS
 
 # -----------------------------
 # CONFIGURAÇÕES
@@ -19,7 +19,7 @@ from streamlit.components.v1 import html  # para contador ao vivo
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")  # DST automático
-HORARIO_INICIO_PREGAO = dt.time(10, 20, 0)  # horário local Lisboa
+HORARIO_INICIO_PREGAO = dt.time(14, 0, 0)  # horário local Lisboa
 HORARIO_FIM_PREGAO    = dt.time(21, 0, 0)
 INTERVALO_VERIFICACAO = 300   # 5 min
 TEMPO_ACUMULADO_MAXIMO = 900  # 15 min (mude para 1500 = 25 min, se quiser)
@@ -340,7 +340,15 @@ if not dentro_pregao(now):
         function pad(n) {{ return String(n).padStart(2,'0'); }}
         function tick(){{
           const now = Date.now();
-          let diff = Math.max(0, Math.floor((target - now)/1000));
+          let diff = Math.floor((target - now)/1000);
+          if (diff <= 0) {{
+            const cd = document.getElementById('cd');
+            const left = document.getElementById('left');
+            if (cd) cd.textContent = "00:00:00";
+            if (left) left.textContent = "00:00:00";
+            setTimeout(function(){{ window.location.reload(); }}, 500);
+            return;
+          }}
           const h = Math.floor(diff/3600);
           diff %= 3600;
           const m = Math.floor(diff/60);
@@ -363,7 +371,8 @@ if st.session_state.monitorando:
         prox_segundos = INTERVALO_VERIFICACAO
     else:
         seg_ate_abertura = max(1, segundos_ate_proxima_abertura(now))
-        prox_segundos = min(seg_ate_abertura, 300)  # ping leve até abrir (5 min)
+        # mais responsivo quando está perto de abrir
+        prox_segundos = 5 if seg_ate_abertura <= 60 else min(seg_ate_abertura, 300)
 else:
     prox_segundos = 600  # com monitoramento parado
 
