@@ -14,19 +14,39 @@ from zoneinfo import ZoneInfo
 from streamlit.components.v1 import html
 
 # =========================
-# CONFIG
+# CONFIG BÁSICA
 # =========================
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
-
 TZ = ZoneInfo("Europe/Lisbon")          # DST automático
-HORARIO_INICIO_PREGAO = dt.time(13, 35)  # 14:00
-HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
 TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min se quiser)
 KEEPALIVE_SECONDS = 60                  # fora do pregão: mantém a página viva
 
 # =========================
-# Funções auxiliares
+# ESTADO INICIAL
+# =========================
+for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
+            "em_contagem", "status", "precos_historicos", "monitorando",
+            "last_run", "auto_start_open", "auto_stop_close", "contagem_inicio",
+            "hora_abre", "hora_fecha"]:
+    if var not in st.session_state:
+        if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos", "contagem_inicio"]:
+            st.session_state[var] = {}
+        elif var in ["monitorando"]:
+            st.session_state[var] = False
+        elif var in ["last_run"]:
+            st.session_state[var] = None
+        elif var in ["auto_start_open", "auto_stop_close"]:
+            st.session_state[var] = True
+        elif var == "hora_abre":
+            st.session_state.hora_abre = dt.time(14, 0)    # padrão B3 (Lisboa)
+        elif var == "hora_fecha":
+            st.session_state.hora_fecha = dt.time(21, 0)   # padrão B3 (Lisboa)
+        else:
+            st.session_state[var] = []
+
+# =========================
+# FUNÇÕES AUXILIARES
 # =========================
 def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
     msg = MIMEMultipart()
@@ -79,61 +99,53 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     enviar_notificacao(destinatario, assunto, msg, remetente, senha_ou_token, token_telegram, chat_ids)
     return msg
 
-# ---- horário robusto (datetime, mesmo dia/fuso) ----
-def _abre_fecha_dt(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
+# ----- Horário do pregão (usando inputs do sidebar) -----
+def get_abre_fecha(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
+    """Retorna datetime de abertura/fechamento com base nos valores configurados no sidebar."""
     now = now.astimezone(TZ)
-    abre = now.replace(hour=HORARIO_INICIO_PREGAO.hour,
-                       minute=HORARIO_INICIO_PREGAO.minute,
+    abre = now.replace(hour=st.session_state.hora_abre.hour,
+                       minute=st.session_state.hora_abre.minute,
                        second=0, microsecond=0)
-    fecha = now.replace(hour=HORARIO_FIM_PREGAO.hour,
-                        minute=HORARIO_FIM_PREGAO.minute,
+    fecha = now.replace(hour=st.session_state.hora_fecha.hour,
+                        minute=st.session_state.hora_fecha.minute,
                         second=0, microsecond=0)
     return abre, fecha
 
 def dentro_pregao(now: dt.datetime) -> bool:
     now = now.astimezone(TZ)
-    abre, fecha = _abre_fecha_dt(now)
+    abre, fecha = get_abre_fecha(now)
     return abre <= now <= fecha
 
 def segundos_ate_proxima_abertura(now: dt.datetime) -> int:
     now = now.astimezone(TZ)
-    abre, fecha = _abre_fecha_dt(now)
+    abre, fecha = get_abre_fecha(now)
     if now < abre:
         return int((abre - now).total_seconds())
     if now > fecha:
         amanha = abre + dt.timedelta(days=1)
         return int((amanha - now).total_seconds())
-    return 0  # dentro do pregão
+    return 0
 
 # =========================
-# Estado inicial
-# =========================
-for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
-            "em_contagem", "status", "precos_historicos", "monitorando",
-            "last_run", "auto_start_open", "auto_stop_close", "contagem_inicio"]:
-    if var not in st.session_state:
-        if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos", "contagem_inicio"]:
-            st.session_state[var] = {}
-        elif var in ["monitorando"]:
-            st.session_state[var] = False
-        elif var in ["last_run"]:
-            st.session_state[var] = None
-        elif var in ["auto_start_open", "auto_stop_close"]:
-            st.session_state[var] = True  # ligados por padrão
-        else:
-            st.session_state[var] = []
-
-# =========================
-# Sidebar
+# SIDEBAR (inclui horários configuráveis + teste Telegram)
 # =========================
 st.sidebar.header("⚙️ Configurações")
+st.sidebar.write("Horários do pregão (Europe/Lisbon):")
+st.session_state.hora_abre = st.sidebar.time_input("Abertura", value=st.session_state.hora_abre, step=60)
+st.session_state.hora_fecha = st.sidebar.time_input("Fechamento", value=st.session_state.hora_fecha, step=60)
+
 token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
                                        value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
 chat_id_teste = st.sidebar.text_input("Chat ID (grupo ou usuário)", value="-1002533284493")
 if st.sidebar.button("📤 Testar Telegram"):
     st.sidebar.info("Enviando mensagem de teste...")
-    ok, erro = asyncio.run(testar_telegram(token_telegram, chat_id_teste))
-    st.sidebar.success("✅ Mensagem enviada!") if ok else st.sidebar.error(f"❌ {erro}")
+    async def _t(token, chat):
+        try:
+            bot = Bot(token=token); await bot.send_message(chat_id=chat, text="✅ Teste OK")
+            st.sidebar.success("✅ Mensagem enviada!")
+        except Exception as e:
+            st.sidebar.error(f"❌ {e}")
+    asyncio.run(_t(token_telegram, chat_id_teste))
 
 st.sidebar.divider()
 st.sidebar.checkbox("▶️ Iniciar automaticamente na abertura", key="auto_start_open", value=st.session_state.auto_start_open)
@@ -147,17 +159,25 @@ if st.session_state.historico_alertas:
 else:
     st.sidebar.info("Nenhum alerta ainda.")
 if st.sidebar.button("🧹 Limpar histórico"):
-    st.session_state.historico_alertas.clear()
-    st.sidebar.success("Histórico limpo!")
+    st.session_state.historico_alertas.clear(); st.sidebar.success("Histórico limpo!")
 
 # =========================
-# UI principal
+# CABEÇALHO + DEBUG CLARO
 # =========================
 now_global = dt.datetime.now(TZ)
-st.title("📈 CLUBE - COMPRA E VENDA")
-st.caption(f"Agora: {now_global.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
-           f"{'🟩 Dentro do pregão' if dentro_pregao(now_global) else '🟥 Fora do pregão'}")
+abre_dbg, fecha_dbg = get_abre_fecha(now_global)
 
+st.title("📈 CLUBE - COMPRA E VENDA")
+status_txt = "🟩 Dentro do pregão" if dentro_pregao(now_global) else "🟥 Fora do pregão"
+st.caption(f"Agora: {now_global.strftime('%Y-%m-%d %H:%M:%S %Z')} — {status_txt}")
+st.caption(
+    f"DEBUG ▸ abre={abre_dbg.strftime('%H:%M:%S')} | fecha={fecha_dbg.strftime('%H:%M:%S')} | "
+    f"dentro_pregao={dentro_pregao(now_global)}"
+)
+
+# =========================
+# UI de cadastro de ativos
+# =========================
 c1, c2, c3 = st.columns(3)
 with c1:
     ticker = st.text_input("Ticker (ex: PETR4)").upper()
@@ -186,7 +206,7 @@ grafico = st.empty()
 st.subheader("🕒 Log de Monitoramento")
 log_box = st.empty()
 
-# Controles manuais
+# Controles manuais (continuam disponíveis)
 b1, b2 = st.columns(2)
 if b1.button("🚀 Iniciar monitoramento"):
     st.session_state.monitorando = True
@@ -195,7 +215,7 @@ if b2.button("🛑 Parar monitoramento"):
     st.warning("⏹ Monitoramento interrompido manualmente.")
 
 # =========================
-# Render: tabela + gráfico
+# TABELA + GRÁFICO
 # =========================
 def render_tabela_e_grafico():
     if not st.session_state.ativos:
@@ -236,32 +256,33 @@ def render_tabela_e_grafico():
 render_tabela_e_grafico()
 
 # =========================
-# Monitoramento (auto-start efetivo + contagem por relógio real)
+# MONITORAMENTO — AUTO-START EFETIVO
 # =========================
 def ciclo_monitoramento():
     now = dt.datetime.now(TZ)
 
-    # >>>>>>> AUTO-START EFETIVO (sem depender do botão/rerun) <<<<<<<
+    # roda se: monitorando==True OU (auto_start ativo E estamos no pregão)
     monitorando_efetivo = st.session_state.get("monitorando", False) \
         or (st.session_state.get("auto_start_open", True) and dentro_pregao(now))
 
-    # sincroniza o estado visual se entrar no pregão
+    # sincroniza UI se entrou no pregão
     if monitorando_efetivo and not st.session_state.get("monitorando", False):
         st.session_state.monitorando = True
+
+    # se for para parar automaticamente fora do pregão
+    if st.session_state.get("auto_stop_close", True) and not dentro_pregao(now):
+        if st.session_state.get("monitorando", False):
+            st.session_state.monitorando = False
+        if not monitorando_efetivo:
+            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão.")
+            return
 
     if not monitorando_efetivo:
         return
 
-    if not dentro_pregao(now):
-        st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão.")
-        return
-
+    # dentro do pregão: monitora
     for a in st.session_state.ativos:
-        t = a["ticker"]
-        alvo = a["preco"]
-        op = a["operacao"]
-        tk_full = f"{t}.SA"
-
+        t = a["ticker"]; alvo = a["preco"]; op = a["operacao"]; tk_full = f"{t}.SA"
         try:
             preco = obter_preco_atual(tk_full)
         except Exception as e:
@@ -273,7 +294,6 @@ def ciclo_monitoramento():
         cond = (op == "compra" and preco >= alvo) or (op == "venda" and preco <= alvo)
         if cond:
             st.session_state.status[t] = "🟡 Em contagem"
-            # inicia ponto de contagem com timestamp absoluto
             if not st.session_state.em_contagem.get(t, False):
                 st.session_state.em_contagem[t] = True
                 st.session_state.contagem_inicio[t] = now
@@ -281,7 +301,6 @@ def ciclo_monitoramento():
                 st.session_state.log_monitoramento.append(
                     f"⚠️ {t} atingiu o alvo ({alvo:.2f}). Iniciando contagem..."
                 )
-            # calcula tempo decorrido real
             if st.session_state.contagem_inicio.get(t):
                 elapsed = int((now - st.session_state.contagem_inicio[t]).total_seconds())
                 st.session_state.tempo_acumulado[t] = min(elapsed, TEMPO_ACUMULADO_MAXIMO)
@@ -292,8 +311,7 @@ def ciclo_monitoramento():
                 st.warning(alerta_msg)
                 st.session_state.historico_alertas.append({
                     "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
-                    "ticker": t, "operacao": op,
-                    "preco_alvo": alvo, "preco_atual": preco
+                    "ticker": t, "operacao": op, "preco_alvo": alvo, "preco_atual": preco
                 })
                 st.session_state.status[t] = "🟢 Monitorando"
                 st.session_state.em_contagem[t] = False
@@ -314,12 +332,13 @@ if st.session_state.log_monitoramento:
     log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
 # =========================
-# Card de contador (visual sincronizado c/ servidor)
+# CONTADOR REGRESSIVO (sincronizado com servidor)
 # =========================
 now = dt.datetime.now(TZ)
 if not dentro_pregao(now):
     seg = max(1, segundos_ate_proxima_abertura(now))
-    abertura_str = HORARIO_INICIO_PREGAO.strftime('%H:%M')
+    abre_dt, _ = get_abre_fecha(now)
+    abertura_str = abre_dt.strftime('%H:%M')
     target_ts_ms = int((now + dt.timedelta(seconds=seg)).timestamp() * 1000)
     server_now_ms = int(now.timestamp() * 1000)
 
@@ -337,8 +356,7 @@ if not dentro_pregao(now):
       (function(){{
         const TARGET = {target_ts_ms};
         const SERVER_NOW = {server_now_ms};
-        // diferença entre relógio do navegador e do servidor
-        const OFFSET = Date.now() - SERVER_NOW;
+        const OFFSET = Date.now() - SERVER_NOW;  // corrige relógio do browser
 
         function pad(n) {{ return String(n).padStart(2,'0'); }}
         function tick(){{
@@ -361,7 +379,7 @@ if not dentro_pregao(now):
     """, height=100)
 
 # =========================
-# Refresh (mais curto perto da abertura)
+# REFRESH automático (curto perto da abertura)
 # =========================
 now_final = dt.datetime.now(TZ)
 faltam = segundos_ate_proxima_abertura(now_final)
@@ -380,7 +398,6 @@ st.markdown(
     f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox*1000});</script>",
     unsafe_allow_html=True
 )
-
 
 
 
