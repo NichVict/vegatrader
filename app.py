@@ -18,13 +18,12 @@ from streamlit.components.v1 import html
 # =========================
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
-
-TZ = ZoneInfo("Europe/Lisbon")          # horário de Lisboa com DST
-HORARIO_INICIO_PREGAO = dt.time(11, 28)  # 14:00
+TZ = ZoneInfo("Europe/Lisbon")          # horário de Lisboa (DST automático)
+HORARIO_INICIO_PREGAO = dt.time(11, 40)  # 14:00
 HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
-TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (ajuste para 1500 = 25 min)
-KEEPALIVE_SECONDS = 60                  # fora do pregão: mantém a página viva
+TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min em produção)
+KEEPALIVE_SECONDS = 60                   # fora do pregão: mantém a página viva (fixo)
 
 # =========================
 # Funções auxiliares
@@ -56,12 +55,14 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol: str) -> float:
     tk = Ticker(ticker_symbol)
+    # tenta preço em tempo real
     try:
         p = tk.price[ticker_symbol].get("regularMarketPrice")
         if p is not None:
             return float(p)
     except Exception:
         pass
+    # fallback: último fechamento
     return float(tk.history(period="1d")["close"].iloc[-1])
 
 def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, operacao, token_telegram):
@@ -105,7 +106,7 @@ def segundos_ate_proxima_abertura(now: dt.datetime) -> int:
     return 0
 
 # =========================
-# Estado
+# Estado inicial
 # =========================
 for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
             "em_contagem", "status", "precos_historicos", "monitorando",
@@ -118,7 +119,7 @@ for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado
         elif var in ["last_run"]:
             st.session_state[var] = None
         elif var in ["auto_start_open", "auto_stop_close"]:
-            st.session_state[var] = True   # ligados por padrão
+            st.session_state[var] = True  # ligados por padrão
         else:
             st.session_state[var] = []
 
@@ -150,19 +151,31 @@ if st.sidebar.button("🧹 Limpar histórico"):
     st.sidebar.success("Histórico limpo!")
 
 # =========================
-# Auto start/stop por horário
+# Auto start/stop por horário (DEPOIS das funções e ANTES da UI)
 # =========================
+now_global = dt.datetime.now(TZ)
+
+auto_start = st.session_state.get("auto_start_open", True)
+auto_stop  = st.session_state.get("auto_stop_close", True)
+monitorando_flag = st.session_state.get("monitorando", False)
+
 # START automático na abertura
-if st.session_state.auto_start_open and not st.session_state.monitorando and dentro_pregao(now_global):
+if auto_start and not monitorando_flag and dentro_pregao(now_global):
     st.session_state.monitorando = True
     st.toast("▶️ Monitoramento iniciado automaticamente (abertura do pregão).", icon="✅")
-    st.rerun()  # <— força novo ciclo imediatamente
+    try:
+        st.rerun()
+    except Exception:
+        st.experimental_rerun()
 
 # STOP automático no fechamento
-if st.session_state.auto_stop_close and st.session_state.monitorando and not dentro_pregao(now_global):
+if auto_stop and monitorando_flag and not dentro_pregao(now_global):
     st.session_state.monitorando = False
     st.toast("⏹ Monitoramento parado automaticamente (fechamento).", icon="🛑")
-    st.rerun()  # <— idem
+    try:
+        st.rerun()
+    except Exception:
+        st.experimental_rerun()
 
 # =========================
 # UI principal
@@ -362,19 +375,14 @@ if not dentro_pregao(now):
 if st.session_state.monitorando and dentro_pregao(now):
     prox = INTERVALO_VERIFICACAO
 else:
-    faltam = segundos_ate_proxima_abertura(now)
-    if not dentro_pregao(now) and faltam <= 60:
-        prox = 1
-    elif not dentro_pregao(now) and faltam <= 600:
-        prox = 5
-    else:
-        prox = KEEPALIVE_SECONDS
+    prox = KEEPALIVE_SECONDS
 
 st.caption(f"🔄 Próxima atualização automática em ~{prox} segundos.")
 st.markdown(
     f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox*1000});</script>",
     unsafe_allow_html=True
 )
+
 
 
 
