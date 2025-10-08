@@ -11,7 +11,7 @@ from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
 from zoneinfo import ZoneInfo
-from streamlit.components.v1 import html  # contador ao vivo com JS
+from streamlit.components.v1 import html  # contador ao vivo (sem recarregar)
 
 # -----------------------------
 # CONFIGURAÇÕES
@@ -19,10 +19,10 @@ from streamlit.components.v1 import html  # contador ao vivo com JS
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")  # DST automático
-HORARIO_INICIO_PREGAO = dt.time(10, 30, 0)  # horário local Lisboa
+HORARIO_INICIO_PREGAO = dt.time(14, 0, 0)   # ajuste se precisar testar
 HORARIO_FIM_PREGAO    = dt.time(21, 0, 0)
-INTERVALO_VERIFICACAO = 300   # 5 min
-TEMPO_ACUMULADO_MAXIMO = 900  # 15 min (mude para 1500 = 25 min, se quiser)
+INTERVALO_VERIFICACAO = 300                 # 5 min
+TEMPO_ACUMULADO_MAXIMO = 900                # 15 min (use 1500 = 25 min em produção)
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -54,14 +54,12 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol: str) -> float:
     tk = Ticker(ticker_symbol)
-    # tenta preço em tempo real
     try:
         p = tk.price[ticker_symbol].get("regularMarketPrice")
         if p is not None:
             return float(p)
     except Exception:
         pass
-    # fallback: último fechamento
     return float(tk.history(period="1d")["close"].iloc[-1])
 
 def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, operacao, token_telegram):
@@ -218,7 +216,6 @@ def render_tabela_e_grafico():
     df = pd.DataFrame(data_rows)
     tabela_status.table(df)
 
-    # gráfico colorido por status
     fig = go.Figure()
     for t, dados in st.session_state.precos_historicos.items():
         if len(dados) > 1:
@@ -266,12 +263,12 @@ def ciclo_monitoramento():
             f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}"
         )
 
-        condicao = (
+        cond = (
             (operacao == "compra" and preco_atual >= preco_alvo) or
             (operacao == "venda"  and preco_atual <= preco_alvo)
         )
 
-        if condicao:
+        if cond:
             st.session_state.status[t] = "🟡 Em contagem"
             if not st.session_state.em_contagem[t]:
                 st.session_state.em_contagem[t] = True
@@ -314,16 +311,16 @@ if st.session_state.log_monitoramento:
     log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
 # -----------------------------
-# CONTADOR AO VIVO + AUTO-REFRESH
+# CONTADOR AO VIVO (sem recarregar) + AUTO-REFRESH INTELIGENTE
 # -----------------------------
 now = dt.datetime.now(TZ)
 
-# contador ao vivo quando pregão estiver fechado (independente do monitoramento ligado)
 if not dentro_pregao(now):
     seg_ate_abertura = max(1, segundos_ate_proxima_abertura(now))
     abertura_str = HORARIO_INICIO_PREGAO.strftime('%H:%M')
     target_ts_ms = int((now + dt.timedelta(seconds=seg_ate_abertura)).timestamp() * 1000)
 
+    # Contador ao vivo apenas visual (NÃO recarrega)
     html(f"""
     <div style="font-family:system-ui,Segoe UI,Roboto,Arial;color:#d1d5db;">
       <div style="background:#0b2a43;padding:12px 14px;border-radius:8px;margin-top:8px;">
@@ -340,15 +337,7 @@ if not dentro_pregao(now):
         function pad(n) {{ return String(n).padStart(2,'0'); }}
         function tick(){{
           const now = Date.now();
-          let diff = Math.floor((target - now)/1000);
-          if (diff <= 0) {{
-            const cd = document.getElementById('cd');
-            const left = document.getElementById('left');
-            if (cd) cd.textContent = "00:00:00";
-            if (left) left.textContent = "00:00:00";
-            setTimeout(function(){{ window.location.reload(); }}, 500);
-            return;
-          }}
+          let diff = Math.max(0, Math.floor((target - now)/1000));
           const h = Math.floor(diff/3600);
           diff %= 3600;
           const m = Math.floor(diff/60);
@@ -365,18 +354,30 @@ if not dentro_pregao(now):
     </script>
     """, height=100)
 
-# intervalo para o próximo refresh (reativo)
+# Agendamento do próximo refresh:
+# - Em pregão: a cada INTERVALO_VERIFICACAO
+# - Fora do pregão: se faltar <= 60s, atualiza a cada 1s;
+#                   se faltar <= 10min, atualiza a cada 5s;
+#                   se faltar <= 60min, atualiza a cada 60s;
+#                   senão, a cada 300s
 if st.session_state.monitorando:
     if dentro_pregao(now):
         prox_segundos = INTERVALO_VERIFICACAO
     else:
-        seg_ate_abertura = max(1, segundos_ate_proxima_abertura(now))
-        # mais responsivo quando está perto de abrir
-        prox_segundos = 5 if seg_ate_abertura <= 60 else min(seg_ate_abertura, 300)
+        s = max(1, segundos_ate_proxima_abertura(now))
+        if s <= 60:
+            prox_segundos = 1
+        elif s <= 600:
+            prox_segundos = 5
+        elif s <= 3600:
+            prox_segundos = 60
+        else:
+            prox_segundos = 300
 else:
-    prox_segundos = 600  # com monitoramento parado
+    prox_segundos = 600  # monitoramento parado
 
 st.caption(f"🔄 Próxima atualização automática em ~{prox_segundos} segundos.")
+# Auto-refresh via JS (intervalo variável) — NÃO recarrega no zero, evitando "piscar"
 st.markdown(
     f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox_segundos*1000});</script>",
     unsafe_allow_html=True
