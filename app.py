@@ -18,14 +18,9 @@ from streamlit.components.v1 import html
 # =========================
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
-now_dbg = dt.datetime.now(TZ)
-st.caption(f"DEBUG ▸ monitorando={st.session_state.get('monitorando', False)} | "
-           f"dentro_pregao={HORARIO_INICIO_PREGAO <= now_dbg.time() <= HORARIO_FIM_PREGAO} | "
-           f"agora={now_dbg.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-
 
 TZ = ZoneInfo("Europe/Lisbon")          # horário de Lisboa com DST
-HORARIO_INICIO_PREGAO = dt.time(11, 24)  # 14:00
+HORARIO_INICIO_PREGAO = dt.time(11, 28)  # 14:00
 HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
 TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (ajuste para 1500 = 25 min)
@@ -157,14 +152,17 @@ if st.sidebar.button("🧹 Limpar histórico"):
 # =========================
 # Auto start/stop por horário
 # =========================
-now_global = dt.datetime.now(TZ)
+# START automático na abertura
 if st.session_state.auto_start_open and not st.session_state.monitorando and dentro_pregao(now_global):
     st.session_state.monitorando = True
     st.toast("▶️ Monitoramento iniciado automaticamente (abertura do pregão).", icon="✅")
+    st.rerun()  # <— força novo ciclo imediatamente
 
+# STOP automático no fechamento
 if st.session_state.auto_stop_close and st.session_state.monitorando and not dentro_pregao(now_global):
     st.session_state.monitorando = False
     st.toast("⏹ Monitoramento parado automaticamente (fechamento).", icon="🛑")
+    st.rerun()  # <— idem
 
 # =========================
 # UI principal
