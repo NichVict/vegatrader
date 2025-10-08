@@ -1,6 +1,6 @@
 import streamlit as st
 from yahooquery import Ticker
-import datetime
+import datetime as dt
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -10,33 +10,34 @@ import asyncio
 from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
+from zoneinfo import ZoneInfo  # <- fuso com DST
 
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
-INTERVALO_VERIFICACAO = 300   # 5 minutos
-TEMPO_ACUMULADO_MAXIMO = 900  # <-- você configurou 900 (15 min) para teste; 25 min seria 1500
+TZ = ZoneInfo("Europe/Lisbon")  # horário de Lisboa com horário de verão automático
+HORARIO_INICIO_PREGAO = dt.time(14, 0, 0)  # em Lisboa
+HORARIO_FIM_PREGAO    = dt.time(21, 0, 0)  # em Lisboa
+INTERVALO_VERIFICACAO = 300   # 5 min
+TEMPO_ACUMULADO_MAXIMO = 900  # 15 min (ajuste para 1500 se quiser 25 min)
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
 # -----------------------------
 def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
-    mensagem = MIMEMultipart()
-    mensagem["From"] = remetente
-    mensagem["To"] = destinatario
-    mensagem["Subject"] = assunto
-    mensagem.attach(MIMEText(corpo, "plain"))
-    with smtplib.SMTP("smtp.gmail.com", 587) as servidor:
-        servidor.starttls()
-        servidor.login(remetente, senha_ou_token)
-        servidor.send_message(mensagem)
+    msg = MIMEMultipart()
+    msg["From"] = remetente
+    msg["To"] = destinatario
+    msg["Subject"] = assunto
+    msg.attach(MIMEText(corpo, "plain"))
+    with smtplib.SMTP("smtp.gmail.com", 587) as s:
+        s.starttls()
+        s.login(remetente, senha_ou_token)
+        s.send_message(msg)
 
 def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
-    """Envia e-mail e Telegram"""
     enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
     async def send_telegram():
         try:
@@ -47,20 +48,20 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
             print(f"Erro Telegram: {e}")
     asyncio.run(send_telegram())
 
-@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
+@retry(stop=stop_after_attempt(5),
+       wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
-def obter_preco_atual(ticker_symbol):
-    ticker_data = Ticker(ticker_symbol)
-    # tenta preço em tempo real primeiro
+def obter_preco_atual(ticker_symbol: str) -> float:
+    tk = Ticker(ticker_symbol)
+    # tenta preço em tempo real
     try:
-        p = ticker_data.price[ticker_symbol].get("regularMarketPrice")
+        p = tk.price[ticker_symbol].get("regularMarketPrice")
         if p is not None:
             return float(p)
     except Exception:
         pass
-    # fallback último fechamento
-    preco_atual = ticker_data.history(period="1d")["close"].iloc[-1]
-    return float(preco_atual)
+    # fallback: último fechamento
+    return float(tk.history(period="1d")["close"].iloc[-1])
 
 def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, operacao, token_telegram):
     ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
@@ -86,11 +87,11 @@ async def testar_telegram(token_telegram, chat_id):
     except Exception as e:
         return False, str(e)
 
-def dentro_pregao(now: datetime.datetime) -> bool:
+def dentro_pregao(now: dt.datetime) -> bool:
     t = now.time()
     return HORARIO_INICIO_PREGAO <= t <= HORARIO_FIM_PREGAO
 
-def segundos_ate_proxima_abertura(now: datetime.datetime) -> int:
+def segundos_ate_proxima_abertura(now: dt.datetime) -> int:
     hoje_abre = now.replace(hour=HORARIO_INICIO_PREGAO.hour, minute=HORARIO_INICIO_PREGAO.minute,
                             second=0, microsecond=0)
     fecha = now.replace(hour=HORARIO_FIM_PREGAO.hour, minute=HORARIO_FIM_PREGAO.minute,
@@ -98,9 +99,9 @@ def segundos_ate_proxima_abertura(now: datetime.datetime) -> int:
     if now < hoje_abre:
         return int((hoje_abre - now).total_seconds())
     if now > fecha:
-        amanha = hoje_abre + datetime.timedelta(days=1)
+        amanha = hoje_abre + dt.timedelta(days=1)
         return int((amanha - now).total_seconds())
-    return 0  # já está no pregão
+    return 0
 
 # -----------------------------
 # ESTADOS GLOBAIS
@@ -118,20 +119,16 @@ for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado
             st.session_state[var] = []
 
 # -----------------------------
-# SIDEBAR - CONFIGURAÇÕES E TELEGRAM
+# SIDEBAR – TELEGRAM & HISTÓRICO
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
                                        value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
 chat_id_teste = st.sidebar.text_input("Chat ID (grupo ou usuário)", value="-1002533284493")
-
 if st.sidebar.button("📤 Testar Envio Telegram"):
     st.sidebar.info("Enviando mensagem de teste...")
     ok, erro = asyncio.run(testar_telegram(token_telegram, chat_id_teste))
-    if ok:
-        st.sidebar.success("✅ Mensagem enviada com sucesso!")
-    else:
-        st.sidebar.error(f"❌ Falha: {erro}")
+    st.sidebar.success("✅ Mensagem enviada!") if ok else st.sidebar.error(f"❌ {erro}")
 
 st.sidebar.header("📜 Histórico de Alertas")
 if st.session_state.historico_alertas:
@@ -140,7 +137,6 @@ if st.session_state.historico_alertas:
         st.sidebar.caption(f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}")
 else:
     st.sidebar.info("Nenhum alerta ainda.")
-
 if st.sidebar.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
     st.sidebar.success("Histórico limpo!")
@@ -172,7 +168,7 @@ if st.button("➕ Adicionar ativo"):
         st.success(f"Ativo {ticker} adicionado com sucesso!")
 
 # -----------------------------
-# COMPONENTES DINÂMICOS
+# ÁREAS DINÂMICAS
 # -----------------------------
 st.subheader("📊 Status dos Ativos Monitorados")
 tabela_status = st.empty()
@@ -182,7 +178,7 @@ st.subheader("🕒 Log de Monitoramento")
 log_box = st.empty()
 
 # -----------------------------
-# BOTÕES DE CONTROLE
+# CONTROLES
 # -----------------------------
 colA, colB = st.columns(2)
 if colA.button("🚀 Iniciar monitoramento"):
@@ -192,62 +188,61 @@ if colB.button("🛑 Parar monitoramento"):
     st.warning("⏹ Monitoramento interrompido manualmente.")
 
 # -----------------------------
-# 1) RENDERIZAÇÃO DA TABELA (SEMPRE)
+# RENDER TABELA + GRÁFICO (sempre)
 # -----------------------------
 def render_tabela_e_grafico():
-    if st.session_state.ativos:
-        now = datetime.datetime.now()
-        data = []
-        for ativo in st.session_state.ativos:
-            t = ativo["ticker"]
-            try:
-                preco_atual = obter_preco_atual(f"{t}.SA")
-            except Exception:
-                preco_atual = "-"
-            if preco_atual != "-":
-                st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
-            tempo = st.session_state.tempo_acumulado.get(t, 0)
-            data.append({
-                "Ticker": t,
-                "Operação": ativo["operacao"].upper(),
-                "Preço Alvo": f"R$ {ativo['preco']:.2f}",
-                "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
-                "Status": st.session_state.status.get(t, "🟢 Monitorando"),
-                "Tempo Acumulado": f"{int(tempo/60)} min"
-            })
-        df = pd.DataFrame(data)
-        tabela_status.table(df)
-
-        # gráfico colorido por status
-        fig = go.Figure()
-        for t, dados in st.session_state.precos_historicos.items():
-            if len(dados) > 1:
-                tempos, precos = zip(*dados)
-                status = st.session_state.status.get(t, "🟢 Monitorando")
-                cor = "green" if "🟢" in status else "orange" if "🟡" in status else "red"
-                fig.add_trace(go.Scatter(x=tempos, y=precos, mode="lines+markers",
-                                         name=t, line=dict(color=cor)))
-        fig.update_layout(title="📉 Evolução dos Preços Monitorados",
-                          xaxis_title="Tempo", yaxis_title="Preço (R$)",
-                          legend_title="Ticker")
-        grafico.plotly_chart(fig, use_container_width=True)
-    else:
+    if not st.session_state.ativos:
         st.info("Nenhum ativo cadastrado ainda.")
+        return
+
+    now = dt.datetime.now(TZ)
+    data_rows = []
+    for ativo in st.session_state.ativos:
+        t = ativo["ticker"]
+        try:
+            preco_atual = obter_preco_atual(f"{t}.SA")
+        except Exception:
+            preco_atual = "-"
+        if preco_atual != "-":
+            st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
+        tempo = st.session_state.tempo_acumulado.get(t, 0)
+        data_rows.append({
+            "Ticker": t,
+            "Operação": ativo["operacao"].upper(),
+            "Preço Alvo": f"R$ {ativo['preco']:.2f}",
+            "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
+            "Status": st.session_state.status.get(t, "🟢 Monitorando"),
+            "Tempo Acumulado": f"{int(tempo/60)} min"
+        })
+    st.table(pd.DataFrame(data_rows))
+
+    # gráfico colorido por status
+    fig = go.Figure()
+    for t, dados in st.session_state.precos_historicos.items():
+        if len(dados) > 1:
+            tempos, precos = zip(*dados)
+            status = st.session_state.status.get(t, "🟢 Monitorando")
+            cor = "green" if "🟢" in status else "orange" if "🟡" in status else "red"
+            fig.add_trace(go.Scatter(x=tempos, y=precos, mode="lines+markers",
+                                     name=t, line=dict(color=cor)))
+    fig.update_layout(title="📉 Evolução dos Preços Monitorados",
+                      xaxis_title="Tempo", yaxis_title="Preço (R$)",
+                      legend_title="Ticker")
+    grafico.plotly_chart(fig, use_container_width=True)
 
 render_tabela_e_grafico()
 
 # -----------------------------
-# 2) UM CICLO DE MONITORAMENTO (SEM WHILE/SLEEP)
+# UM CICLO DE MONITORAMENTO (reativo, sem while/sleep)
 # -----------------------------
 def ciclo_monitoramento():
-    now = datetime.datetime.now()
+    now = dt.datetime.now(TZ)
     last_run = st.session_state.last_run
-    # tempo decorrido desde o último ciclo (para acumular com precisão)
     dt_secs = 0 if last_run is None else max(0, int((now - last_run).total_seconds()))
     st.session_state.last_run = now
 
     if not st.session_state.monitorando:
-        return  # nada a fazer
+        return
 
     if not dentro_pregao(now):
         st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão.")
@@ -257,24 +252,24 @@ def ciclo_monitoramento():
         t = ativo["ticker"]
         preco_alvo = ativo["preco"]
         operacao = ativo["operacao"]
-        ticker_symbol_full = f"{t}.SA"
+        tk_full = f"{t}.SA"
 
         try:
-            preco_atual = obter_preco_atual(ticker_symbol_full)
+            preco_atual = obter_preco_atual(tk_full)
         except Exception as e:
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
             continue
 
         st.session_state.log_monitoramento.append(
-            f"{now.strftime('%H:%M:%S')} | {ticker_symbol_full}: R$ {preco_atual:.2f}"
+            f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}"
         )
 
-        condicao_atingida = (
+        condicao = (
             (operacao == "compra" and preco_atual >= preco_alvo) or
             (operacao == "venda"  and preco_atual <= preco_alvo)
         )
 
-        if condicao_atingida:
+        if condicao:
             st.session_state.status[t] = "🟡 Em contagem"
             if not st.session_state.em_contagem[t]:
                 st.session_state.em_contagem[t] = True
@@ -282,16 +277,14 @@ def ciclo_monitoramento():
                 st.session_state.log_monitoramento.append(
                     f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
                 )
-            # acumula de acordo com o tempo decorrido desde a última execução (cap a INTERVALO_VERIFICACAO)
             incremento = INTERVALO_VERIFICACAO if dt_secs == 0 else min(dt_secs, INTERVALO_VERIFICACAO)
             st.session_state.tempo_acumulado[t] += incremento
             st.session_state.log_monitoramento.append(
                 f"⏱ {t}: {st.session_state.tempo_acumulado[t]}s acumulados"
             )
-
             if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
                 alerta_msg = notificar_preco_alvo_alcancado(
-                    ticker_symbol_full, preco_alvo, preco_atual, operacao, token_telegram
+                    tk_full, preco_alvo, preco_atual, operacao, token_telegram
                 )
                 st.warning(alerta_msg)
                 st.session_state.historico_alertas.append({
@@ -304,7 +297,6 @@ def ciclo_monitoramento():
                 st.session_state.status[t] = "🟢 Monitorando"
                 st.session_state.em_contagem[t] = False
                 st.session_state.tempo_acumulado[t] = 0
-
         else:
             if st.session_state.em_contagem[t]:
                 st.session_state.em_contagem[t] = False
@@ -314,43 +306,37 @@ def ciclo_monitoramento():
                     f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                 )
 
-# roda um ciclo (se necessário)
 ciclo_monitoramento()
 
-# mostra últimas linhas do log
 if st.session_state.log_monitoramento:
     log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
 # -----------------------------
-# 3) AUTO-REFRESH INTELIGENTE (SEM BLOQUEAR)
+# AUTO-REFRESH INTELIGENTE + CONTADOR (limpo)
 # -----------------------------
-now = datetime.datetime.now()
+now = dt.datetime.now(TZ)
 
-# Se estiver fora do pregão, mostre contagem regressiva até a abertura
-if st.session_state.monitorando and not dentro_pregao(now):
+# contador ao vivo quando pregão estiver fechado (independente de monitoramento ligado)
+if not dentro_pregao(now):
     seg_ate_abertura = max(1, segundos_ate_proxima_abertura(now))
-    h = seg_ate_abertura // 3600
-    m = (seg_ate_abertura % 3600) // 60
-    s = seg_ate_abertura % 60
-
+    h, r = divmod(seg_ate_abertura, 3600)
+    m, s = divmod(r, 60)
     st.info(
         f"⏳ Pregão fechado. Reabre em **{h:02d}:{m:02d}:{s:02d}** "
         f"(às {HORARIO_INICIO_PREGAO.strftime('%H:%M')})."
     )
-
-    # Contador ao vivo (JS) até a abertura
-    target_ts_ms = int((now + datetime.timedelta(seconds=seg_ate_abertura)).timestamp() * 1000)
+    target_ts_ms = int((now + dt.timedelta(seconds=seg_ate_abertura)).timestamp() * 1000)
     st.markdown(f"""
     <div style="font-size:1.05rem;margin:4px 0 10px;">
-      ⏱️ Contagem regressiva: <b><span id="cd">--:--:--</span></b>
+      ⏱️ <b>Contagem regressiva: <span id="cd">--:--:--</span></b>
     </div>
     <script>
     (function() {{
       const target = {target_ts_ms};
       function pad(n) {{ return n.toString().padStart(2, '0'); }}
       function tick() {{
-        const now = Date.now();
-        let diff = Math.max(0, Math.floor((target - now) / 1000));
+        const nowMs = Date.now();
+        let diff = Math.max(0, Math.floor((target - nowMs) / 1000));
         const h = Math.floor(diff / 3600);
         diff %= 3600;
         const m = Math.floor(diff / 60);
@@ -364,7 +350,7 @@ if st.session_state.monitorando and not dentro_pregao(now):
     </script>
     """, unsafe_allow_html=True)
 
-# Lógica de intervalo para o próximo refresh
+# intervalo para o próximo refresh
 if st.session_state.monitorando:
     if dentro_pregao(now):
         prox_segundos = INTERVALO_VERIFICACAO
@@ -372,7 +358,7 @@ if st.session_state.monitorando:
         seg_ate_abertura = max(1, segundos_ate_proxima_abertura(now))
         prox_segundos = min(seg_ate_abertura, 300)  # ping leve até abrir (5 min)
 else:
-    prox_segundos = 600  # sem monitoramento ligado, refresca a cada 10 min
+    prox_segundos = 600  # com monitoramento parado
 
 st.caption(f"🔄 Próxima atualização automática em ~{prox_segundos} segundos.")
 st.markdown(
