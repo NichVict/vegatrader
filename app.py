@@ -19,10 +19,10 @@ from streamlit.components.v1 import html
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")          # DST automático
-HORARIO_INICIO_PREGAO = dt.time(12, 38)  # 14:00
+HORARIO_INICIO_PREGAO = dt.time(14, 0)  # 14:00
 HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
-TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min se quiser)
+TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (mude para 1500=25min se quiser)
 KEEPALIVE_SECONDS = 60                  # fora do pregão: mantém a página viva
 
 # =========================
@@ -79,14 +79,6 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     enviar_notificacao(destinatario, assunto, msg, remetente, senha_ou_token, token_telegram, chat_ids)
     return msg
 
-async def testar_telegram(token_telegram, chat_id):
-    try:
-        bot = Bot(token=token_telegram)
-        await bot.send_message(chat_id=chat_id, text="✅ Teste de alerta CLUBE funcionando!")
-        return True, None
-    except Exception as e:
-        return False, str(e)
-
 # ---- horário robusto (datetime, mesmo dia/fuso) ----
 def _abre_fecha_dt(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
     now = now.astimezone(TZ)
@@ -142,9 +134,9 @@ def ensure_monitoring(now: dt.datetime):
 # =========================
 for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
             "em_contagem", "status", "precos_historicos", "monitorando",
-            "last_run", "auto_start_open", "auto_stop_close"]:
+            "last_run", "auto_start_open", "auto_stop_close", "contagem_inicio"]:
     if var not in st.session_state:
-        if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"]:
+        if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos", "contagem_inicio"]:
             st.session_state[var] = {}
         elif var in ["monitorando"]:
             st.session_state[var] = False
@@ -213,6 +205,7 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.em_contagem[ticker] = False
         st.session_state.status[ticker] = "🟢 Monitorando"
         st.session_state.precos_historicos[ticker] = []
+        st.session_state.contagem_inicio[ticker] = None
         st.success(f"Ativo {ticker} adicionado.")
 
 st.subheader("📊 Status dos Ativos")
@@ -272,14 +265,10 @@ def render_tabela_e_grafico():
 render_tabela_e_grafico()
 
 # =========================
-# Um ciclo reativo de monitoramento
+# Monitoramento (contagem por relógio real)
 # =========================
 def ciclo_monitoramento():
     now = dt.datetime.now(TZ)
-    last = st.session_state.last_run
-    dt_secs = 0 if last is None else max(0, int((now - last).total_seconds()))
-    st.session_state.last_run = now
-
     if not st.session_state.monitorando:
         return
     if not dentro_pregao(now):
@@ -303,34 +292,37 @@ def ciclo_monitoramento():
         cond = (op == "compra" and preco >= alvo) or (op == "venda" and preco <= alvo)
         if cond:
             st.session_state.status[t] = "🟡 Em contagem"
-            if not st.session_state.em_contagem[t]:
+            # inicia ponto de contagem com timestamp absoluto
+            if not st.session_state.em_contagem.get(t, False):
                 st.session_state.em_contagem[t] = True
+                st.session_state.contagem_inicio[t] = now
                 st.session_state.tempo_acumulado[t] = 0
                 st.session_state.log_monitoramento.append(
                     f"⚠️ {t} atingiu o alvo ({alvo:.2f}). Iniciando contagem..."
                 )
-            inc = INTERVALO_VERIFICACAO if dt_secs == 0 else min(dt_secs, INTERVALO_VERIFICACAO)
-            st.session_state.tempo_acumulado[t] += inc
-            st.session_state.log_monitoramento.append(
-                f"⏱ {t}: {st.session_state.tempo_acumulado[t]}s acumulados"
-            )
+            # calcula tempo decorrido real
+            if st.session_state.contagem_inicio.get(t):
+                elapsed = int((now - st.session_state.contagem_inicio[t]).total_seconds())
+                st.session_state.tempo_acumulado[t] = min(elapsed, TEMPO_ACUMULADO_MAXIMO)
+                st.session_state.log_monitoramento.append(f"⏱ {t}: {st.session_state.tempo_acumulado[t]}s acumulados")
+
             if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
                 alerta_msg = notificar_preco_alvo_alcancado(tk_full, alvo, preco, op, token_telegram)
                 st.warning(alerta_msg)
                 st.session_state.historico_alertas.append({
                     "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
-                    "ticker": t,
-                    "operacao": op,
-                    "preco_alvo": alvo,
-                    "preco_atual": preco
+                    "ticker": t, "operacao": op,
+                    "preco_alvo": alvo, "preco_atual": preco
                 })
                 st.session_state.status[t] = "🟢 Monitorando"
                 st.session_state.em_contagem[t] = False
                 st.session_state.tempo_acumulado[t] = 0
+                st.session_state.contagem_inicio[t] = None
         else:
-            if st.session_state.em_contagem[t]:
+            if st.session_state.em_contagem.get(t, False):
                 st.session_state.em_contagem[t] = False
                 st.session_state.tempo_acumulado[t] = 0
+                st.session_state.contagem_inicio[t] = None
                 st.session_state.status[t] = "🔴 Fora da zona"
                 st.session_state.log_monitoramento.append(
                     f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
@@ -341,7 +333,7 @@ if st.session_state.log_monitoramento:
     log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
 # =========================
-# Card de contador (visual, sincronizado c/ servidor) + auto-refresh
+# Card de contador (visual sincronizado c/ servidor)
 # =========================
 now = dt.datetime.now(TZ)
 if not dentro_pregao(now):
@@ -389,7 +381,7 @@ if not dentro_pregao(now):
     """, height=100)
 
 # =========================
-# ENFORCE auto-start/stop (2ª checagem) + próximo refresh
+# ENFORCE auto-start/stop (2ª checagem) + refresh confiável
 # =========================
 now_final = dt.datetime.now(TZ)
 ensure_monitoring(now_final)
@@ -398,17 +390,30 @@ faltam = segundos_ate_proxima_abertura(now_final)
 if st.session_state.get("monitorando") and dentro_pregao(now_final):
     prox = INTERVALO_VERIFICACAO
 else:
-    # agressivo nos 2 minutos finais
+    # agressivo nos 2 minutos finais (se o JS for "throttled", a cada 1s o servidor reexecuta)
     if 0 < faltam <= 120:
-        prox = 1
+        prox = 1000   # 1s
     elif 0 < faltam <= 600:
-        prox = 5
+        prox = 5000   # 5s
     else:
-        prox = KEEPALIVE_SECONDS
+        prox = KEEPALIVE_SECONDS * 1000  # 60s
 
-st.caption(f"🔄 Próxima atualização automática em ~{prox} segundos.")
+# Fallback server-side: força nova execução periódica
+# (isso não depende do JS do navegador)
+st.session_state["__heartbeat__"] = st.session_state.get("__heartbeat__", 0) + 1
+if prox <= 5000:
+    # quando estamos a ≤10min, forçamos uma reexecução periódica
+    try:
+        import time
+        time.sleep(0.01)  # minúsculo atraso para evitar flood
+        st.experimental_rerun()
+    except Exception:
+        pass
+
+# E mantemos o JS também (quando não houver throttle, ele resolve sozinho)
+st.caption(f"🔄 Próxima atualização automática em ~{int(prox/1000)} segundos.")
 st.markdown(
-    f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox*1000});</script>",
+    f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox});</script>",
     unsafe_allow_html=True
 )
 
