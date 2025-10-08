@@ -339,7 +339,7 @@ if st.session_state.log_monitoramento:
 
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
-st.experimental_rerun()
+st.rerun()
 
 
 
