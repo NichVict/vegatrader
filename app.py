@@ -18,21 +18,12 @@ from streamlit.components.v1 import html
 # =========================
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
-
-
-TZ = ZoneInfo("Europe/Lisbon")          # horário de Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = dt.time(11, 45)  # 14:00
+TZ = ZoneInfo("Europe/Lisbon")          # DST automático
+HORARIO_INICIO_PREGAO = dt.time(11, 50)  # 14:00
 HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
-TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min em produção)
-KEEPALIVE_SECONDS = 60                   # fora do pregão: mantém a página viva (fixo)
-
-now_dbg = dt.datetime.now(TZ)
-st.caption(
-    f"DEBUG ▸ monitorando={st.session_state.get('monitorando', False)} | "
-    f"dentro_pregao={HORARIO_INICIO_PREGAO <= now_dbg.time() <= HORARIO_FIM_PREGAO} | "
-    f"agora={now_dbg.strftime('%Y-%m-%d %H:%M:%S %Z')}"
-)
+TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min se quiser)
+KEEPALIVE_SECONDS = 60                  # fora do pregão: mantém a página viva
 
 # =========================
 # Funções auxiliares
@@ -98,21 +89,32 @@ async def testar_telegram(token_telegram, chat_id):
     except Exception as e:
         return False, str(e)
 
+def _abre_fecha_dt(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
+    """Retorna datetime de abertura e fechamento no MESMO dia de `now` (timezone TZ)."""
+    now = now.astimezone(TZ)
+    abre = now.replace(hour=HORARIO_INICIO_PREGAO.hour,
+                       minute=HORARIO_INICIO_PREGAO.minute,
+                       second=0, microsecond=0)
+    fecha = now.replace(hour=HORARIO_FIM_PREGAO.hour,
+                        minute=HORARIO_FIM_PREGAO.minute,
+                        second=0, microsecond=0)
+    return abre, fecha
+
 def dentro_pregao(now: dt.datetime) -> bool:
-    t = now.time()
-    return HORARIO_INICIO_PREGAO <= t <= HORARIO_FIM_PREGAO
+    """Comparação robusta com DATETIME (evita problemas de tzinfo em objetos time)."""
+    now = now.astimezone(TZ)
+    abre, fecha = _abre_fecha_dt(now)
+    return abre <= now <= fecha
 
 def segundos_ate_proxima_abertura(now: dt.datetime) -> int:
-    abre = now.replace(hour=HORARIO_INICIO_PREGAO.hour, minute=HORARIO_INICIO_PREGAO.minute,
-                       second=0, microsecond=0)
-    fecha = now.replace(hour=HORARIO_FIM_PREGAO.hour, minute=HORARIO_FIM_PREGAO.minute,
-                        second=0, microsecond=0)
+    now = now.astimezone(TZ)
+    abre, fecha = _abre_fecha_dt(now)
     if now < abre:
         return int((abre - now).total_seconds())
     if now > fecha:
         amanha = abre + dt.timedelta(days=1)
         return int((amanha - now).total_seconds())
-    return 0
+    return 0  # dentro do pregão
 
 # =========================
 # Estado inicial
@@ -163,12 +165,11 @@ if st.sidebar.button("🧹 Limpar histórico"):
 # Auto start/stop por horário (DEPOIS das funções e ANTES da UI)
 # =========================
 now_global = dt.datetime.now(TZ)
-
 auto_start = st.session_state.get("auto_start_open", True)
 auto_stop  = st.session_state.get("auto_stop_close", True)
 monitorando_flag = st.session_state.get("monitorando", False)
 
-# START automático na abertura
+# START automático na abertura (com rerun imediato)
 if auto_start and not monitorando_flag and dentro_pregao(now_global):
     st.session_state.monitorando = True
     st.toast("▶️ Monitoramento iniciado automaticamente (abertura do pregão).", icon="✅")
@@ -177,7 +178,7 @@ if auto_start and not monitorando_flag and dentro_pregao(now_global):
     except Exception:
         st.experimental_rerun()
 
-# STOP automático no fechamento
+# STOP automático no fechamento (com rerun)
 if auto_stop and monitorando_flag and not dentro_pregao(now_global):
     st.session_state.monitorando = False
     st.toast("⏹ Monitoramento parado automaticamente (fechamento).", icon="🛑")
@@ -384,13 +385,20 @@ if not dentro_pregao(now):
 if st.session_state.monitorando and dentro_pregao(now):
     prox = INTERVALO_VERIFICACAO
 else:
-    prox = KEEPALIVE_SECONDS
+    faltam = segundos_ate_proxima_abertura(now)
+    if not dentro_pregao(now) and faltam <= 60:
+        prox = 1
+    elif not dentro_pregao(now) and faltam <= 600:
+        prox = 5
+    else:
+        prox = KEEPALIVE_SECONDS
 
 st.caption(f"🔄 Próxima atualização automática em ~{prox} segundos.")
 st.markdown(
     f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox*1000});</script>",
     unsafe_allow_html=True
 )
+
 
 
 
