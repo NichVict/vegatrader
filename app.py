@@ -25,7 +25,7 @@ st.caption(f"DEBUG ▸ monitorando={st.session_state.get('monitorando', False)} 
 
 
 TZ = ZoneInfo("Europe/Lisbon")          # horário de Lisboa com DST
-HORARIO_INICIO_PREGAO = dt.time(11, 20)  # 14:00
+HORARIO_INICIO_PREGAO = dt.time(11, 24)  # 14:00
 HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
 TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (ajuste para 1500 = 25 min)
