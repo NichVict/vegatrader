@@ -19,7 +19,7 @@ from streamlit.components.v1 import html
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")          # DST automático
-HORARIO_INICIO_PREGAO = dt.time(14, 0)  # 14:00
+HORARIO_INICIO_PREGAO = dt.time(12, 27)  # 14:00
 HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
 TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min se quiser)
