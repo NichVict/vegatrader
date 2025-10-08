@@ -11,7 +11,7 @@ import asyncio
 from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo  # fuso com DST
 import re
 
 # -----------------------------
@@ -72,7 +72,8 @@ def obter_preco_atual(ticker_symbol):
     preco_atual = tk.history(period="1d")["close"].iloc[-1]
     return float(preco_atual)
 
-def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, operacao, token_telegram):
+def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, operacao):
+    """Assinatura simplificada (4 args). Tokens/IDs vêm de st.secrets."""
     ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
     msg_op = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
     mensagem = (
@@ -81,12 +82,11 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
         "COMPLIANCE: AGUARDAR CANDLE 60 MIN."
     )
     remetente = "avisoscanal1milhao@gmail.com"
-    # dica: coloque em st.secrets["gmail_app_password"]
     senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
     destinatario = "docs1milhao@gmail.com"
     assunto = f"ALERTA: {msg_op} em {ticker_symbol_sem_ext}"
-    chat_ids = [st.secrets.get("telegram_chat_id", "-1002533284493")]
     token_telegram = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+    chat_ids = [st.secrets.get("telegram_chat_id", "-1002533284493")]
     enviar_notificacao(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
     return mensagem
 
@@ -123,7 +123,7 @@ def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
 
-def color_for_ticker(ticker: str) -> str:
+def color_for_ticker(ticker):
     ensure_color_map()
     if ticker not in st.session_state.ticker_colors:
         idx = len(st.session_state.ticker_colors) % len(PALETTE)
@@ -133,23 +133,19 @@ def color_for_ticker(ticker: str) -> str:
 TICKER_PAT = re.compile(r"\b([A-Z]{4,6}\d{0,2})\.SA\b")  # ex: PETR4.SA, ITUB4.SA
 PLAIN_TICKER_PAT = re.compile(r"\b([A-Z]{4,6}\d{0,2})\b")  # ex: PETR4, VALE3
 
-def extract_ticker(line: str) -> str | None:
+def extract_ticker(line):
     m = TICKER_PAT.search(line)
     if m:
         return m.group(1)
-    # tenta pegar padrão simples quando não tem .SA
     m2 = PLAIN_TICKER_PAT.search(line)
     return m2.group(1) if m2 else None
 
-def render_log_html(lines: list[str], selected_tickers: list[str] | None, max_lines: int = 200):
-    """Renderiza o log com cores por ticker, box rolável e ordem decrescente, com fade suave."""
+def render_log_html(lines, selected_tickers=None, max_lines=200):
+    """Renderiza o log com cores por ticker, box rolável, ordem decrescente, com fade suave."""
     if not lines:
         st.write("—")
         return
-    # Pega últimas N e inverte (mais novo no topo)
-    subset = lines[-max_lines:][::-1]
-
-    # filtra se necessário
+    subset = lines[-max_lines:][::-1]  # mais novo no topo
     if selected_tickers:
         subset = [l for l in subset if (extract_ticker(l) in selected_tickers)]
 
@@ -167,33 +163,22 @@ def render_log_html(lines: list[str], selected_tickers: list[str] | None, max_li
       @keyframes fadein { from {opacity:.35} to {opacity:1} }
       .log-line{
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-        font-size: 13px;
-        line-height: 1.35;
-        margin: 2px 0;
-        color: #e5e7eb;
-        display: flex;
-        align-items: baseline;
-        gap: 8px;
+        font-size: 13px; line-height: 1.35; margin: 2px 0; color: #e5e7eb;
+        display: flex; align-items: baseline; gap: 8px;
       }
       .ts{ color:#9ca3af; min-width:64px; text-align:right; }
-      .badge{
-        display:inline-block; padding:1px 8px; font-size:12px; border-radius:9999px; color:white;
-      }
+      .badge{ display:inline-block; padding:1px 8px; font-size:12px; border-radius:9999px; color:white; }
       .msg{ white-space: pre-wrap; }
     </style>
     """
     html = [css, "<div class='log-card'>"]
     for l in subset:
-        # quebra "HH:MM:SS | resto"
         if " | " in l:
             ts, rest = l.split(" | ", 1)
         else:
             ts, rest = "", l
         tk = extract_ticker(l)
-        badge_html = ""
-        if tk:
-            color = color_for_ticker(tk)
-            badge_html = f"<span class='badge' style='background:{color}'>{tk}</span>"
+        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
         html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
     html.append("</div>")
     st.markdown("\n".join(html), unsafe_allow_html=True)
@@ -209,11 +194,9 @@ for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado
 # Modo edição/pausa (começa pausado para cadastrar vários tickers)
 if "pausado" not in st.session_state:
     st.session_state.pausado = True
-
 # Último estado de pausa (para logar apenas quando muda)
 if "ultimo_estado_pausa" not in st.session_state:
     st.session_state.ultimo_estado_pausa = None
-
 # Pontos de disparo (para marcar ⭐ no gráfico)
 if "disparos" not in st.session_state:
     st.session_state.disparos = {}  # { 'TICKER': [(datetime, preco), ...] }
@@ -250,12 +233,11 @@ if col_limp.button("🧹 Limpar histórico"):
 if col_limp2.button("🧽 Limpar LOG"):
     st.session_state.log_monitoramento.clear()
     st.sidebar.success("Log limpo!")
-
 if st.sidebar.button("🧼 Limpar marcadores ⭐"):
     st.session_state.disparos = {}
     st.sidebar.success("Marcadores limpos!")
 
-# Filtro por ticker no LOG (de volta)
+# Filtro por ticker no LOG
 tickers_existentes = sorted(set([a["ticker"] for a in st.session_state.ativos])) if st.session_state.ativos else []
 selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_existentes, default=[])
 
@@ -339,8 +321,7 @@ if st.session_state.pausado != st.session_state.ultimo_estado_pausa:
     )
 
 if st.session_state.pausado:
-    # Só mantém a página viva; não loga nada fora do box (acima já logamos a mudança)
-    pass
+    pass  # não monitora; mantém a página viva
 else:
     if dentro_pregao(now):
         # 1) Atualiza tabela/gráfico e monitora
@@ -423,10 +404,6 @@ else:
                     # marca para remover da busca após o loop
                     tickers_para_remover.append(t)
 
-                    # (não precisa resetar contadores se vamos remover)
-                else:
-                    # ainda em contagem; nada a fazer
-                    pass
             else:
                 if st.session_state.em_contagem[t]:
                     st.session_state.em_contagem[t] = False
@@ -510,6 +487,7 @@ with log_container:
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
 st.rerun()
+
 
 
 
