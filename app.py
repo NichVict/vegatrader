@@ -28,31 +28,32 @@ st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")          # DST automático
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
-TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (mude para 1500 = 25min se quiser)
-KEEPALIVE_SECONDS = 60                  # fora do pregão: mantém a página viva
+TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (mude p/ 1500=25 min se quiser)
+KEEPALIVE_SECONDS = 60                  # fora do pregão
 
 # =========================
 # ESTADO INICIAL
 # =========================
-for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
-            "em_contagem", "status", "precos_historicos", "monitorando",
-            "last_run", "auto_start_open", "auto_stop_close", "contagem_inicio",
-            "hora_abre", "hora_fecha"]:
-    if var not in st.session_state:
-        if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos", "contagem_inicio"]:
-            st.session_state[var] = {}
-        elif var in ["monitorando"]:
-            st.session_state[var] = False
-        elif var in ["last_run"]:
-            st.session_state[var] = None
-        elif var in ["auto_start_open", "auto_stop_close"]:
-            st.session_state[var] = True
-        elif var == "hora_abre":
-            st.session_state.hora_abre = dt.time(14, 0)    # padrão B3 (Lisboa)
-        elif var == "hora_fecha":
-            st.session_state.hora_fecha = dt.time(21, 0)   # padrão B3 (Lisboa)
-        else:
-            st.session_state[var] = []
+defaults = {
+    "ativos": [],
+    "historico_alertas": [],
+    "log_monitoramento": [],
+    "tempo_acumulado": {},
+    "em_contagem": {},
+    "status": {},
+    "precos_historicos": {},
+    "contagem_inicio": {},
+    "monitorando": False,
+    "last_run": None,
+    "auto_start_open": True,
+    "auto_stop_close": True,
+    "hora_abre": dt.time(14, 0),
+    "hora_fecha": dt.time(21, 0),
+    "pause_refresh": False,
+}
+for k, v in defaults.items():
+    if k not in st.session_state:
+        st.session_state[k] = v
 
 # =========================
 # FUNÇÕES AUXILIARES
@@ -101,7 +102,7 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
         "COMPLIANCE: AGUARDAR CANDLE 60 MIN."
     )
     remetente = "avisoscanal1milhao@gmail.com"
-    # ideal: ler de st.secrets["gmail_app_password"]
+    # ideal: coloque em st.secrets["gmail_app_password"]
     senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
     destinatario = "docs1milhao@gmail.com"
     assunto = f"ALERTA: {oper_str} em {ticker_symbol_sem_ext}"
@@ -109,7 +110,7 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     enviar_notificacao(destinatario, assunto, msg, remetente, senha_ou_token, token_telegram, chat_ids)
     return msg
 
-# ----- Horário do pregão (usando inputs do sidebar) -----
+# ----- Horários do pregão -----
 def get_abre_fecha(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
     now = now.astimezone(TZ)
     abre = now.replace(hour=st.session_state.hora_abre.hour,
@@ -135,13 +136,34 @@ def segundos_ate_proxima_abertura(now: dt.datetime) -> int:
         return int((amanha - now).total_seconds())
     return 0
 
+def proximo_intervalo_refresh(now: dt.datetime) -> int:
+    faltam = segundos_ate_proxima_abertura(now)
+    if (st.session_state.get("monitorando") or st.session_state.get("auto_start_open", True)) and dentro_pregao(now):
+        return INTERVALO_VERIFICACAO
+    if 0 < faltam <= 120:
+        return 1
+    if 0 < faltam <= 600:
+        return 5
+    return KEEPALIVE_SECONDS
+
 # =========================
-# SIDEBAR
+# SIDEBAR (com formulário p/ evitar reset)
 # =========================
 st.sidebar.header("⚙️ Configurações")
-st.sidebar.write("Horários do pregão (Europe/Lisbon):")
-st.session_state.hora_abre = st.sidebar.time_input("Abertura", value=st.session_state.hora_abre, step=60)
-st.session_state.hora_fecha = st.sidebar.time_input("Fechamento", value=st.session_state.hora_fecha, step=60)
+
+with st.sidebar.expander("Horários do pregão (Europe/Lisbon)", expanded=True):
+    st.session_state.pause_refresh = st.checkbox(
+        "⏸️ Pausar auto-atualização durante edição",
+        value=st.session_state.pause_refresh
+    )
+    with st.form("form_horas", clear_on_submit=False):
+        tmp_abre  = st.time_input("Abertura",  value=st.session_state.hora_abre,  step=60, key="tmp_abre")
+        tmp_fecha = st.time_input("Fechamento", value=st.session_state.hora_fecha, step=60, key="tmp_fecha")
+        aplicar = st.form_submit_button("Aplicar horários")
+    if aplicar:
+        st.session_state.hora_abre  = tmp_abre
+        st.session_state.hora_fecha = tmp_fecha
+        st.toast("⏱️ Horários do pregão atualizados.", icon="✅")
 
 token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
                                        value=st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY"))
@@ -175,13 +197,22 @@ if st.sidebar.button("🧹 Limpar histórico"):
 # =========================
 now_global = dt.datetime.now(TZ)
 abre_dbg, fecha_dbg = get_abre_fecha(now_global)
+dentro_dbg = dentro_pregao(now_global)
+monitorando_efetivo_preview = st.session_state.get("monitorando", False) or (
+    st.session_state.get("auto_start_open", True) and dentro_dbg
+)
 
 st.title("📈 CLUBE - COMPRA E VENDA")
-status_txt = "🟩 Dentro do pregão" if dentro_pregao(now_global) else "🟥 Fora do pregão"
+status_txt = "🟩 Dentro do pregão" if dentro_dbg else "🟥 Fora do pregão"
 st.caption(f"Agora: {now_global.strftime('%Y-%m-%d %H:%M:%S %Z')} — {status_txt}")
 st.caption(
-    f"DEBUG ▸ abre={abre_dbg.strftime('%H:%M:%S')} | fecha={fecha_dbg.strftime('%H:%M:%S')} | "
-    f"dentro_pregao={dentro_pregao(now_global)}"
+    "DEBUG ▸ "
+    f"abre={abre_dbg.strftime('%H:%M:%S')} | "
+    f"fecha={fecha_dbg.strftime('%H:%M:%S')} | "
+    f"dentro_pregao={dentro_dbg} | "
+    f"monitorando={st.session_state.get('monitorando', False)} | "
+    f"auto_start={st.session_state.get('auto_start_open', True)} | "
+    f"efetivo={monitorando_efetivo_preview}"
 )
 
 # =========================
@@ -274,7 +305,7 @@ def ciclo_monitoramento():
     monitorando_efetivo = st.session_state.get("monitorando", False) \
         or (st.session_state.get("auto_start_open", True) and dentro_pregao(now))
 
-    # sincroniza UI se entrou no pregão
+    # sincroniza UI se entrou no pregão automaticamente
     if monitorando_efetivo and not st.session_state.get("monitorando", False):
         st.session_state.monitorando = True
 
@@ -388,33 +419,24 @@ if not dentro_pregao(now):
     """, height=100)
 
 # =========================
-# Auto-refresh TRIPLO (para não depender de um só método)
+# Auto-refresh TRIPLO (respeita pausa)
 # =========================
-now_final = dt.datetime.now(TZ)
-faltam = segundos_ate_proxima_abertura(now_final)
-if (st.session_state.get("monitorando") or st.session_state.get("auto_start_open", True)) and dentro_pregao(now_final):
-    prox = INTERVALO_VERIFICACAO
+prox = proximo_intervalo_refresh(dt.datetime.now(TZ))
+if not st.session_state.pause_refresh:
+    # 1) Core: st_autorefresh (se disponível)
+    st_autorefresh(interval=prox * 1000, key="auto_refresh_key")
+
+    # 2) Fallback: meta refresh
+    st.markdown(f"<meta http-equiv='refresh' content='{prox}'>", unsafe_allow_html=True)
+
+    # 3) Fallback: setTimeout
+    st.caption(f"🔄 Próxima atualização automática em ~{prox} segundos.")
+    st.markdown(
+        f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox*1000});</script>",
+        unsafe_allow_html=True
+    )
 else:
-    if 0 < faltam <= 120:
-        prox = 1
-    elif 0 < faltam <= 600:
-        prox = 5
-    else:
-        prox = KEEPALIVE_SECONDS
-
-# 1) Core: st_autorefresh (se disponível)
-st_autorefresh(interval=prox * 1000, key="auto_refresh_key")
-
-# 2) Fallback: meta refresh
-st.markdown(f"<meta http-equiv='refresh' content='{prox}'>", unsafe_allow_html=True)
-
-# 3) Fallback: setTimeout
-st.caption(f"🔄 Próxima atualização automática em ~{prox} segundos.")
-st.markdown(
-    f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox*1000});</script>",
-    unsafe_allow_html=True
-)
-
+    st.info("⏸️ Auto-atualização pausada. Clique em “Aplicar horários” ou desmarque a opção para retomar.")
 
 
 
