@@ -13,13 +13,22 @@ import plotly.graph_objects as go
 from zoneinfo import ZoneInfo
 from streamlit.components.v1 import html
 
+# --- auto-refresh (opcional) ---
+try:
+    # pip install streamlit-autorefresh
+    from streamlit_autorefresh import st_autorefresh
+except Exception:
+    def st_autorefresh(*args, **kwargs):
+        return 0
+
 # =========================
-# CONFIG BÁSICA
+# CONFIG
 # =========================
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
+
 TZ = ZoneInfo("Europe/Lisbon")          # DST automático
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
-TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min se quiser)
+TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (mude para 1500 = 25min se quiser)
 KEEPALIVE_SECONDS = 60                  # fora do pregão: mantém a página viva
 
 # =========================
@@ -92,7 +101,8 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
         "COMPLIANCE: AGUARDAR CANDLE 60 MIN."
     )
     remetente = "avisoscanal1milhao@gmail.com"
-    senha_ou_token = "anoe gegm boqj ldzo"
+    # ideal: ler de st.secrets["gmail_app_password"]
+    senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
     destinatario = "docs1milhao@gmail.com"
     assunto = f"ALERTA: {oper_str} em {ticker_symbol_sem_ext}"
     chat_ids = ["-1002533284493"]
@@ -101,7 +111,6 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
 
 # ----- Horário do pregão (usando inputs do sidebar) -----
 def get_abre_fecha(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
-    """Retorna datetime de abertura/fechamento com base nos valores configurados no sidebar."""
     now = now.astimezone(TZ)
     abre = now.replace(hour=st.session_state.hora_abre.hour,
                        minute=st.session_state.hora_abre.minute,
@@ -127,7 +136,7 @@ def segundos_ate_proxima_abertura(now: dt.datetime) -> int:
     return 0
 
 # =========================
-# SIDEBAR (inclui horários configuráveis + teste Telegram)
+# SIDEBAR
 # =========================
 st.sidebar.header("⚙️ Configurações")
 st.sidebar.write("Horários do pregão (Europe/Lisbon):")
@@ -135,7 +144,7 @@ st.session_state.hora_abre = st.sidebar.time_input("Abertura", value=st.session_
 st.session_state.hora_fecha = st.sidebar.time_input("Fechamento", value=st.session_state.hora_fecha, step=60)
 
 token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
-                                       value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+                                       value=st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY"))
 chat_id_teste = st.sidebar.text_input("Chat ID (grupo ou usuário)", value="-1002533284493")
 if st.sidebar.button("📤 Testar Telegram"):
     st.sidebar.info("Enviando mensagem de teste...")
@@ -162,7 +171,7 @@ if st.sidebar.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear(); st.sidebar.success("Histórico limpo!")
 
 # =========================
-# CABEÇALHO + DEBUG CLARO
+# CABEÇALHO + DEBUG
 # =========================
 now_global = dt.datetime.now(TZ)
 abre_dbg, fecha_dbg = get_abre_fecha(now_global)
@@ -206,7 +215,7 @@ grafico = st.empty()
 st.subheader("🕒 Log de Monitoramento")
 log_box = st.empty()
 
-# Controles manuais (continuam disponíveis)
+# Controles manuais (opcionais)
 b1, b2 = st.columns(2)
 if b1.button("🚀 Iniciar monitoramento"):
     st.session_state.monitorando = True
@@ -215,7 +224,7 @@ if b2.button("🛑 Parar monitoramento"):
     st.warning("⏹ Monitoramento interrompido manualmente.")
 
 # =========================
-# TABELA + GRÁFICO
+# Tabela + Gráfico
 # =========================
 def render_tabela_e_grafico():
     if not st.session_state.ativos:
@@ -256,12 +265,12 @@ def render_tabela_e_grafico():
 render_tabela_e_grafico()
 
 # =========================
-# MONITORAMENTO — AUTO-START EFETIVO
+# Monitoramento (auto-start efetivo + contagem por relógio real)
 # =========================
 def ciclo_monitoramento():
     now = dt.datetime.now(TZ)
 
-    # roda se: monitorando==True OU (auto_start ativo E estamos no pregão)
+    # roda se: monitorando==True OU (auto_start ativo E dentro do pregão)
     monitorando_efetivo = st.session_state.get("monitorando", False) \
         or (st.session_state.get("auto_start_open", True) and dentro_pregao(now))
 
@@ -269,7 +278,7 @@ def ciclo_monitoramento():
     if monitorando_efetivo and not st.session_state.get("monitorando", False):
         st.session_state.monitorando = True
 
-    # se for para parar automaticamente fora do pregão
+    # parar automático fora do pregão
     if st.session_state.get("auto_stop_close", True) and not dentro_pregao(now):
         if st.session_state.get("monitorando", False):
             st.session_state.monitorando = False
@@ -332,7 +341,7 @@ if st.session_state.log_monitoramento:
     log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
 # =========================
-# CONTADOR REGRESSIVO (sincronizado com servidor)
+# Contador regressivo (sincronizado com servidor)
 # =========================
 now = dt.datetime.now(TZ)
 if not dentro_pregao(now):
@@ -356,7 +365,7 @@ if not dentro_pregao(now):
       (function(){{
         const TARGET = {target_ts_ms};
         const SERVER_NOW = {server_now_ms};
-        const OFFSET = Date.now() - SERVER_NOW;  // corrige relógio do browser
+        const OFFSET = Date.now() - SERVER_NOW;  // compensa relógio do browser
 
         function pad(n) {{ return String(n).padStart(2,'0'); }}
         function tick(){{
@@ -379,7 +388,7 @@ if not dentro_pregao(now):
     """, height=100)
 
 # =========================
-# REFRESH automático (curto perto da abertura)
+# Auto-refresh TRIPLO (para não depender de um só método)
 # =========================
 now_final = dt.datetime.now(TZ)
 faltam = segundos_ate_proxima_abertura(now_final)
@@ -393,11 +402,19 @@ else:
     else:
         prox = KEEPALIVE_SECONDS
 
+# 1) Core: st_autorefresh (se disponível)
+st_autorefresh(interval=prox * 1000, key="auto_refresh_key")
+
+# 2) Fallback: meta refresh
+st.markdown(f"<meta http-equiv='refresh' content='{prox}'>", unsafe_allow_html=True)
+
+# 3) Fallback: setTimeout
 st.caption(f"🔄 Próxima atualização automática em ~{prox} segundos.")
 st.markdown(
     f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox*1000});</script>",
     unsafe_allow_html=True
 )
+
 
 
 
