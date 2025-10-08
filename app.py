@@ -13,6 +13,8 @@ import pandas as pd
 import plotly.graph_objects as go
 from zoneinfo import ZoneInfo  # fuso com DST
 import re
+import uuid
+import streamlit.components.v1 as components
 
 # -----------------------------
 # CONFIGURAÇÕES
@@ -20,10 +22,10 @@ import re
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = datetime.time(17, 15, 0)   # 14:00 Lisboa
-HORARIO_FIM_PREGAO    = datetime.time(18, 0, 0)   # 21:00 Lisboa
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
+HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 INTERVALO_VERIFICACAO = 300                       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 1500                      # 15 min (mude p/ 1500=25min se quiser)
+TEMPO_ACUMULADO_MAXIMO = 900                      # 15 min (mude p/ 1500=25min se quiser)
 LOG_MAX_LINHAS = 1000                             # limite de linhas do log
 
 # Paleta de cores (rotaciona entre tickers)
@@ -111,12 +113,12 @@ def segundos_ate_abertura(dt_now):
     hoje_abre = dt_now.replace(hour=HORARIO_INICIO_PREGAO.hour, minute=0, second=0, microsecond=0)
     hoje_fecha = dt_now.replace(hour=HORARIO_FIM_PREGAO.hour, minute=0, second=0, microsecond=0)
     if dt_now < hoje_abre:
-        return int((hoje_abre - dt_now).total_seconds())
+        return int((hoje_abre - dt_now).total_seconds()), hoje_abre
     elif dt_now > hoje_fecha:
         amanha_abre = hoje_abre + datetime.timedelta(days=1)
-        return int((amanha_abre - dt_now).total_seconds())
+        return int((amanha_abre - dt_now).total_seconds()), amanha_abre
     else:
-        return 0
+        return 0, hoje_abre
 
 def fmt_hms(seg):
     h = seg // 3600
@@ -147,7 +149,7 @@ def extract_ticker(line):
     return m2.group(1) if m2 else None
 
 def render_log_html(lines, selected_tickers=None, max_lines=200):
-    """Renderiza o log com cores por ticker, box rolável, ordem decrescente, com fade suave."""
+    """Renderiza o log com cores por ticker, box rolável e ordem decrescente (sem animação para evitar piscar)."""
     if not lines:
         st.write("—")
         return
@@ -164,9 +166,7 @@ def render_log_html(lines, selected_tickers=None, max_lines=200):
         padding: 10px 12px;
         max-height: 360px;
         overflow-y: auto;
-        animation: fadein .18s ease-in;
       }
-      @keyframes fadein { from {opacity:.35} to {opacity:1} }
       .log-line{
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
         font-size: 13px; line-height: 1.35; margin: 2px 0; color: #e5e7eb;
@@ -304,7 +304,7 @@ if st.session_state.ativos:
             "Tempo Acumulado": f"{int(minutos)} min"
         })
     df = pd.DataFrame(data)
-    tabela_status.table(df)
+    tabela_status.dataframe(df, use_container_width=True, height=220)  # menos flicker
 else:
     st.info("Nenhum ativo cadastrado ainda.")
 
@@ -363,7 +363,7 @@ else:
                 "Tempo Acumulado": f"{int(minutos)} min"
             })
         if data:
-            tabela_status.table(pd.DataFrame(data))
+            tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
 
         # Lógica por ativo
         tickers_para_remover = []  # <- para tirar da busca após disparo
@@ -481,22 +481,42 @@ else:
         sleep_segundos = INTERVALO_VERIFICACAO  # 5 min
 
     else:
-        # ======= FORA DO PREGÃO: APENAS UMA MENSAGEM DE COUNTDOWN =======
-        faltam = segundos_ate_abertura(now)
-        # calcula a próxima abertura (hoje ou amanhã)
-        prox_abertura = now.replace(hour=HORARIO_INICIO_PREGAO.hour, minute=0, second=0, microsecond=0)
-        if now > prox_abertura:
-            prox_abertura = prox_abertura + datetime.timedelta(days=1)
-
-        countdown_container.info(
-            f"⏸️ **Pregão fechado.** Reabre em **{fmt_hms(faltam)}** (às {prox_abertura.strftime('%H:%M')})."
+        # ======= FORA DO PREGÃO: CARTÃO COM COUNTDOWN EM JS (sem rerun por segundo) =======
+        faltam, prox_abertura = segundos_ate_abertura(now)
+        # id único para não conflitar entre reruns
+        elem_id = f"cd-{uuid.uuid4().hex[:8]}"
+        components.html(
+            f"""
+<div style="background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:12px 14px;">
+  <span style="color:#9ca3af;">⏸️ Pregão fechado.</span>
+  <span style="margin-left:8px;">Reabre em <b id="{elem_id}">--:--:--</b> (às {prox_abertura.strftime('%H:%M')}).</span>
+</div>
+<script>
+(function(){{
+  var total={faltam};
+  function fmt(s){{
+    var h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=s%60;
+    return String(h).padStart(2,'0')+":"+String(m).padStart(2,'0')+":"+String(ss).padStart(2,'0');
+  }}
+  function tick(){{
+    var el=document.getElementById("{elem_id}");
+    if(!el) return;
+    el.textContent=fmt(total);
+    if(total>0) setTimeout(function(){{ total--; tick(); }}, 1000);
+  }}
+  tick();
+}})();
+</script>
+            """,
+            height=70
         )
 
-        # não grava no LOG (evita flood). Apenas ajusta a frequência:
+        # não grava no LOG (evita flood) e reduz ritmo de rerun do servidor:
+        # 60s quando falta >10min; 30s quando falta <=10min; 10s quando falta <=1min.
         if faltam <= 60:
-            sleep_segundos = 1
-        elif faltam <= 600:
             sleep_segundos = 10
+        elif faltam <= 600:
+            sleep_segundos = 30
         else:
             sleep_segundos = 60
 
@@ -511,6 +531,7 @@ with log_container:
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
 st.rerun()
+
 
 
 
