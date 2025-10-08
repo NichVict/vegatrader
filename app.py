@@ -11,18 +11,19 @@ from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
 from zoneinfo import ZoneInfo
-from streamlit.components.v1 import html  # contador ao vivo (sem recarregar)
+from streamlit.components.v1 import html  # para o contador ao vivo
 
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
-TZ = ZoneInfo("Europe/Lisbon")  # DST automático
-HORARIO_INICIO_PREGAO = dt.time(10, 45, 0)   # ajuste se precisar testar
-HORARIO_FIM_PREGAO    = dt.time(21, 0, 0)
-INTERVALO_VERIFICACAO = 300                 # 5 min
-TEMPO_ACUMULADO_MAXIMO = 900                # 15 min (use 1500 = 25 min em produção)
+TZ = ZoneInfo("Europe/Lisbon")          # DST automático
+HORARIO_INICIO_PREGAO = dt.time(11, 0)  # horário local Lisboa
+HORARIO_FIM_PREGAO    = dt.time(21, 0)
+INTERVALO_VERIFICACAO = 300             # 5 min (durante pregão)
+TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min em produção)
+KEEPALIVE_SECONDS = 60                   # mantém a página viva fora do pregão/monitoramento
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -311,16 +312,16 @@ if st.session_state.log_monitoramento:
     log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
 # -----------------------------
-# CONTADOR AO VIVO (sem recarregar) + AUTO-REFRESH INTELIGENTE
+# CONTADOR REGRESSIVO (somente visual) + AUTO-REFRESH FIXO
 # -----------------------------
 now = dt.datetime.now(TZ)
 
+# Contador é apenas visual e aparece fora do pregão; NÃO dispara reload nem muda lógica
 if not dentro_pregao(now):
     seg_ate_abertura = max(1, segundos_ate_proxima_abertura(now))
     abertura_str = HORARIO_INICIO_PREGAO.strftime('%H:%M')
     target_ts_ms = int((now + dt.timedelta(seconds=seg_ate_abertura)).timestamp() * 1000)
 
-    # Contador ao vivo apenas visual (NÃO recarrega)
     html(f"""
     <div style="font-family:system-ui,Segoe UI,Roboto,Arial;color:#d1d5db;">
       <div style="background:#0b2a43;padding:12px 14px;border-radius:8px;margin-top:8px;">
@@ -354,30 +355,15 @@ if not dentro_pregao(now):
     </script>
     """, height=100)
 
-# Agendamento do próximo refresh:
-# - Em pregão: a cada INTERVALO_VERIFICACAO
-# - Fora do pregão: se faltar <= 60s, atualiza a cada 1s;
-#                   se faltar <= 10min, atualiza a cada 5s;
-#                   se faltar <= 60min, atualiza a cada 60s;
-#                   senão, a cada 300s
-if st.session_state.monitorando:
-    if dentro_pregao(now):
-        prox_segundos = INTERVALO_VERIFICACAO
-    else:
-        s = max(1, segundos_ate_proxima_abertura(now))
-        if s <= 60:
-            prox_segundos = 1
-        elif s <= 600:
-            prox_segundos = 5
-        elif s <= 3600:
-            prox_segundos = 60
-        else:
-            prox_segundos = 300
+# Auto-refresh desacoplado do contador:
+#   - Em pregão e monitorando: INTERVALO_VERIFICACAO
+#   - Caso contrário: KEEPALIVE_SECONDS (mantém a sessão viva)
+if st.session_state.monitorando and dentro_pregao(now):
+    prox_segundos = INTERVALO_VERIFICACAO
 else:
-    prox_segundos = 600  # monitoramento parado
+    prox_segundos = KEEPALIVE_SECONDS
 
 st.caption(f"🔄 Próxima atualização automática em ~{prox_segundos} segundos.")
-# Auto-refresh via JS (intervalo variável) — NÃO recarrega no zero, evitando "piscar"
 st.markdown(
     f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox_segundos*1000});</script>",
     unsafe_allow_html=True
