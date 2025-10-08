@@ -19,7 +19,7 @@ from streamlit.components.v1 import html
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")          # DST automático
-HORARIO_INICIO_PREGAO = dt.time(11, 54)  # 14:00
+HORARIO_INICIO_PREGAO = dt.time(14, 0)  # 14:00
 HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
 TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min se quiser)
@@ -57,7 +57,7 @@ def obter_preco_atual(ticker_symbol: str) -> float:
     tk = Ticker(ticker_symbol)
     # tenta preço em tempo real
     try:
-        p = tk.price[ticker_symbol].get("regularMarketPrice")
+        p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
         if p is not None:
             return float(p)
     except Exception:
@@ -89,8 +89,8 @@ async def testar_telegram(token_telegram, chat_id):
     except Exception as e:
         return False, str(e)
 
+# ---- horário robusto (datetime, mesmo dia/fuso) ----
 def _abre_fecha_dt(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
-    """Retorna datetime de abertura e fechamento no MESMO dia de `now` (timezone TZ)."""
     now = now.astimezone(TZ)
     abre = now.replace(hour=HORARIO_INICIO_PREGAO.hour,
                        minute=HORARIO_INICIO_PREGAO.minute,
@@ -101,7 +101,6 @@ def _abre_fecha_dt(now: dt.datetime) -> tuple[dt.datetime, dt.datetime]:
     return abre, fecha
 
 def dentro_pregao(now: dt.datetime) -> bool:
-    """Comparação robusta com DATETIME (evita problemas de tzinfo em objetos time)."""
     now = now.astimezone(TZ)
     abre, fecha = _abre_fecha_dt(now)
     return abre <= now <= fecha
@@ -115,6 +114,30 @@ def segundos_ate_proxima_abertura(now: dt.datetime) -> int:
         amanha = abre + dt.timedelta(days=1)
         return int((amanha - now).total_seconds())
     return 0  # dentro do pregão
+
+# ---- garante auto-start/stop com rerun (chamado 2x) ----
+def ensure_monitoring(now: dt.datetime):
+    auto_start = st.session_state.get("auto_start_open", True)
+    auto_stop  = st.session_state.get("auto_stop_close", True)
+    monitorando_flag = st.session_state.get("monitorando", False)
+
+    # STOP primeiro (caso acorde fora do pregão)
+    if auto_stop and monitorando_flag and not dentro_pregao(now):
+        st.session_state.monitorando = False
+        st.toast("⏹ Monitoramento parado automaticamente (fechamento).", icon="🛑")
+        try:
+            st.rerun()
+        except Exception:
+            st.experimental_rerun()
+
+    # START quando entrar na janela
+    if auto_start and not st.session_state.get("monitorando", False) and dentro_pregao(now):
+        st.session_state.monitorando = True
+        st.toast("▶️ Monitoramento iniciado automaticamente (abertura do pregão).", icon="✅")
+        try:
+            st.rerun()
+        except Exception:
+            st.experimental_rerun()
 
 # =========================
 # Estado inicial
@@ -162,30 +185,10 @@ if st.sidebar.button("🧹 Limpar histórico"):
     st.sidebar.success("Histórico limpo!")
 
 # =========================
-# Auto start/stop por horário (DEPOIS das funções e ANTES da UI)
+# ENFORCE auto-start/stop (1ª checagem)
 # =========================
 now_global = dt.datetime.now(TZ)
-auto_start = st.session_state.get("auto_start_open", True)
-auto_stop  = st.session_state.get("auto_stop_close", True)
-monitorando_flag = st.session_state.get("monitorando", False)
-
-# START automático na abertura (com rerun imediato)
-if auto_start and not monitorando_flag and dentro_pregao(now_global):
-    st.session_state.monitorando = True
-    st.toast("▶️ Monitoramento iniciado automaticamente (abertura do pregão).", icon="✅")
-    try:
-        st.rerun()
-    except Exception:
-        st.experimental_rerun()
-
-# STOP automático no fechamento (com rerun)
-if auto_stop and monitorando_flag and not dentro_pregao(now_global):
-    st.session_state.monitorando = False
-    st.toast("⏹ Monitoramento parado automaticamente (fechamento).", icon="🛑")
-    try:
-        st.rerun()
-    except Exception:
-        st.experimental_rerun()
+ensure_monitoring(now_global)
 
 # =========================
 # UI principal
@@ -381,14 +384,19 @@ if not dentro_pregao(now):
     </script>
     """, height=100)
 
-# Próximo refresh (independente do contador)
-if st.session_state.monitorando and dentro_pregao(now):
+# =========================
+# ENFORCE auto-start/stop (2ª checagem) + próximo refresh
+# =========================
+now_final = dt.datetime.now(TZ)
+ensure_monitoring(now_final)
+
+faltam = segundos_ate_proxima_abertura(now_final)
+if st.session_state.get("monitorando") and dentro_pregao(now_final):
     prox = INTERVALO_VERIFICACAO
 else:
-    faltam = segundos_ate_proxima_abertura(now)
-    if not dentro_pregao(now) and faltam <= 60:
+    if 0 < faltam <= 60:
         prox = 1
-    elif not dentro_pregao(now) and faltam <= 600:
+    elif 0 < faltam <= 600:
         prox = 5
     else:
         prox = KEEPALIVE_SECONDS
