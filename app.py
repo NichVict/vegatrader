@@ -19,7 +19,7 @@ from streamlit.components.v1 import html
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")          # DST automático
-HORARIO_INICIO_PREGAO = dt.time(12, 27)  # 14:00
+HORARIO_INICIO_PREGAO = dt.time(14, 0)  # 14:00
 HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
 TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min se quiser)
@@ -55,14 +55,12 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol: str) -> float:
     tk = Ticker(ticker_symbol)
-    # tenta preço em tempo real
     try:
         p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
         if p is not None:
             return float(p)
     except Exception:
         pass
-    # fallback: último fechamento
     return float(tk.history(period="1d")["close"].iloc[-1])
 
 def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, operacao, token_telegram):
@@ -121,7 +119,7 @@ def ensure_monitoring(now: dt.datetime):
     auto_stop  = st.session_state.get("auto_stop_close", True)
     monitorando_flag = st.session_state.get("monitorando", False)
 
-    # STOP primeiro (caso acorde fora do pregão)
+    # STOP primeiro (se acordou fora do pregão)
     if auto_stop and monitorando_flag and not dentro_pregao(now):
         st.session_state.monitorando = False
         st.toast("⏹ Monitoramento parado automaticamente (fechamento).", icon="🛑")
@@ -343,13 +341,14 @@ if st.session_state.log_monitoramento:
     log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
 # =========================
-# Card de contador (visual) + auto-refresh
+# Card de contador (visual, sincronizado c/ servidor) + auto-refresh
 # =========================
 now = dt.datetime.now(TZ)
 if not dentro_pregao(now):
     seg = max(1, segundos_ate_proxima_abertura(now))
     abertura_str = HORARIO_INICIO_PREGAO.strftime('%H:%M')
     target_ts_ms = int((now + dt.timedelta(seconds=seg)).timestamp() * 1000)
+    server_now_ms = int(now.timestamp() * 1000)
 
     html(f"""
     <div style="font-family:system-ui,Segoe UI,Roboto,Arial;color:#d1d5db;">
@@ -363,11 +362,16 @@ if not dentro_pregao(now):
     </div>
     <script>
       (function(){{
-        const target = {target_ts_ms};
+        const TARGET = {target_ts_ms};
+        const SERVER_NOW = {server_now_ms};
+        // diferença entre relógio do navegador e do servidor
+        const OFFSET = Date.now() - SERVER_NOW;
+
         function pad(n) {{ return String(n).padStart(2,'0'); }}
         function tick(){{
-          const now = Date.now();
-          let diff = Math.max(0, Math.floor((target - now)/1000));
+          // aproxima o "agora" do servidor usando o relógio do browser
+          const serverApproxNow = Date.now() - OFFSET;
+          let diff = Math.max(0, Math.floor((TARGET - serverApproxNow)/1000));
           const h = Math.floor(diff/3600);
           diff %= 3600;
           const m = Math.floor(diff/60);
@@ -394,7 +398,8 @@ faltam = segundos_ate_proxima_abertura(now_final)
 if st.session_state.get("monitorando") and dentro_pregao(now_final):
     prox = INTERVALO_VERIFICACAO
 else:
-    if 0 < faltam <= 60:
+    # agressivo nos 2 minutos finais
+    if 0 < faltam <= 120:
         prox = 1
     elif 0 < faltam <= 600:
         prox = 5
@@ -406,8 +411,6 @@ st.markdown(
     f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox*1000});</script>",
     unsafe_allow_html=True
 )
-
-
 
 
 
