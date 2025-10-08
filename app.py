@@ -11,7 +11,7 @@ import asyncio
 from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
-from zoneinfo import ZoneInfo  # fuso com DST
+from zoneinfo import ZoneInfo
 import re
 
 # -----------------------------
@@ -82,17 +82,20 @@ def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, opera
     )
     remetente = "avisoscanal1milhao@gmail.com"
     # dica: coloque em st.secrets["gmail_app_password"]
-    senha_ou_token = "anoe gegm boqj ldzo"
+    senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
     destinatario = "docs1milhao@gmail.com"
     assunto = f"ALERTA: {msg_op} em {ticker_symbol_sem_ext}"
-    chat_ids = ["-1002533284493"]
+    chat_ids = [st.secrets.get("telegram_chat_id", "-1002533284493")]
+    token_telegram = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
     enviar_notificacao(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
     return mensagem
 
-async def testar_telegram(token_telegram, chat_id):
+async def testar_telegram():
+    token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+    chat = st.secrets.get("telegram_chat_id", "-1002533284493")
     try:
-        bot = Bot(token=token_telegram)
-        await bot.send_message(chat_id=chat_id, text="✅ Teste de alerta CLUBE funcionando!")
+        bot = Bot(token=token)
+        await bot.send_message(chat_id=chat, text="✅ Teste de alerta CLUBE funcionando!")
         return True, None
     except Exception as e:
         return False, str(e)
@@ -138,13 +141,17 @@ def extract_ticker(line: str) -> str | None:
     m2 = PLAIN_TICKER_PAT.search(line)
     return m2.group(1) if m2 else None
 
-def render_log_html(lines: list[str], max_lines: int = 200):
-    """Renderiza o log com cores por ticker, box rolável e ordem decrescente."""
+def render_log_html(lines: list[str], selected_tickers: list[str] | None, max_lines: int = 200):
+    """Renderiza o log com cores por ticker, box rolável e ordem decrescente, com fade suave."""
     if not lines:
         st.write("—")
         return
     # Pega últimas N e inverte (mais novo no topo)
     subset = lines[-max_lines:][::-1]
+
+    # filtra se necessário
+    if selected_tickers:
+        subset = [l for l in subset if (extract_ticker(l) in selected_tickers)]
 
     css = """
     <style>
@@ -153,9 +160,11 @@ def render_log_html(lines: list[str], max_lines: int = 200):
         border: 1px solid #1f2937;
         border-radius: 10px;
         padding: 10px 12px;
-        max-height: 320px;
+        max-height: 360px;
         overflow-y: auto;
+        animation: fadein .18s ease-in;
       }
+      @keyframes fadein { from {opacity:.35} to {opacity:1} }
       .log-line{
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
         font-size: 13px;
@@ -201,6 +210,10 @@ for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado
 if "pausado" not in st.session_state:
     st.session_state.pausado = True
 
+# Último estado de pausa (para logar apenas quando muda)
+if "ultimo_estado_pausa" not in st.session_state:
+    st.session_state.ultimo_estado_pausa = None
+
 # Pontos de disparo (para marcar ⭐ no gráfico)
 if "disparos" not in st.session_state:
     st.session_state.disparos = {}  # { 'TICKER': [(datetime, preco), ...] }
@@ -211,18 +224,17 @@ ensure_color_map()
 # SIDEBAR - CONFIGURAÇÕES
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
-token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
-                                       value="6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
-chat_id_teste = st.sidebar.text_input("Chat ID (grupo ou usuário)", value="-1002533284493")
-st.sidebar.checkbox("⏸️ Pausar monitoramento (modo edição)", key="pausado")
 
+# Botão único de teste do Telegram (sem mostrar token/chat)
 if st.sidebar.button("📤 Testar Envio Telegram"):
-    st.sidebar.info("Enviando mensagem de teste...")
-    ok, erro = asyncio.run(testar_telegram(token_telegram, chat_id_teste))
+    st.sidebar.info("Enviando mensagem de teste (usando st.secrets)...")
+    ok, erro = asyncio.run(testar_telegram())
     if ok:
         st.sidebar.success("✅ Mensagem enviada com sucesso!")
     else:
         st.sidebar.error(f"❌ Falha: {erro}")
+
+st.sidebar.checkbox("⏸️ Pausar monitoramento (modo edição)", key="pausado")
 
 st.sidebar.header("📜 Histórico de Alertas")
 if st.session_state.historico_alertas:
@@ -242,6 +254,10 @@ if col_limp2.button("🧽 Limpar LOG"):
 if st.sidebar.button("🧼 Limpar marcadores ⭐"):
     st.session_state.disparos = {}
     st.sidebar.success("Marcadores limpos!")
+
+# Filtro por ticker no LOG (de volta)
+tickers_existentes = sorted(set([a["ticker"] for a in st.session_state.ativos])) if st.session_state.ativos else []
+selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_existentes, default=[])
 
 # -----------------------------
 # INTERFACE PRINCIPAL
@@ -315,11 +331,16 @@ log_container = st.empty()  # HTML estilizado (rolável, cores, descendente)
 # -----------------------------
 sleep_segundos = 60  # padrão fora do pregão / pausado
 
-# Modo edição/pausa: não monitora; só mantém a página viva
-if st.session_state.pausado:
+# Logar mudança de estado de pausa apenas quando o estado muda (sem spam e dentro do box)
+if st.session_state.pausado != st.session_state.ultimo_estado_pausa:
+    st.session_state.ultimo_estado_pausa = st.session_state.pausado
     st.session_state.log_monitoramento.append(
-        f"{now.strftime('%H:%M:%S')} | ⏸ Pausado (modo edição)."
+        f"{now.strftime('%H:%M:%S')} | {'⏸ Pausado (modo edição).' if st.session_state.pausado else '▶️ Retomado.'}"
     )
+
+if st.session_state.pausado:
+    # Só mantém a página viva; não loga nada fora do box (acima já logamos a mudança)
+    pass
 else:
     if dentro_pregao(now):
         # 1) Atualiza tabela/gráfico e monitora
@@ -352,10 +373,11 @@ else:
             tabela_status.table(pd.DataFrame(data))
 
         # Lógica por ativo
+        tickers_para_remover = []  # <- para tirar da busca após disparo
         for ativo in st.session_state.ativos:
             t = ativo["ticker"]
             preco_alvo = ativo["preco"]
-            operacao = ativo["operacao"]
+            operacao_atv = ativo["operacao"]
             tk_full = f"{t}.SA"
 
             try:
@@ -367,8 +389,8 @@ else:
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
 
             condicao = (
-                (operacao == "compra" and preco_atual >= preco_alvo) or
-                (operacao == "venda" and preco_atual <= preco_alvo)
+                (operacao_atv == "compra" and preco_atual >= preco_alvo) or
+                (operacao_atv == "venda"  and preco_atual <= preco_alvo)
             )
 
             if condicao:
@@ -385,12 +407,12 @@ else:
                 )
 
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
-                    alerta_msg = notificar_preco_alvo_alcancado(tk_full, preco_alvo, preco_atual, operacao, token_telegram)
+                    alerta_msg = notificar_preco_alvo_alcancado(tk_full, preco_alvo, preco_atual, operacao_atv)
                     st.warning(alerta_msg)
                     st.session_state.historico_alertas.append({
                         "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
                         "ticker": t,
-                        "operacao": operacao,
+                        "operacao": operacao_atv,
                         "preco_alvo": preco_alvo,
                         "preco_atual": preco_atual
                     })
@@ -398,10 +420,13 @@ else:
                     # ⭐ guarda o ponto do disparo p/ marcar no gráfico
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
 
-                    # resets
-                    st.session_state.status[t] = "🟢 Monitorando"
-                    st.session_state.em_contagem[t] = False
-                    st.session_state.tempo_acumulado[t] = 0
+                    # marca para remover da busca após o loop
+                    tickers_para_remover.append(t)
+
+                    # (não precisa resetar contadores se vamos remover)
+                else:
+                    # ainda em contagem; nada a fazer
+                    pass
             else:
                 if st.session_state.em_contagem[t]:
                     st.session_state.em_contagem[t] = False
@@ -410,6 +435,17 @@ else:
                     st.session_state.log_monitoramento.append(
                         f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
+
+        # Remove da busca os tickers disparados
+        if tickers_para_remover:
+            st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
+            for t in tickers_para_remover:
+                st.session_state.tempo_acumulado.pop(t, None)
+                st.session_state.em_contagem.pop(t, None)
+                st.session_state.status[t] = "✅ Disparado (removido)"
+            st.session_state.log_monitoramento.append(
+                f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após disparo: {', '.join(tickers_para_remover)}"
+            )
 
         # Gráfico: linhas por ticker (cor consistente) + marcadores de disparo ⭐
         fig = go.Figure()
@@ -456,7 +492,7 @@ else:
         sleep_segundos = INTERVALO_VERIFICACAO  # 5 min
 
     else:
-        # Fora do pregão: countdown simples no log
+        # Fora do pregão: countdown simples no log (apenas uma linha por ciclo)
         faltam = segundos_ate_abertura(now)
         st.session_state.log_monitoramento.append(
             f"{now.strftime('%H:%M:%S')} | ⏸ Fora do pregão. Abre em ~{faltam}s."
@@ -467,9 +503,9 @@ else:
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
 
-# Renderiza LOG estilizado (descendente, cores, box rolável)
+# Renderiza LOG estilizado (descendente, cores, box rolável, filtro por ticker)
 with log_container:
-    render_log_html(st.session_state.log_monitoramento, max_lines=250)
+    render_log_html(st.session_state.log_monitoramento, selected_tickers, max_lines=250)
 
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
