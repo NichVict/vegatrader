@@ -22,7 +22,7 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = datetime.time(18, 0, 0)   # 14:00 Lisboa
+HORARIO_INICIO_PREGAO = datetime.time(19, 0, 0)   # 14:00 Lisboa
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 INTERVALO_VERIFICACAO = 300                       # 5 min
 TEMPO_ACUMULADO_MAXIMO = 900                      # 15 min (mude p/ 1500=25min se quiser)
