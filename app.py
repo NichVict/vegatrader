@@ -3,7 +3,7 @@ from yahooquery import Ticker
 import datetime
 import time
 import smtplib
-from email.mime.text import MIMEText
+from email.mime_text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests
@@ -11,35 +11,42 @@ import asyncio
 from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
-from zoneinfo import ZoneInfo  # fuso com DST
+from zoneinfo import ZoneInfo
+import re
 
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
-TZ = ZoneInfo("Europe/Lisbon")                    # usa Lisboa (horário de verão automático)
-HORARIO_INICIO_PREGAO = datetime.time(15, 0, 0)   # 14:00 Lisboa
-HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
-INTERVALO_VERIFICACAO = 60   # 5 minutos
-TEMPO_ACUMULADO_MAXIMO = 900  # 15 minutos (mude para 1500 = 25 min se quiser)
+TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST ok)
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00
+HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00
+INTERVALO_VERIFICACAO = 300                       # 5 min
+TEMPO_ACUMULADO_MAXIMO = 900                      # 15 min (use 1500 p/ 25 min)
+LOG_MAX_LINHAS = 120                              # limite de linhas guardadas
+
+# Paleta de cores p/ tickers (rotaciona)
+PALETTE = [
+    "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
+    "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
+]
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
 # -----------------------------
 def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
-    mensagem = MIMEMultipart()
-    mensagem["From"] = remetente
-    mensagem["To"] = destinatario
-    mensagem["Subject"] = assunto
-    mensagem.attach(MIMEText(corpo, "plain"))
+    msg = MIMEMultipart()
+    msg["From"] = remetente
+    msg["To"] = destinatario
+    msg["Subject"] = assunto
+    msg.attach(MIMEText(corpo, "plain"))
     with smtplib.SMTP("smtp.gmail.com", 587) as servidor:
         servidor.starttls()
         servidor.login(remetente, senha_ou_token)
-        servidor.send_message(mensagem)
+        servidor.send_message(msg)
 
 def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
-    """Envia e-mail e Telegram"""
     enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
     async def send_telegram():
         try:
@@ -50,36 +57,35 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
             print(f"Erro Telegram: {e}")
     asyncio.run(send_telegram())
 
-@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
+@retry(stop=stop_after_attempt(5),
+       wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
-    ticker_data = Ticker(ticker_symbol)
-    # tenta preço em tempo real; fallback: fechamento
+    tk = Ticker(ticker_symbol)
     try:
-        p = ticker_data.price.get(ticker_symbol, {}).get("regularMarketPrice")
+        p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
         if p is not None:
             return float(p)
     except Exception:
         pass
-    preco_atual = ticker_data.history(period="1d")["close"].iloc[-1]
+    preco_atual = tk.history(period="1d")["close"].iloc[-1]
     return float(preco_atual)
 
 def notificar_preco_alvo_alcancado(ticker_symbol, preco_alvo, preco_atual, operacao, token_telegram):
     ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
-    mensagem_operacao = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
-    mensagem = (
-        f"Operação de {mensagem_operacao} em {ticker_symbol_sem_ext} ativada!\n"
+    op = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
+    msg = (
+        f"Operação de {op} em {ticker_symbol_sem_ext} ativada!\n"
         f"Preço alvo: {preco_alvo:.2f} | Preço atual: {preco_atual:.2f}\n\n"
         "COMPLIANCE: AGUARDAR CANDLE 60 MIN."
     )
     remetente = "avisoscanal1milhao@gmail.com"
-    # dica: coloque em st.secrets["gmail_app_password"]
-    senha_ou_token = "anoe gegm boqj ldzo"
+    senha_ou_token = "anoe gegm boqj ldzo"  # ideal: st.secrets["gmail_app_password"]
     destinatario = "docs1milhao@gmail.com"
-    assunto = f"ALERTA: {mensagem_operacao} em {ticker_symbol_sem_ext}"
+    assunto = f"ALERTA: {op} em {ticker_symbol_sem_ext}"
     chat_ids = ["-1002533284493"]
-    enviar_notificacao(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
-    return mensagem
+    enviar_notificacao(destinatario, assunto, msg, remetente, senha_ou_token, token_telegram, chat_ids)
+    return msg
 
 async def testar_telegram(token_telegram, chat_id):
     try:
@@ -107,6 +113,79 @@ def segundos_ate_abertura(dt_now):
     else:
         return 0
 
+# ---- util p/ LOG colorido ----
+def ensure_color_map():
+    if "ticker_colors" not in st.session_state:
+        st.session_state.ticker_colors = {}
+
+def color_for_ticker(ticker: str) -> str:
+    ensure_color_map()
+    if ticker not in st.session_state.ticker_colors:
+        idx = len(st.session_state.ticker_colors) % len(PALETTE)
+        st.session_state.ticker_colors[ticker] = PALETTE[idx]
+    return st.session_state.ticker_colors[ticker]
+
+TICKER_PAT = re.compile(r"\b([A-Z]{4,6}\d{0,2})\.SA\b")  # ex: PETR4.SA, ITUB4.SA, VALE3.SA
+
+def extract_ticker(line: str) -> str | None:
+    m = TICKER_PAT.search(line)
+    if m:
+        return m.group(1)
+    # também tenta padrões do tipo "⏱ ITUB4:" ou "⚠️ ITUB4"
+    m2 = re.search(r"\b([A-Z]{4,6}\d{0,2})\b(?=:| |$)", line)
+    if m2:
+        return m2.group(1)
+    return None
+
+def render_log(lines: list[str], selected_tickers: list[str] | None, max_lines: int = 50):
+    """Renderiza o log em ordem decrescente, com cor por ticker."""
+    if not lines:
+        st.write("—")
+        return
+    # limita e reverte (mais novo no topo)
+    subset = lines[-max_lines:][::-1]
+
+    # filtra por ticker se necessário
+    rendered = []
+    for l in subset:
+        tk = extract_ticker(l)
+        if selected_tickers and tk and tk not in selected_tickers:
+            continue
+        rendered.append((l, tk))
+
+    if not rendered:
+        st.write("—")
+        return
+
+    # CSS leve
+    css = """
+    <style>
+      .log-line{font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+                font-size: 13px; margin: 2px 0; line-height: 1.35;}
+      .ts{color:#9ca3af; margin-right:6px;}
+      .badge{display:inline-block; padding:1px 6px; font-size:12px; border-radius:9999px; color:white; margin-right:6px;}
+      .msg{color:#e5e7eb;}
+      .wrap{white-space: pre-wrap;}
+    </style>
+    """
+    html = [css]
+    for l, tk in rendered:
+        # quebra "HH:MM:SS | resto"
+        if " | " in l:
+            ts, rest = l.split(" | ", 1)
+        else:
+            ts, rest = "", l
+
+        # badge do ticker
+        badge_html = ""
+        if tk:
+            c = color_for_ticker(tk)
+            badge_html = f"<span class='badge' style='background:{c}'>{tk}</span>"
+
+        html.append(f"<div class='log-line wrap'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
+
+    st.markdown("\n".join(html), unsafe_allow_html=True)
+
 # -----------------------------
 # ESTADOS GLOBAIS
 # -----------------------------
@@ -115,12 +194,14 @@ for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado
     if var not in st.session_state:
         st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
 
-# Modo edição/pausa (permite cadastrar vários tickers antes de monitorar)
+# Modo edição/pausa
 if "pausado" not in st.session_state:
-    st.session_state.pausado = True  # inicia pausado; desmarque para começar quando quiser
+    st.session_state.pausado = True  # comece pausado para cadastrar com calma
+
+ensure_color_map()
 
 # -----------------------------
-# SIDEBAR - CONFIGURAÇÕES E TELEGRAM
+# SIDEBAR - CONFIGURAÇÕES
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 token_telegram = st.sidebar.text_input("Token do Bot Telegram", type="password",
@@ -143,10 +224,16 @@ if st.session_state.historico_alertas:
         st.sidebar.caption(f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}")
 else:
     st.sidebar.info("Nenhum alerta ainda.")
-
 if st.sidebar.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
     st.sidebar.success("Histórico limpo!")
+
+# --- Filtro do LOG + limpar LOG
+tickers_existentes = [a["ticker"] for a in st.session_state.ativos] if st.session_state.ativos else []
+selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", sorted(set(tickers_existentes)))
+if st.sidebar.button("🧽 Limpar LOG"):
+    st.session_state.log_monitoramento.clear()
+    st.sidebar.success("Log limpo!")
 
 # -----------------------------
 # INTERFACE PRINCIPAL
@@ -211,7 +298,7 @@ st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
 
 st.subheader("🕒 Log de Monitoramento")
-log_box = st.empty()
+log_container = st.empty()  # renderizamos em HTML estilizado
 
 # -----------------------------
 # CICLO ÚNICO + REEXECUÇÃO AUTOMÁTICA
@@ -322,24 +409,28 @@ else:
                           legend_title="Ticker")
         grafico.plotly_chart(fig, use_container_width=True)
 
-        sleep_segundos = INTERVALO_VERIFICACAO  # próximo ciclo em 5 min
+        sleep_segundos = INTERVALO_VERIFICACAO  # 5 min
 
     else:
-        # Fora do pregão: countdown simples no log e aguarda próximo ciclo
+        # Fora do pregão: countdown simples no log
         faltam = segundos_ate_abertura(now)
         st.session_state.log_monitoramento.append(
             f"{now.strftime('%H:%M:%S')} | ⏸ Fora do pregão. Abre em ~{faltam}s."
         )
-        # Se faltar pouco, acorda mais rápido
         sleep_segundos = min(60, max(1, faltam))
 
-# Atualiza log no fim do ciclo
-if st.session_state.log_monitoramento:
-    log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
+# Limita crescimento do log (memória)
+if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
+    st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
+
+# Renderiza LOG estilizado (decrescente + cores + filtro)
+with log_container:
+    render_log(st.session_state.log_monitoramento, selected_tickers, max_lines=60)
 
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
 st.rerun()
+
 
 
 
