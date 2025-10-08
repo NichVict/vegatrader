@@ -19,10 +19,10 @@ from streamlit.components.v1 import html
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")          # DST automático
-HORARIO_INICIO_PREGAO = dt.time(12, 50)  # 14:00
+HORARIO_INICIO_PREGAO = dt.time(14, 0)  # 14:00
 HORARIO_FIM_PREGAO    = dt.time(21, 0)  # 21:00
 INTERVALO_VERIFICACAO = 300             # 5 min durante pregão
-TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (mude para 1500=25min se quiser)
+TEMPO_ACUMULADO_MAXIMO = 900            # 15 min (use 1500 = 25 min se quiser)
 KEEPALIVE_SECONDS = 60                  # fora do pregão: mantém a página viva
 
 # =========================
@@ -105,30 +105,6 @@ def segundos_ate_proxima_abertura(now: dt.datetime) -> int:
         return int((amanha - now).total_seconds())
     return 0  # dentro do pregão
 
-# ---- garante auto-start/stop com rerun (chamado 2x) ----
-def ensure_monitoring(now: dt.datetime):
-    auto_start = st.session_state.get("auto_start_open", True)
-    auto_stop  = st.session_state.get("auto_stop_close", True)
-    monitorando_flag = st.session_state.get("monitorando", False)
-
-    # STOP primeiro (se acordou fora do pregão)
-    if auto_stop and monitorando_flag and not dentro_pregao(now):
-        st.session_state.monitorando = False
-        st.toast("⏹ Monitoramento parado automaticamente (fechamento).", icon="🛑")
-        try:
-            st.rerun()
-        except Exception:
-            st.experimental_rerun()
-
-    # START quando entrar na janela
-    if auto_start and not st.session_state.get("monitorando", False) and dentro_pregao(now):
-        st.session_state.monitorando = True
-        st.toast("▶️ Monitoramento iniciado automaticamente (abertura do pregão).", icon="✅")
-        try:
-            st.rerun()
-        except Exception:
-            st.experimental_rerun()
-
 # =========================
 # Estado inicial
 # =========================
@@ -175,14 +151,9 @@ if st.sidebar.button("🧹 Limpar histórico"):
     st.sidebar.success("Histórico limpo!")
 
 # =========================
-# ENFORCE auto-start/stop (1ª checagem)
-# =========================
-now_global = dt.datetime.now(TZ)
-ensure_monitoring(now_global)
-
-# =========================
 # UI principal
 # =========================
+now_global = dt.datetime.now(TZ)
 st.title("📈 CLUBE - COMPRA E VENDA")
 st.caption(f"Agora: {now_global.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
            f"{'🟩 Dentro do pregão' if dentro_pregao(now_global) else '🟥 Fora do pregão'}")
@@ -199,8 +170,8 @@ if st.button("➕ Adicionar ativo"):
     if not ticker:
         st.error("Digite um ticker válido.")
     else:
-        ativo = {"ticker": ticker, "operacao": operacao, "preco": preco}
-        st.session_state.ativos.append(ativo)
+        a = {"ticker": ticker, "operacao": operacao, "preco": preco}
+        st.session_state.ativos.append(a)
         st.session_state.tempo_acumulado[ticker] = 0
         st.session_state.em_contagem[ticker] = False
         st.session_state.status[ticker] = "🟢 Monitorando"
@@ -265,12 +236,22 @@ def render_tabela_e_grafico():
 render_tabela_e_grafico()
 
 # =========================
-# Monitoramento (contagem por relógio real)
+# Monitoramento (auto-start efetivo + contagem por relógio real)
 # =========================
 def ciclo_monitoramento():
     now = dt.datetime.now(TZ)
-    if not st.session_state.monitorando:
+
+    # >>>>>>> AUTO-START EFETIVO (sem depender do botão/rerun) <<<<<<<
+    monitorando_efetivo = st.session_state.get("monitorando", False) \
+        or (st.session_state.get("auto_start_open", True) and dentro_pregao(now))
+
+    # sincroniza o estado visual se entrar no pregão
+    if monitorando_efetivo and not st.session_state.get("monitorando", False):
+        st.session_state.monitorando = True
+
+    if not monitorando_efetivo:
         return
+
     if not dentro_pregao(now):
         st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⏸ Fora do horário de pregão.")
         return
@@ -361,7 +342,6 @@ if not dentro_pregao(now):
 
         function pad(n) {{ return String(n).padStart(2,'0'); }}
         function tick(){{
-          // aproxima o "agora" do servidor usando o relógio do browser
           const serverApproxNow = Date.now() - OFFSET;
           let diff = Math.max(0, Math.floor((TARGET - serverApproxNow)/1000));
           const h = Math.floor(diff/3600);
@@ -381,39 +361,23 @@ if not dentro_pregao(now):
     """, height=100)
 
 # =========================
-# ENFORCE auto-start/stop (2ª checagem) + refresh confiável
+# Refresh (mais curto perto da abertura)
 # =========================
 now_final = dt.datetime.now(TZ)
-ensure_monitoring(now_final)
-
 faltam = segundos_ate_proxima_abertura(now_final)
-if st.session_state.get("monitorando") and dentro_pregao(now_final):
+if (st.session_state.get("monitorando") or st.session_state.get("auto_start_open", True)) and dentro_pregao(now_final):
     prox = INTERVALO_VERIFICACAO
 else:
-    # agressivo nos 2 minutos finais (se o JS for "throttled", a cada 1s o servidor reexecuta)
     if 0 < faltam <= 120:
-        prox = 1000   # 1s
+        prox = 1
     elif 0 < faltam <= 600:
-        prox = 5000   # 5s
+        prox = 5
     else:
-        prox = KEEPALIVE_SECONDS * 1000  # 60s
+        prox = KEEPALIVE_SECONDS
 
-# Fallback server-side: força nova execução periódica
-# (isso não depende do JS do navegador)
-st.session_state["__heartbeat__"] = st.session_state.get("__heartbeat__", 0) + 1
-if prox <= 5000:
-    # quando estamos a ≤10min, forçamos uma reexecução periódica
-    try:
-        import time
-        time.sleep(0.01)  # minúsculo atraso para evitar flood
-        st.experimental_rerun()
-    except Exception:
-        pass
-
-# E mantemos o JS também (quando não houver throttle, ele resolve sozinho)
-st.caption(f"🔄 Próxima atualização automática em ~{int(prox/1000)} segundos.")
+st.caption(f"🔄 Próxima atualização automática em ~{prox} segundos.")
 st.markdown(
-    f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox});</script>",
+    f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox*1000});</script>",
     unsafe_allow_html=True
 )
 
