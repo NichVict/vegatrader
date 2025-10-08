@@ -3,7 +3,7 @@ from yahooquery import Ticker
 import datetime
 import time
 import smtplib
-from email.mime_text import MIMEText
+from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests
