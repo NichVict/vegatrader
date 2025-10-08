@@ -10,18 +10,19 @@ import asyncio
 from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
-from zoneinfo import ZoneInfo  # <- fuso com DST
+from zoneinfo import ZoneInfo
+from streamlit.components.v1 import html  # para contador ao vivo
 
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
-TZ = ZoneInfo("Europe/Lisbon")  # horário de Lisboa com horário de verão automático
-HORARIO_INICIO_PREGAO = dt.time(14, 0, 0)  # em Lisboa
-HORARIO_FIM_PREGAO    = dt.time(21, 0, 0)  # em Lisboa
+TZ = ZoneInfo("Europe/Lisbon")  # DST automático
+HORARIO_INICIO_PREGAO = dt.time(14, 0, 0)  # horário local Lisboa
+HORARIO_FIM_PREGAO    = dt.time(21, 0, 0)
 INTERVALO_VERIFICACAO = 300   # 5 min
-TEMPO_ACUMULADO_MAXIMO = 900  # 15 min (ajuste para 1500 se quiser 25 min)
+TEMPO_ACUMULADO_MAXIMO = 900  # 15 min (mude para 1500 = 25 min, se quiser)
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -214,7 +215,8 @@ def render_tabela_e_grafico():
             "Status": st.session_state.status.get(t, "🟢 Monitorando"),
             "Tempo Acumulado": f"{int(tempo/60)} min"
         })
-    st.table(pd.DataFrame(data_rows))
+    df = pd.DataFrame(data_rows)
+    tabela_status.table(df)
 
     # gráfico colorido por status
     fig = go.Figure()
@@ -233,7 +235,7 @@ def render_tabela_e_grafico():
 render_tabela_e_grafico()
 
 # -----------------------------
-# UM CICLO DE MONITORAMENTO (reativo, sem while/sleep)
+# UM CICLO DE MONITORAMENTO (reativo)
 # -----------------------------
 def ciclo_monitoramento():
     now = dt.datetime.now(TZ)
@@ -312,45 +314,50 @@ if st.session_state.log_monitoramento:
     log_box.text("\n".join(st.session_state.log_monitoramento[-20:]))
 
 # -----------------------------
-# AUTO-REFRESH INTELIGENTE + CONTADOR (limpo)
+# CONTADOR AO VIVO + AUTO-REFRESH
 # -----------------------------
 now = dt.datetime.now(TZ)
 
-# contador ao vivo quando pregão estiver fechado (independente de monitoramento ligado)
+# contador ao vivo quando pregão estiver fechado (independente do monitoramento ligado)
 if not dentro_pregao(now):
     seg_ate_abertura = max(1, segundos_ate_proxima_abertura(now))
-    h, r = divmod(seg_ate_abertura, 3600)
-    m, s = divmod(r, 60)
-    st.info(
-        f"⏳ Pregão fechado. Reabre em **{h:02d}:{m:02d}:{s:02d}** "
-        f"(às {HORARIO_INICIO_PREGAO.strftime('%H:%M')})."
-    )
+    abertura_str = HORARIO_INICIO_PREGAO.strftime('%H:%M')
     target_ts_ms = int((now + dt.timedelta(seconds=seg_ate_abertura)).timestamp() * 1000)
-    st.markdown(f"""
-    <div style="font-size:1.05rem;margin:4px 0 10px;">
-      ⏱️ <b>Contagem regressiva: <span id="cd">--:--:--</span></b>
+
+    html(f"""
+    <div style="font-family:system-ui,Segoe UI,Roboto,Arial;color:#d1d5db;">
+      <div style="background:#0b2a43;padding:12px 14px;border-radius:8px;margin-top:8px;">
+        <span style="font-size:14px;">⏳ Pregão fechado. Reabre em
+          <b><span id="left">--:--:--</span></b> (às {abertura_str}).</span>
+      </div>
+      <div style="font-size:15px;margin:10px 2px 0;">
+        ⏱️ <b>Contagem regressiva: <span id="cd">--:--:--</span></b>
+      </div>
     </div>
     <script>
-    (function() {{
-      const target = {target_ts_ms};
-      function pad(n) {{ return n.toString().padStart(2, '0'); }}
-      function tick() {{
-        const nowMs = Date.now();
-        let diff = Math.max(0, Math.floor((target - nowMs) / 1000));
-        const h = Math.floor(diff / 3600);
-        diff %= 3600;
-        const m = Math.floor(diff / 60);
-        const s = diff % 60;
-        const el = document.getElementById('cd');
-        if (el) el.textContent = pad(h) + ":" + pad(m) + ":" + pad(s);
-      }}
-      tick();
-      setInterval(tick, 1000);
-    }})();
+      (function(){{
+        const target = {target_ts_ms};
+        function pad(n) {{ return String(n).padStart(2,'0'); }}
+        function tick(){{
+          const now = Date.now();
+          let diff = Math.max(0, Math.floor((target - now)/1000));
+          const h = Math.floor(diff/3600);
+          diff %= 3600;
+          const m = Math.floor(diff/60);
+          const s = diff % 60;
+          const text = pad(h)+":"+pad(m)+":"+pad(s);
+          const cd = document.getElementById('cd');
+          const left = document.getElementById('left');
+          if (cd) cd.textContent = text;
+          if (left) left.textContent = text;
+        }}
+        tick();
+        setInterval(tick, 1000);
+      }})();
     </script>
-    """, unsafe_allow_html=True)
+    """, height=100)
 
-# intervalo para o próximo refresh
+# intervalo para o próximo refresh (reativo)
 if st.session_state.monitorando:
     if dentro_pregao(now):
         prox_segundos = INTERVALO_VERIFICACAO
@@ -365,6 +372,7 @@ st.markdown(
     f"<script>setTimeout(function(){{ window.location.reload(); }}, {prox_segundos*1000});</script>",
     unsafe_allow_html=True
 )
+
 
 
 
