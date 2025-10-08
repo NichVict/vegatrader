@@ -20,10 +20,10 @@ import re
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = datetime.time(16, 30, 0)   # 14:00 Lisboa
-HORARIO_FIM_PREGAO    = datetime.time(17, 0, 0)   # 21:00 Lisboa
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
+HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 INTERVALO_VERIFICACAO = 300                       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 1500                      # 15 min (mude p/ 1500=25min se quiser)
+TEMPO_ACUMULADO_MAXIMO = 900                      # 15 min (mude p/ 1500=25min se quiser)
 LOG_MAX_LINHAS = 1000                             # limite de linhas do log
 
 # Paleta de cores (rotaciona entre tickers)
@@ -117,6 +117,12 @@ def segundos_ate_abertura(dt_now):
         return int((amanha_abre - dt_now).total_seconds())
     else:
         return 0
+
+def fmt_hms(seg):
+    h = seg // 3600
+    m = (seg % 3600) // 60
+    s = seg % 60
+    return f"{h:02d}:{m:02d}:{s:02d}"
 
 # ---------- LOG: cor por ticker + box rolável + ordem decrescente ----------
 def ensure_color_map():
@@ -306,7 +312,10 @@ st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
 
 st.subheader("🕒 Log de Monitoramento")
-log_container = st.empty()  # HTML estilizado (rolável, cores, descendente)
+# Cartão único de contagem regressiva (fora do pregão)
+countdown_container = st.empty()
+# Log estilizado
+log_container = st.empty()
 
 # -----------------------------
 # CICLO ÚNICO + REEXECUÇÃO AUTOMÁTICA
@@ -324,6 +333,9 @@ if st.session_state.pausado:
     pass  # não monitora; mantém a página viva
 else:
     if dentro_pregao(now):
+        # Esconde o cartão de countdown quando entra no pregão
+        countdown_container.empty()
+
         # 1) Atualiza tabela/gráfico e monitora
         data = []
         for ativo in st.session_state.ativos:
@@ -469,12 +481,24 @@ else:
         sleep_segundos = INTERVALO_VERIFICACAO  # 5 min
 
     else:
-        # Fora do pregão: countdown simples no log (apenas uma linha por ciclo)
+        # ======= FORA DO PREGÃO: APENAS UMA MENSAGEM DE COUNTDOWN =======
         faltam = segundos_ate_abertura(now)
-        st.session_state.log_monitoramento.append(
-            f"{now.strftime('%H:%M:%S')} | ⏸ Fora do pregão. Abre em ~{faltam}s."
+        # calcula a próxima abertura (hoje ou amanhã)
+        prox_abertura = now.replace(hour=HORARIO_INICIO_PREGAO.hour, minute=0, second=0, microsecond=0)
+        if now > prox_abertura:
+            prox_abertura = prox_abertura + datetime.timedelta(days=1)
+
+        countdown_container.info(
+            f"⏸️ **Pregão fechado.** Reabre em **{fmt_hms(faltam)}** (às {prox_abertura.strftime('%H:%M')})."
         )
-        sleep_segundos = min(60, max(1, faltam))
+
+        # não grava no LOG (evita flood). Apenas ajusta a frequência:
+        if faltam <= 60:
+            sleep_segundos = 1
+        elif faltam <= 600:
+            sleep_segundos = 10
+        else:
+            sleep_segundos = 60
 
 # Limita crescimento do log (memória)
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
