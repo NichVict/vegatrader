@@ -514,8 +514,25 @@ else:
             height=70
         )
 
-        # não grava no LOG (evita flood) e reduz ritmo de rerun do servidor:
-        # 60s quando falta >10min; 30s quando falta <=10min; 10s quando falta <=1min.
+        # ---- MANTER O APP VIVO (keep-alive fora do pregão, com controle de tempo) ----
+        try:
+            APP_URL = "https://robozinho.streamlit.app/"  # substitua pela URL real do seu app
+            intervalo_ping = 15 * 60  # envia keep-alive a cada 15 minutos
+            ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
+
+            # Envia ping apenas se já passou o intervalo definido
+            if not ultimo_ping or (now - ultimo_ping).total_seconds() > intervalo_ping:
+                requests.get(APP_URL, timeout=5)
+                st.session_state["ultimo_ping_keepalive"] = now
+                st.session_state.log_monitoramento.append(
+                    f"{now.strftime('%H:%M:%S')} | 🔄 Keep-alive ping enviado para {APP_URL}"
+                )
+        except Exception as e:
+            st.session_state.log_monitoramento.append(
+                f"{now.strftime('%H:%M:%S')} | ⚠️ Erro no keep-alive: {e}"
+            )
+
+        # reduz ritmo de rerun do servidor conforme proximidade do pregão
         if faltam <= 60:
             sleep_segundos = 10
         elif faltam <= 600:
@@ -534,7 +551,6 @@ with log_container:
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
 st.rerun()
-
 
 
 
