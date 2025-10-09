@@ -516,7 +516,7 @@ else:
 
         # ---- MANTER O APP VIVO (keep-alive fora do pregão, com controle de tempo) ----
         try:
-            APP_URL = "https://robozinho.streamlit.app/"  # substitua pela URL real do seu app
+            APP_URL = "https://robozinho.streamlit.app"  # substitua pela URL real do seu app
             intervalo_ping = 15 * 60  # envia keep-alive a cada 15 minutos
             ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
 
