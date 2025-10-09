@@ -1,4 +1,21 @@
 import streamlit as st
+st.set_page_config(page_title="Canal 1 Milhão - Robô de Operações", layout="wide")
+
+st.title("🤖 Canal 1 Milhão - Monitor de Operações")
+st.markdown("""
+Bem-vindo ao **Painel Principal**.
+
+No menu lateral, você pode escolher entre:
+- **CARTEIRA CURTÍSSIMO PRAZO**
+- **CARTEIRA CURTO PRAZO**
+- **LOSS CURTÍSSIMO**
+- **LOSS CURTO**
+- **CLUBE STOP**
+- **LOSS CLUBE**
+
+Cada página monitora preços, tempos acumulados e envia alertas automáticos.
+""")
+
 from yahooquery import Ticker
 import datetime
 import time
