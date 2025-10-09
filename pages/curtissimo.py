@@ -10,7 +10,6 @@ CURTÍSSIMO - COMPRA E VENDA (Streamlit)
 """
 import streamlit as st
 st.set_page_config(page_title="CARTEIRA CURTÍSSIMO PRAZO", layout="wide")
-st.title("⚡ CARTEIRA CURTÍSSIMO PRAZO")
 from yahooquery import Ticker
 import datetime
 import time
