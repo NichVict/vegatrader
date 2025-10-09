@@ -333,6 +333,22 @@ if st.session_state.pausado:
     pass  # não monitora; mantém a página viva
 else:
     if dentro_pregao(now):
+        # ---- Notificação única na abertura do pregão ----
+        if not st.session_state.get("avisou_abertura_pregao", False):
+            try:
+                token = st.secrets.get("telegram_token")
+                chat = st.secrets.get("telegram_chat_id")
+                bot = Bot(token=token)
+                asyncio.run(bot.send_message(chat_id=chat, text="🤖 Robô ativo — Pregão Aberto! 📈"))
+                st.session_state["avisou_abertura_pregao"] = True
+                st.session_state.log_monitoramento.append(
+                    f"{now.strftime('%H:%M:%S')} | 📣 Mensagem Telegram enviada: Pregão Aberto"
+                )
+            except Exception as e:
+                st.session_state.log_monitoramento.append(
+                    f"{now.strftime('%H:%M:%S')} | ⚠️ Erro ao enviar notificação de abertura: {e}"
+                )
+
         # Esconde o cartão de countdown quando entra no pregão
         countdown_container.empty()
 
@@ -460,7 +476,7 @@ else:
                 marker=dict(
                     symbol="star",
                     size=12,
-                    color=color_for_ticker(t),       # mesma cor do ticker
+                    color=color_for_ticker(t),
                     line=dict(width=2, color="white")
                 ),
                 hovertemplate=(
@@ -481,6 +497,9 @@ else:
         sleep_segundos = INTERVALO_VERIFICACAO  # 5 min
 
     else:
+        # ---- Reset do aviso de abertura ----
+        st.session_state["avisou_abertura_pregao"] = False
+
         # ======= FORA DO PREGÃO: CARTÃO COM COUNTDOWN EM JS (sem rerun por segundo) =======
         faltam, prox_abertura = segundos_ate_abertura(now)
         # id único para não conflitar entre reruns
@@ -520,7 +539,6 @@ else:
             intervalo_ping = 15 * 60  # envia keep-alive a cada 15 minutos
             ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
 
-            # Envia ping apenas se já passou o intervalo definido
             if not ultimo_ping or (now - ultimo_ping).total_seconds() > intervalo_ping:
                 requests.get(APP_URL, timeout=5)
                 st.session_state["ultimo_ping_keepalive"] = now
@@ -532,14 +550,13 @@ else:
                 f"{now.strftime('%H:%M:%S')} | ⚠️ Erro no keep-alive: {e}"
             )
 
-        # reduz ritmo de rerun do servidor conforme proximidade do pregão
-        
+        # ---- Intervalo de reexecução fora do pregão (adaptativo) ----
         if faltam > 3600:  # falta mais de 1 hora para o pregão
             sleep_segundos = 900   # 15 minutos
         elif faltam > 600:  # entre 10min e 1h
             sleep_segundos = 300   # 5 minutos
         else:  # menos de 10min até o pregão
-            sleep_segundos = 180    # 1 minuto
+            sleep_segundos = 180   # 3 minutos
 
 # Limita crescimento do log (memória)
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
