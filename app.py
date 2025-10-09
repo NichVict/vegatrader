@@ -264,6 +264,34 @@ ensure_color_map()
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
+# Botão de reset total da tabela/estado
+if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
+    try:
+        if os.path.exists(SAVE_PATH):
+            os.remove(SAVE_PATH)
+        # zera tudo e deixa pausado
+        st.session_state.clear()
+        st.session_state.pausado = True
+        st.session_state.ultimo_estado_pausa = None
+        st.session_state.ativos = []
+        st.session_state.historico_alertas = []
+        st.session_state.log_monitoramento = []
+        st.session_state.tempo_acumulado = {}
+        st.session_state.em_contagem = {}
+        st.session_state.status = {}
+        st.session_state.precos_historicos = {}
+        st.session_state.disparos = {}
+        # registra no novo log “limpo”
+        now_tmp = datetime.datetime.now(TZ)
+        st.session_state.log_monitoramento.append(
+            f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado"
+        )
+        salvar_estado()
+        st.sidebar.success("✅ Estado salvo apagado e reiniciado.")
+        st.rerun()
+    except Exception as e:
+        st.sidebar.error(f"Erro ao apagar estado: {e}")
+
 # Botão único de teste do Telegram (sem mostrar token/chat)
 if st.sidebar.button("📤 Testar Envio Telegram"):
     st.sidebar.info("Enviando mensagem de teste (usando st.secrets)...")
@@ -595,9 +623,17 @@ else:
                 intervalo_ping = 15 * 60  # envia keep-alive a cada 15 minutos
                 ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
 
+                # Se veio do JSON como string, converte
+                if isinstance(ultimo_ping, str):
+                    try:
+                        ultimo_ping = datetime.datetime.fromisoformat(ultimo_ping)
+                    except Exception:
+                        ultimo_ping = None
+
+                # Envia ping apenas se já passou o intervalo definido
                 if not ultimo_ping or (now - ultimo_ping).total_seconds() > intervalo_ping:
                     requests.get(APP_URL, timeout=5)
-                    st.session_state["ultimo_ping_keepalive"] = now
+                    st.session_state["ultimo_ping_keepalive"] = now.isoformat()  # salva compatível com JSON
                     st.session_state.log_monitoramento.append(
                         f"{now.strftime('%H:%M:%S')} | 🔄 Keep-alive ping enviado para {APP_URL}"
                     )
