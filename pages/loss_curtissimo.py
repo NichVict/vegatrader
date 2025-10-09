@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-curtissimo.py
-CURTÍSSIMO - COMPRA E VENDA (Streamlit)
+losscurtissimo.py
+CURTÍSSIMO - STOP !!! (Streamlit)
 
-- Lógica: dispara após 900s (15 min) de permanência na zona do preço-alvo
-- Mensagens: "CARTEIRA CURTISSIMO PRAZO" (ativação de operação)
-- Credenciais: lidas de st.secrets (veja modelo de secrets ao final)
-- Keep-alive: https://curtissimo.streamlit.app/
+- Dispara ENCERRAMENTO após 900s (15 min) na zona do STOP
+- Mensagens: "CARTEIRA CURTISSIMO PRAZO" (encerramento)
+- Credenciais: lidas de st.secrets (modelo no final)
+- Keep-alive: https://losscurtissimo.streamlit.app/
 """
 import streamlit as st
 from yahooquery import Ticker
@@ -31,7 +31,7 @@ import os
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
-st.set_page_config(page_title="CURTÍSSIMO - COMPRA E VENDA", layout="wide")
+st.set_page_config(page_title="CURTÍSSIMO - STOP !!!", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
@@ -46,8 +46,8 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-# Persistência (arquivo separado para este modo)
-SAVE_PATH = "session_state_curtissimo.json"
+# Persistência (arquivo separado deste app)
+SAVE_PATH = "session_state_losscurtissimo.json"
 
 def salvar_estado():
     estado = {
@@ -80,7 +80,7 @@ def carregar_estado():
                 if k == "pausado" and pausado_atual is not None:
                     continue
                 st.session_state[k] = v
-            st.sidebar.info("💾 Estado (CURTÍSSIMO) restaurado!")
+            st.sidebar.info("💾 Estado (LOS S CURTÍSSIMO) restaurado!")
         except Exception as e:
             st.sidebar.error(f"Erro ao carregar estado: {e}")
 
@@ -117,6 +117,7 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
     tk = Ticker(ticker_symbol)
+    # tenta preço em tempo real; fallback para fechamento recente
     try:
         p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
         if p is not None:
@@ -244,10 +245,10 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.session_state.disparos = {}
         now_tmp = agora_lx()
         st.session_state.log_monitoramento.append(
-            f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado (CURTÍSSIMO)"
+            f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado (LOS S CURTÍSSIMO)"
         )
         salvar_estado()
-        st.sidebar.success("✅ Estado (CURTÍSSIMO) apagado e reiniciado.")
+        st.sidebar.success("✅ Estado (LOS S CURTÍSSIMO) apagado e reiniciado.")
         st.rerun()
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado: {e}")
@@ -259,7 +260,7 @@ async def testar_telegram():
         if not token or not chat:
             raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
         bot = Bot(token=token)
-        await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTÍSSIMO funcionando!")
+        await bot.send_message(chat_id=chat, text="✅ Teste de alerta LOS S CURTÍSSIMO funcionando!")
         return True, None
     except Exception as e:
         return False, str(e)
@@ -274,13 +275,13 @@ if st.sidebar.button("📤 Testar Envio Telegram"):
 
 st.sidebar.checkbox("⏸️ Pausar monitoramento (modo edição)", key="pausado")
 
-st.sidebar.header("📜 Histórico de Alertas (CURTÍSSIMO)")
+st.sidebar.header("📜 Histórico de Encerramentos")
 if st.session_state.historico_alertas:
     for alerta in reversed(st.session_state.historico_alertas):
         st.sidebar.write(f"**{alerta['ticker']}** - {alerta['operacao'].upper()}")
-        st.sidebar.caption(f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}")
+        st.sidebar.caption(f"{alerta['hora']} | STOP: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}")
 else:
-    st.sidebar.info("Nenhum alerta ainda.")
+    st.sidebar.info("Nenhum encerramento ainda.")
 col_limp, col_limp2 = st.sidebar.columns(2)
 if col_limp.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
@@ -299,22 +300,22 @@ selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_exis
 # INTERFACE PRINCIPAL
 # -----------------------------
 now = agora_lx()
-st.title("⚡ CURTÍSSIMO - COMPRA E VENDA")
+st.title("🛑 CURTÍSSIMO - STOP !!!")
 st.caption(
     f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
     f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}"
 )
-st.write("Cadastre tickers e preços-alvo. O robô **ativa a operação** quando o preço permanece na zona por **15 minutos (900s)**.")
+st.write("Cadastre tickers/STOPs. O robô envia **encerramento de operação** quando o preço permanece na zona por **15 minutos (900s)**.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
     ticker = st.text_input("Ticker (ex: PETR4)").upper()
 with col2:
-    operacao = st.selectbox("Operação", ["compra", "venda"])
+    operacao = st.selectbox("Operação a executar para zerar posição", ["compra", "venda"])
 with col3:
-    preco = st.number_input("Preço alvo", min_value=0.01, step=0.01)
+    preco = st.number_input("STOP (preço alvo)", min_value=0.01, step=0.01)
 
-if st.button("➕ Adicionar ativo"):
+if st.button("➕ Adicionar STOP"):
     if not ticker:
         st.error("Digite um ticker válido.")
     else:
@@ -324,12 +325,12 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.em_contagem[ticker] = False
         st.session_state.status[ticker] = "🟢 Monitorando"
         st.session_state.precos_historicos[ticker] = []
-        st.success(f"Ativo {ticker} adicionado com sucesso!")
+        st.success(f"STOP de {ticker} adicionado com sucesso!")
 
 # -----------------------------
 # STATUS + GRÁFICO + LOG
 # -----------------------------
-st.subheader("📊 Status dos Ativos (CURTÍSSIMO)")
+st.subheader("📊 Status dos STOPs")
 tabela_status = st.empty()
 
 if st.session_state.ativos:
@@ -345,8 +346,8 @@ if st.session_state.ativos:
         minutos = tempo / 60
         data.append({
             "Ticker": t,
-            "Operação": ativo["operacao"].upper(),
-            "Preço Alvo": f"R$ {ativo['preco']:.2f}",
+            "Zerar com": ativo["operacao"].upper(),
+            "STOP": f"R$ {ativo['preco']:.2f}",
             "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
             "Status": st.session_state.status.get(t, "🟢 Monitorando"),
             "Tempo Acumulado": f"{int(minutos)} min"
@@ -354,7 +355,7 @@ if st.session_state.ativos:
     df = pd.DataFrame(data)
     tabela_status.dataframe(df, use_container_width=True, height=220)
 else:
-    st.info("Nenhum ativo cadastrado ainda.")
+    st.info("Nenhum STOP cadastrado ainda.")
 
 st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
@@ -364,18 +365,15 @@ countdown_container = st.empty()
 log_container = st.empty()
 
 # -----------------------------
-# MENSAGEM ESPECÍFICA (CURTÍSSIMO)
+# MENSAGENS ESPECÍFICAS (LOS S CURTÍSSIMO - STOP)
 # -----------------------------
-def montar_mensagem_curtissimo(ticker_symbol_full, preco_alvo, preco_atual, operacao):
-    t = ticker_symbol_full.replace(".SA", "")
-    if operacao == "venda":
-        mensagem_operacao = "VENDA A DESCOBERTO"
-    else:
-        mensagem_operacao = operacao.upper()
-
+def montar_mensagem_encerramento_curtissimo(ticker_symbol_full, preco_alvo, preco_atual, operacao):
+    ticker_symbol = ticker_symbol_full.replace(".SA", "")
+    mensagem_operacao_anterior = "COMPRA" if operacao == "venda" else "VENDA A DESCOBERTO"
     mensagem = (
-        f"Operação de {mensagem_operacao} na ação {t} foi ativada, conforme nossa CARTEIRA CURTISSIMO PRAZO!\n"
-        f"Preço alvo de {preco_alvo:.2f} foi atingido ou ultrapassado.\n\n"
+        f"Encerramento da operação de {mensagem_operacao_anterior} em {ticker_symbol}!\n"
+        f"Realize a operação de {operacao.upper()} para zerar sua posição.\n"
+        f"STOP {preco_alvo:.2f} foi atingido ou ultrapassado.\n\n"
         "COMPLIANCE: Esta mensagem é uma sugestão de compra/venda baseada em nossa CARTEIRA CURTISSIMO PRAZO. "
         "A compra ou venda é de total decisão e responsabilidade do Destinatário. Este e-mail contém informação "
         "CONFIDENCIAL de propriedade do Canal 1milhao e de seu DESTINATÁRIO tão somente. Se você NÃO for "
@@ -383,17 +381,17 @@ def montar_mensagem_curtissimo(ticker_symbol_full, preco_alvo, preco_atual, oper
         "divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI. A Lista de Ações "
         "do Canal 1milhao é devidamente REGISTRADA."
     )
-    assunto = f"*ALERTA CARTEIRA CURTISSIMO PRAZO* Ativada a Operação de {mensagem_operacao} em {t}"
+    assunto = f"*ALERTA CARTEIRA CURTISSIMO PRAZO* Encerramento da Operação de {mensagem_operacao_anterior} em {ticker_symbol}"
     return assunto, mensagem
 
-def notificar_preco_alvo_alcancado_CURTISSIMO(ticker_symbol, preco_alvo, preco_atual, operacao):
+def notificar_preco_alvo_alcancado_STOP_CURTISSIMO(ticker_symbol, preco_alvo, preco_atual, operacao):
     remetente = st.secrets.get("email_sender", "avisoscanal1milhao@gmail.com")
     senha_ou_token = st.secrets.get("gmail_app_password", "")
     destinatario = st.secrets.get("email_recipient", "listacurtissimo@googlegroups.com")
     token_telegram = st.secrets.get("telegram_token", "")
     chat_ids = [st.secrets.get("telegram_chat_id", "-1002074291817")]
 
-    assunto, mensagem = montar_mensagem_curtissimo(ticker_symbol, preco_alvo, preco_atual, operacao)
+    assunto, mensagem = montar_mensagem_encerramento_curtissimo(ticker_symbol, preco_alvo, preco_atual, operacao)
 
     # E-mail
     try:
@@ -436,9 +434,9 @@ else:
                 if not token or not chat:
                     raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
                 bot = Bot(token=token)
-                asyncio.run(bot.send_message(chat_id=chat, text="⚡ Robô CURTÍSSIMO ativo — Pregão Aberto! 📈"))
+                asyncio.run(bot.send_message(chat_id=chat, text="🛑 Robô LOS S CURTÍSSIMO ativo — Pregão Aberto! ⏱️"))
                 st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto (CURTÍSSIMO)"
+                    f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto (LOS S CURTÍSSIMO)"
                 )
             except Exception as e:
                 st.session_state.log_monitoramento.append(
@@ -469,8 +467,8 @@ else:
             minutos = tempo / 60
             data.append({
                 "Ticker": t,
-                "Operação": ativo["operacao"].upper(),
-                "Preço Alvo": f"R$ {ativo['preco']:.2f}",
+                "Zerar com": ativo["operacao"].upper(),
+                "STOP": f"R$ {ativo['preco']:.2f}",
                 "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
                 "Status": st.session_state.status.get(t, "🟢 Monitorando"),
                 "Tempo Acumulado": f"{int(minutos)} min"
@@ -505,7 +503,7 @@ else:
                     st.session_state.em_contagem[t] = True
                     st.session_state.tempo_acumulado[t] = 0
                     st.session_state.log_monitoramento.append(
-                        f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
+                        f"⚠️ {t} atingiu o STOP ({preco_alvo:.2f}). Iniciando contagem..."
                     )
 
                 agora_real = agora_lx()
@@ -522,8 +520,8 @@ else:
                 )
 
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
-                    alerta_msg = notificar_preco_alvo_alcancado_CURTISSIMO(tk_full, preco_alvo, preco_atual, operacao_atv)
-                    st.success(alerta_msg)
+                    alerta_msg = notificar_preco_alvo_alcancado_STOP_CURTISSIMO(tk_full, preco_alvo, preco_atual, operacao_atv)
+                    st.warning(alerta_msg)
                     st.session_state.historico_alertas.append({
                         "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
                         "ticker": t,
@@ -538,9 +536,9 @@ else:
                 if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
-                    st.session_state.status[t] = "🔴 Fora da zona"
+                    st.session_state.status[t] = "🔴 Fora do STOP"
                     st.session_state.log_monitoramento.append(
-                        f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
+                        f"❌ {t} saiu da zona de STOP. Contagem reiniciada."
                     )
 
         # Reset diário quando sair do pregão
@@ -558,9 +556,9 @@ else:
             for t in tickers_para_remover:
                 st.session_state.tempo_acumulado.pop(t, None)
                 st.session_state.em_contagem.pop(t, None)
-                st.session_state.status[t] = "✅ Disparado (removido)"
+                st.session_state.status[t] = "✅ Encerrado (removido)"
             st.session_state.log_monitoramento.append(
-                f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após disparo: {', '.join(tickers_para_remover)}"
+                f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ENCERRAMENTO: {', '.join(tickers_para_remover)}"
             )
 
         # Gráfico (linhas + marcadores ⭐)
@@ -574,7 +572,7 @@ else:
                     name=t,
                     line=dict(color=color_for_ticker(t), width=2)
                 ))
-        # Disparos
+        # Disparos (encerramentos)
         for t, pontos in st.session_state.disparos.items():
             if not pontos:
                 continue
@@ -582,15 +580,15 @@ else:
             fig.add_trace(go.Scatter(
                 x=xs, y=ys,
                 mode="markers",
-                name=f"Disparo {t}",
+                name=f"Encerramento {t}",
                 marker=dict(symbol="star", size=12, color=color_for_ticker(t), line=dict(width=2, color="white")),
                 hovertemplate=(f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
-                               "<br><b>DISPARO</b>"
+                               "<br><b>ENCERRAMENTO</b>"
                                "<br>Preço: R$ %{y:.2f}<extra></extra>")
             ))
 
         fig.update_layout(
-            title="📉 Evolução dos Preços (disparos ⭐)",
+            title="📉 Evolução dos Preços (encerramentos ⭐)",
             xaxis_title="Tempo", yaxis_title="Preço (R$)",
             legend_title="Legenda",
             template="plotly_dark"
@@ -635,7 +633,7 @@ else:
         # KEEP-ALIVE (URL informada)
         try:
             if not dentro_pregao(now):
-                APP_URL = "https://curtissimo.streamlit.app/"
+                APP_URL = "https://losscurtissimo.streamlit.app/"
                 intervalo_ping = 15 * 60  # 15 min
                 ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
                 if isinstance(ultimo_ping, str):
@@ -673,4 +671,5 @@ salvar_estado()
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
 st.rerun()
+
 
