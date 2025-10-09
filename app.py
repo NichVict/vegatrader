@@ -7,12 +7,12 @@ Bem-vindo ao **Painel Principal**.
 
 No menu lateral, você pode escolher entre:
 
-- **CARTEIRA CURTO PRAZO**
-- **LOSS CURTO PRAZO**
-- **CARTEIRA CURTÍSSIMO PRAZO**
-- **LOSS CURTÍSSIMO PRAZO**
-- **CLUBE**
-- **LOSS CLUBE**
+- **1 CARTEIRA CURTO PRAZO**
+- **2 LOSS CURTO PRAZO**
+- **3 CARTEIRA CURTÍSSIMO PRAZO**
+- **4 LOSS CURTÍSSIMO PRAZO**
+- **5 CLUBE**
+- **6 LOSS CLUBE**
 
 Cada página monitora preços, tempos acumulados e envia alertas automáticos.
 """)
