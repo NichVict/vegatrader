@@ -533,12 +533,13 @@ else:
             )
 
         # reduz ritmo de rerun do servidor conforme proximidade do pregão
-        if faltam <= 60:
-            sleep_segundos = 10
-        elif faltam <= 600:
-            sleep_segundos = 30
-        else:
-            sleep_segundos = 60
+        
+        if faltam > 3600:  # falta mais de 1 hora para o pregão
+            sleep_segundos = 900   # 15 minutos
+        elif faltam > 600:  # entre 10min e 1h
+            sleep_segundos = 300   # 5 minutos
+        else:  # menos de 10min até o pregão
+            sleep_segundos = 180    # 1 minuto
 
 # Limita crescimento do log (memória)
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
