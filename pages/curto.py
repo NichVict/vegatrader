@@ -1,7 +1,5 @@
 import streamlit as st
 st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
-st.title("📈 CURTO PRAZO - COMPRA E VENDA")
-
 from yahooquery import Ticker
 import datetime
 import time
