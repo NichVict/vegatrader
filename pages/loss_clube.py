@@ -37,6 +37,7 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
+# Persistência
 SAVE_PATH = "session_state_stop.json"
 
 def salvar_estado():
@@ -105,6 +106,7 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
     tk = Ticker(ticker_symbol)
+    # tenta preço em tempo real; fallback: fechamento recente
     try:
         p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
         if p is not None:
@@ -131,12 +133,6 @@ def segundos_ate_abertura(dt_now):
         return int((amanha_abre - dt_now).total_seconds()), amanha_abre
     else:
         return 0, hoje_abre
-
-def fmt_hms(seg):
-    h = seg // 3600
-    m = (seg % 3600) // 60
-    s = seg % 60
-    return f"{h:02d}:{m:02d}:{s:02d}"
 
 # ---- Cores por ticker (para LOG/Gráfico) ----
 def ensure_color_map():
@@ -236,7 +232,7 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.session_state.status = {}
         st.session_state.precos_historicos = {}
         st.session_state.disparos = {}
-        now_tmp = datetime.datetime.now(TZ)
+        now_tmp = agora_lx()
         st.session_state.log_monitoramento.append(
             f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado (STOP)"
         )
@@ -296,7 +292,7 @@ st.caption(
     f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
     f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}"
 )
-st.write("Cadastre tickers/STOPs. O monitor envia **encerramento de operação** quando o alvo permanece por 30 minutos (aguardar candle 60min).")
+st.write("Cadastre tickers/STOPs. O robô envia **encerramento de operação** quando o preço permanece na zona por 30 minutos (1500s).")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -443,7 +439,7 @@ else:
         if data:
             tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
 
-        # Lógica STOP por ativo
+        # Lógica STOP por ativo (mesma lógica do CLUBE: 30min/1500s)
         tickers_para_remover = []
         for ativo in st.session_state.ativos:
             t = ativo["ticker"]
@@ -465,7 +461,7 @@ else:
             )
 
             if condicao:
-                st.session_state.status[t] = "🟡 Em contagem (aguardar 60min)"
+                st.session_state.status[t] = "🟡 Em contagem"
                 if not st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = True
                     st.session_state.tempo_acumulado[t] = 0
@@ -596,10 +592,11 @@ else:
             height=70
         )
 
+        # KEEP-ALIVE apontando para o endereço informado
         try:
             if not dentro_pregao(now):
-                APP_URL = "https://robozinho.streamlit.app"  # ajuste para a URL real
-                intervalo_ping = 15 * 60
+                APP_URL = "https://lossclube.streamlit.app/"
+                intervalo_ping = 15 * 60  # 15 min
                 ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
                 if isinstance(ultimo_ping, str):
                     try:
@@ -633,5 +630,7 @@ with log_container:
 
 salvar_estado()
 
+# Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
 st.rerun()
+
