@@ -524,7 +524,7 @@ else:
                 name=f"Disparo {t}",
                 marker=dict(
                     symbol="star",
-                    size=12",
+                    size=12,
                     color=color_for_ticker(t),
                     line=dict(width=2, color="white")
                 ),
