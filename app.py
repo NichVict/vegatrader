@@ -188,8 +188,9 @@ def color_for_ticker(ticker):
         st.session_state.ticker_colors[ticker] = PALETTE[idx]
     return st.session_state.ticker_colors[ticker]
 
-TICKER_PAT = re.compile(r"\b([A-Z]{4,6}\d{0,2})\.SA\b")  # ex: PETR4.SA, ITUB4.SA
-PLAIN_TICKER_PAT = re.compile(r"\b([A-Z]{4,6}\d{0,2})\b")  # ex: PETR4, VALE3
+# regex atualizado: aceita letras e números intercalados (ex: B3SA3.SA)
+TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\.SA\b")   # ex: B3SA3.SA, PETR4.SA, ITUB4.SA
+PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")  # ex: B3SA3, PETR4, VALE3
 
 def extract_ticker(line):
     m = TICKER_PAT.search(line)
@@ -400,12 +401,10 @@ log_container = st.empty()
 # -----------------------------
 sleep_segundos = 60  # padrão fora do pregão / pausado
 
-# Logar mudança de estado de pausa apenas quando o estado muda (sem spam e dentro do box)
+# apenas atualiza o estado, sem registrar no log
 if st.session_state.pausado != st.session_state.ultimo_estado_pausa:
     st.session_state.ultimo_estado_pausa = st.session_state.pausado
-    st.session_state.log_monitoramento.append(
-        f"{now.strftime('%H:%M:%S')} | {'⏸ Pausado (modo edição).' if st.session_state.pausado else '▶️ Retomado.'}"
-    )
+
 
 if st.session_state.pausado:
     pass  # não monitora; mantém a página viva
