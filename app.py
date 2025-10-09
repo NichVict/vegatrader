@@ -25,7 +25,7 @@ import os
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = datetime.time(15, 0, 0)   # 14:00 Lisboa
+HORARIO_INICIO_PREGAO = datetime.time(16, 0, 0)   # 14:00 Lisboa
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 
 INTERVALO_VERIFICACAO = 300                       # 5 min
