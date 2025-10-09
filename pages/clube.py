@@ -10,6 +10,7 @@ No menu lateral, você pode escolher entre:
 - **CARTEIRA CURTO PRAZO**
 - **LOSS CURTÍSSIMO**
 - **LOSS CURTO**
+- **CLUBE**
 - **CLUBE STOP**
 - **LOSS CLUBE**
 
@@ -19,9 +20,10 @@ Cada página monitora preços, tempos acumulados e envia alertas automáticos.
 st.subheader("Acessos rápidos")
 st.page_link("pages/curtissimo.py", label="⚡ Curtíssimo Prazo")
 st.page_link("pages/curto.py", label="⚡ Curto Prazo")
-st.page_link("pages/loss_curtissimo.py", label="🛑 Loss Curtíssimo")
+st.page_link("pages/loss_curtissimo.py", label="🚨 Loss Curtíssimo")
 st.page_link("pages/loss_curto.py", label="🚨 Loss Curto")
-st.page_link("pages/loss_clube.py", label="💥 Loss Clube")
+st.page_link("pages/clube.py", label="⚡ Clube")
+st.page_link("pages/loss_clube.py", label="🚨 Loss Clube")
 from yahooquery import Ticker
 import datetime
 import time
