@@ -15,6 +15,9 @@ from zoneinfo import ZoneInfo  # fuso com DST
 import re
 import uuid
 import streamlit.components.v1 as components
+# ==== ADIÇÃO: persistência ====
+import json
+import os
 
 # -----------------------------
 # CONFIGURAÇÕES
@@ -25,9 +28,8 @@ TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 
-
 INTERVALO_VERIFICACAO = 300                       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 1800         # 15 min (mude p/ 1500=25min se quiser)
+TEMPO_ACUMULADO_MAXIMO = 1800                     # 30 min
 LOG_MAX_LINHAS = 1000                             # limite de linhas do log
 
 # Paleta de cores (rotaciona entre tickers)
@@ -35,6 +37,46 @@ PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
+
+# ==== ADIÇÃO: persistência de estado ====
+SAVE_PATH = "session_state.json"
+
+def salvar_estado():
+    """Salva os dados essenciais do app em JSON."""
+    estado = {
+        "ativos": st.session_state.get("ativos", []),
+        "historico_alertas": st.session_state.get("historico_alertas", []),
+        "log_monitoramento": st.session_state.get("log_monitoramento", []),
+        "disparos": st.session_state.get("disparos", {}),
+        "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
+        "status": st.session_state.get("status", {}),
+        "precos_historicos": st.session_state.get("precos_historicos", {}),
+        "pausado": st.session_state.get("pausado", True),
+        "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
+        "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
+        "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
+    }
+    try:
+        with open(SAVE_PATH, "w", encoding="utf-8") as f:
+            json.dump(estado, f, ensure_ascii=False, default=str, indent=2)
+    except Exception as e:
+        st.sidebar.error(f"Erro ao salvar estado: {e}")
+
+def carregar_estado():
+    """Restaura os dados do JSON (se existir)."""
+    if os.path.exists(SAVE_PATH):
+        try:
+            with open(SAVE_PATH, "r", encoding="utf-8") as f:
+                estado = json.load(f)
+            # Merge simples no session_state
+            for k, v in estado.items():
+                st.session_state[k] = v
+            st.sidebar.info("💾 Estado restaurado com sucesso!")
+        except Exception as e:
+            st.sidebar.error(f"Erro ao carregar estado: {e}")
+
+# Carrega estado salvo logo no início
+carregar_estado()
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -112,6 +154,7 @@ def dentro_pregao(dt_now):
     return HORARIO_INICIO_PREGAO <= t <= HORARIO_FIM_PREGAO
 
 def segundos_ate_abertura(dt_now):
+    # (mantido conforme sua versão atual; se quiser horários "quebrados", ajustamos aqui)
     hoje_abre = dt_now.replace(hour=HORARIO_INICIO_PREGAO.hour, minute=0, second=0, microsecond=0)
     hoje_fecha = dt_now.replace(hour=HORARIO_FIM_PREGAO.hour, minute=0, second=0, microsecond=0)
     if dt_now < hoje_abre:
@@ -481,7 +524,7 @@ else:
                 name=f"Disparo {t}",
                 marker=dict(
                     symbol="star",
-                    size=12,
+                    size=12",
                     color=color_for_ticker(t),
                     line=dict(width=2, color="white")
                 ),
@@ -501,7 +544,6 @@ else:
         grafico.plotly_chart(fig, use_container_width=True)
 
         sleep_segundos = INTERVALO_VERIFICACAO  # 5 min
-
 
     else:
         # ---- Reset do aviso de abertura ----
@@ -542,16 +584,18 @@ else:
 
         # ---- MANTER O APP VIVO (keep-alive fora do pregão, com controle de tempo) ----
         try:
-            APP_URL = "https://robozinho.streamlit.app"  # substitua pela URL real do seu app
-            intervalo_ping = 15 * 60  # envia keep-alive a cada 15 minutos
-            ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
+            # Garante que só roda se realmente estiver fora do pregão
+            if not dentro_pregao(now):
+                APP_URL = "https://robozinho.streamlit.app"  # substitua pela URL real do seu app
+                intervalo_ping = 15 * 60  # envia keep-alive a cada 15 minutos
+                ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
 
-            if not ultimo_ping or (now - ultimo_ping).total_seconds() > intervalo_ping:
-                requests.get(APP_URL, timeout=5)
-                st.session_state["ultimo_ping_keepalive"] = now
-                st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | 🔄 Keep-alive ping enviado para {APP_URL}"
-                )
+                if not ultimo_ping or (now - ultimo_ping).total_seconds() > intervalo_ping:
+                    requests.get(APP_URL, timeout=5)
+                    st.session_state["ultimo_ping_keepalive"] = now
+                    st.session_state.log_monitoramento.append(
+                        f"{now.strftime('%H:%M:%S')} | 🔄 Keep-alive ping enviado para {APP_URL}"
+                    )
         except Exception as e:
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | ⚠️ Erro no keep-alive: {e}"
@@ -573,9 +617,13 @@ if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, max_lines=250)
 
+# ==== ADIÇÃO: salvar estado antes de dormir ====
+salvar_estado()
+
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
 st.rerun()
+
 
 
 
