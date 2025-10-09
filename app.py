@@ -22,7 +22,7 @@ import streamlit.components.v1 as components
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = datetime.time(10, 0, 0)   # 14:00 Lisboa
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 INTERVALO_VERIFICACAO = 300                       # 5 min
 TEMPO_ACUMULADO_MAXIMO = 1800         # 15 min (mude p/ 1500=25min se quiser)
@@ -335,12 +335,16 @@ else:
     if dentro_pregao(now):
         # ---- Notificação única na abertura do pregão ----
         if not st.session_state.get("avisou_abertura_pregao", False):
+            # Marca o flag antes da tentativa para evitar reenvios em re-runs
+            st.session_state["avisou_abertura_pregao"] = True
             try:
-                token = st.secrets.get("telegram_token")
-                chat = st.secrets.get("telegram_chat_id")
+                token = st.secrets.get("telegram_token", "").strip()
+                chat = st.secrets.get("telegram_chat_id", "").strip()
+                if not token or not chat:
+                    raise ValueError("Token ou chat_id ausente em st.secrets")
+
                 bot = Bot(token=token)
                 asyncio.run(bot.send_message(chat_id=chat, text="🤖 Robô ativo — Pregão Aberto! 📈"))
-                st.session_state["avisou_abertura_pregao"] = True
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | 📣 Mensagem Telegram enviada: Pregão Aberto"
                 )
@@ -495,6 +499,7 @@ else:
         grafico.plotly_chart(fig, use_container_width=True)
 
         sleep_segundos = INTERVALO_VERIFICACAO  # 5 min
+
 
     else:
         # ---- Reset do aviso de abertura ----
