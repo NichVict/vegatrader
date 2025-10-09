@@ -1,19 +1,7 @@
-# -*- coding: utf-8 -*-
-"""
-curto.py
-CURTO - COMPRA E VENDA (Streamlit)
-
-- Dispara ATIVAÇÃO após 1500s (25 min) na zona do preço-alvo
-- Mensagens: "CARTEIRA CURTO PRAZO" (ativação)
-- Credenciais: lidas de st.secrets (modelo no final)
-- Keep-alive: https://curtoprazo.streamlit.app/
-"""
-
+import streamlit as st
 st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
 st.title("📈 CURTO PRAZO - COMPRA E VENDA")
 
-
-import streamlit as st
 from yahooquery import Ticker
 import datetime
 import time
