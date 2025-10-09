@@ -469,33 +469,48 @@ else:
             preco_alvo = ativo["preco"]
             operacao_atv = ativo["operacao"]
             tk_full = f"{t}.SA"
-
+        
             try:
                 preco_atual = obter_preco_atual(tk_full)
             except Exception as e:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
                 continue
-
+        
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
-
+        
             condicao = (
                 (operacao_atv == "compra" and preco_atual >= preco_alvo) or
                 (operacao_atv == "venda"  and preco_atual <= preco_alvo)
             )
-
+        
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
-                if not st.session_state.em_contagem[t]:
+        
+                if not st.session_state.em_contagem.get(t, False):
+                    # Inicia contagem do zero ao entrar na zona
                     st.session_state.em_contagem[t] = True
                     st.session_state.tempo_acumulado[t] = 0
                     st.session_state.log_monitoramento.append(
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
                     )
-                st.session_state.tempo_acumulado[t] += INTERVALO_VERIFICACAO
+        
+                # ===== Contagem de tempo real (precisa dentro do pregão) =====
+                agora_real = agora_lx()
+                ultimo_update_tempo = st.session_state.get("ultimo_update_tempo", {}).get(t)
+        
+                if ultimo_update_tempo:
+                    delta = (agora_real - datetime.datetime.fromisoformat(ultimo_update_tempo)).total_seconds()
+                else:
+                    delta = 0
+        
+                st.session_state.tempo_acumulado[t] += delta
+                st.session_state.setdefault("ultimo_update_tempo", {})[t] = agora_real.isoformat()
+        
                 st.session_state.log_monitoramento.append(
-                    f"⏱ {t}: {st.session_state.tempo_acumulado[t]}s acumulados"
+                    f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                 )
-
+        
+                # dispara alerta após tempo máximo acumulado
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
                     alerta_msg = notificar_preco_alvo_alcancado(tk_full, preco_alvo, preco_atual, operacao_atv)
                     st.warning(alerta_msg)
@@ -506,21 +521,33 @@ else:
                         "preco_alvo": preco_alvo,
                         "preco_atual": preco_atual
                     })
-
+        
                     # ⭐ guarda o ponto do disparo p/ marcar no gráfico
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
-
+        
                     # marca para remover da busca após o loop
                     tickers_para_remover.append(t)
-
+        
             else:
-                if st.session_state.em_contagem[t]:
+                # Se saiu da zona, zera a contagem
+                if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
                     st.session_state.status[t] = "🔴 Fora da zona"
                     st.session_state.log_monitoramento.append(
                         f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
+        
+        # ===== Reset diário automático (fora do pregão) =====
+        if not dentro_pregao(now):
+            for t in list(st.session_state.tempo_acumulado.keys()):
+                st.session_state.tempo_acumulado[t] = 0
+                st.session_state.em_contagem[t] = False
+            st.session_state["ultimo_update_tempo"] = {}
+            st.session_state.log_monitoramento.append(
+                f"{now.strftime('%H:%M:%S')} | 🧭 Pregão encerrado — contadores resetados."
+            )
+
 
         # Remove da busca os tickers disparados
         if tickers_para_remover:
@@ -663,6 +690,7 @@ salvar_estado()
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
 st.rerun()
+
 
 
 
