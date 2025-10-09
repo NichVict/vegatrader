@@ -8,6 +8,11 @@ CURTO - COMPRA E VENDA (Streamlit)
 - Credenciais: lidas de st.secrets (modelo no final)
 - Keep-alive: https://curtoprazo.streamlit.app/
 """
+
+st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
+st.title("📈 CURTO PRAZO - COMPRA E VENDA")
+
+
 import streamlit as st
 from yahooquery import Ticker
 import datetime
