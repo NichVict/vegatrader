@@ -245,8 +245,8 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.sidebar.error(f"Erro ao apagar estado: {e}")
 
 async def testar_telegram():
-    token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
-    chat = st.secrets.get("telegram_chat_id", "-1002533284493")
+    token = st.secrets.get("telegram_token", "")
+    chat = st.secrets.get("telegram_chat_id_clube", "")
     try:
         bot = Bot(token=token)
         await bot.send_message(chat_id=chat, text="✅ Teste de alerta CLUBE STOP funcionando!")
@@ -373,8 +373,9 @@ def notificar_preco_alvo_alcancado_STOP(ticker_symbol, preco_alvo, preco_atual, 
     remetente = "avisoscanal1milhao@gmail.com"
     senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
     destinatario = "docs1milhao@gmail.com"
-    token_telegram = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
-    chat_ids = [st.secrets.get("telegram_chat_id", "-1002533284493")]
+    token_telegram = st.secrets.get("telegram_token", "")
+    chat_ids = [st.secrets.get("telegram_chat_id_clube", "")]
+
 
     assunto, mensagem = montar_mensagem_encerramento(ticker_symbol, preco_alvo, preco_atual, operacao)
     enviar_notificacao(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
@@ -394,9 +395,9 @@ else:
     if dentro_pregao(now):
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
-            try:
+            try:                
                 token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id", "").strip()
+                chat = st.secrets.get("telegram_chat_id_clube", "").strip()
                 if not token or not chat:
                     raise ValueError("Token ou chat_id ausente em st.secrets")
                 bot = Bot(token=token)
