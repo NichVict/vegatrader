@@ -231,7 +231,7 @@ for var in [
         ] else ([] if var in ["ativos", "historico_alertas"] else None)
 
 if "pausado" not in st.session_state:
-    st.session_state.pausado = True
+    st.session_state.pausado = False
 if "ultimo_estado_pausa" not in st.session_state:
     st.session_state.ultimo_estado_pausa = None
 if "avisou_abertura_pregao" not in st.session_state:
