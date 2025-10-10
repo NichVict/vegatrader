@@ -237,7 +237,7 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
 
 async def testar_telegram():
     token = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id", "")
+    chat = st.secrets.get("telegram_chat_id_curtissimo", "")
     try:
         if not token or not chat:
             raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
