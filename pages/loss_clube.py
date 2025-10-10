@@ -632,7 +632,42 @@ with log_container:
 
 salvar_estado()
 
+# -----------------------------
+# 🧪 PAINEL DE DEBUG / BACKUP DO ESTADO
+# -----------------------------
+with st.expander("🧪 Debug / Backup do estado", expanded=False):
+    st.caption(f"Arquivo: `{SAVE_PATH}`")
+
+    # 1️⃣ EM MEMÓRIA (session_state filtrado)
+    chaves = [
+        "ativos", "tempo_acumulado", "em_contagem", "status",
+        "precos_historicos", "historico_alertas", "disparos",
+        "pausado", "ultimo_update_tempo", "avisou_abertura_pregao"
+    ]
+    em_memoria = {k: st.session_state.get(k) for k in chaves}
+    st.markdown("**Em memória (session_state):**")
+    st.json(em_memoria)
+
+    # 2️⃣ EM DISCO (arquivo salvo)
+    try:
+        if os.path.exists(SAVE_PATH):
+            with open(SAVE_PATH, "r", encoding="utf-8") as f:
+                state_file = json.load(f)
+
+            st.markdown("**No arquivo (JSON salvo):**")
+            st.json(state_file)
+
+            st.download_button(
+                "⬇️ Baixar JSON salvo",
+                data=json.dumps(state_file, ensure_ascii=False, indent=2),
+                file_name=os.path.basename(SAVE_PATH),
+                mime="application/json",
+            )
+        else:
+            st.info("Ainda não existe arquivo salvo.")
+    except Exception as e:
+        st.error(f"Erro ao exibir JSON: {e}")
+
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
 st.rerun()
-
