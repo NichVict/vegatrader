@@ -191,6 +191,7 @@ def render_log_html(lines, selected_tickers=None, max_lines=200):
     subset = lines[-max_lines:][::-1]
     if selected_tickers:
         subset = [l for l in subset if (extract_ticker(l) in selected_tickers)]
+
     css = """
     <style>
       .log-card {
