@@ -372,18 +372,6 @@ countdown_container = st.empty()
 # Log estilizado
 log_container = st.empty()
 
-# -----------------------------
-# CICLO ÚNICO + REEXECUÇÃO AUTOMÁTICA
-# -----------------------------
-# CICLO ÚNICO + REEXECUÇÃO AUTOMÁTICA
-# -----------------------------
-grafico = st.empty()
-st.subheader("🕒 Log de Monitoramento")
-countdown_container = st.empty()
-log_container = st.empty()
-
-sleep_segundos = 60
-
 if st.session_state.pausado != st.session_state.ultimo_estado_pausa:
     st.session_state.ultimo_estado_pausa = st.session_state.pausado
 
