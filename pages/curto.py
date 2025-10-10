@@ -668,3 +668,4 @@ salvar_estado()
 time.sleep(sleep_segundos)
 st.rerun()
 
+
