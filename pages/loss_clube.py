@@ -206,7 +206,7 @@ for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado
         st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
 
 if "pausado" not in st.session_state:
-    st.session_state.pausado = True
+    st.session_state.pausado = False
 if "ultimo_estado_pausa" not in st.session_state:
     st.session_state.ultimo_estado_pausa = None
 if "disparos" not in st.session_state:
