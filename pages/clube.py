@@ -66,19 +66,23 @@ def salvar_estado():
         st.sidebar.error(f"Erro ao salvar estado: {e}")
 
 def carregar_estado():
-    """Restaura os dados do JSON (se existir)."""
+    """Restaura os dados do JSON (se existir), sem sobrescrever controles interativos."""
     if os.path.exists(SAVE_PATH):
         try:
             with open(SAVE_PATH, "r", encoding="utf-8") as f:
                 estado = json.load(f)
+
+            # 🚫 preserva o valor atual do checkbox, se já existir
+            pausado_atual = st.session_state.get("pausado")
+
             for k, v in estado.items():
+                if k == "pausado" and pausado_atual is not None:
+                    continue  # mantém o valor clicado
                 st.session_state[k] = v
+
             st.sidebar.info("💾 Estado restaurado com sucesso!")
         except Exception as e:
             st.sidebar.error(f"Erro ao carregar estado: {e}")
-
-# Carrega estado salvo logo no início
-carregar_estado()
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
