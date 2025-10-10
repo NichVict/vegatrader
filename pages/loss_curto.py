@@ -84,9 +84,17 @@ def carregar_estado():
                 if k == "pausado" and pausado_atual is not None:
                     continue
                 st.session_state[k] = v
-            st.sidebar.info("💾 Estado (LOSS_CURTO) restaurado com sucesso!")
+            msg = "💾 Estado (LOSS_CURTO) restaurado com sucesso!"
+            st.sidebar.info(msg)
+            st.session_state.log_monitoramento.append(
+                f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | {msg}"
+            )
         except Exception as e:
-            st.sidebar.error(f"Erro ao carregar estado: {e}")
+            erro_msg = f"Erro ao carregar estado: {e}"
+            st.sidebar.error(erro_msg)
+            st.session_state.log_monitoramento.append(
+                f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | ⚠️ {erro_msg}"
+            )
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -101,17 +109,6 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
         servidor.starttls()
         servidor.login(remetente, senha_ou_token)
         servidor.send_message(mensagem)
-
-def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
-    enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
-    async def send_telegram():
-        try:
-            bot = Bot(token=token_telegram)
-            for chat_id in chat_ids:
-                await bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest.")
-        except Exception as e:
-            print(f"Erro Telegram: {e}")
-    asyncio.run(send_telegram())
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
@@ -164,6 +161,7 @@ def extract_ticker(line):
     m2 = PLAIN_TICKER_PAT.search(line)
     return m2.group(1) if m2 else None
 
+# ---- Renderização do LOG ----
 def render_log_html(lines, selected_tickers=None, max_lines=200):
     if not lines:
         st.write("—")
@@ -203,6 +201,27 @@ def render_log_html(lines, selected_tickers=None, max_lines=200):
         html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
     html.append("</div>")
     st.markdown("\n".join(html), unsafe_allow_html=True)
+
+# -----------------------------
+# ESTADOS GLOBAIS
+# -----------------------------
+# Inicializa log antes do carregamento
+if "log_monitoramento" not in st.session_state:
+    st.session_state.log_monitoramento = []
+
+# Inicializa variáveis globais padrão
+for var in ["ativos", "historico_alertas", "tempo_acumulado",
+            "em_contagem", "status", "precos_historicos"]:
+    if var not in st.session_state:
+        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
+
+if "pausado" not in st.session_state: st.session_state.pausado = True
+if "ultimo_estado_pausa" not in st.session_state: st.session_state.ultimo_estado_pausa = None
+if "disparos" not in st.session_state: st.session_state.disparos = {}
+ensure_color_map()
+
+# Carrega o estado salvo
+carregar_estado()
 
 # -----------------------------
 # ESTADOS GLOBAIS
