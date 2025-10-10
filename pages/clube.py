@@ -260,6 +260,9 @@ if "disparos" not in st.session_state:
 
 ensure_color_map()
 
+# 🟢 ADICIONE ESTA LINHA AQUI:
+carregar_estado()
+
 # -----------------------------
 # SIDEBAR - CONFIGURAÇÕES
 # -----------------------------
