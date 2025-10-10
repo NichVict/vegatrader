@@ -668,9 +668,7 @@ with log_container:
 
 salvar_estado()
 
-# Dorme e reexecuta (server-side; não depende do navegador)
-time.sleep(sleep_segundos)
-st.rerun()
+
 # -----------------------------
 # SIDEBAR
 # -----------------------------
