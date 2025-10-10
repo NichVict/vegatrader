@@ -5,7 +5,7 @@ LOSS CURTO PRAZO (Streamlit) — Encerramento por STOP
 
 - Dispara ENCERRAMENTO após 1500s (25 min) na zona do preço-alvo
 - Mensagens: "CARTEIRA CURTO PRAZO" (encerramento/stop)
-- Credenciais: lidas de st.secrets (modelo ao final)
+- Credenciais: lidas de st.secrets
 - Keep-alive: https://losscurto.streamlit.app/
 """
 import streamlit as st
@@ -33,12 +33,12 @@ import os
 # -----------------------------
 st.set_page_config(page_title="CURTO - STOP !!!", layout="wide")
 
-TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
-HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
+TZ = ZoneInfo("Europe/Lisbon")
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
 
-INTERVALO_VERIFICACAO = 300                       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 1500                     # 25 min
+INTERVALO_VERIFICACAO = 300
+TEMPO_ACUMULADO_MAXIMO = 1500
 LOG_MAX_LINHAS = 1000
 
 PALETTE = [
@@ -46,8 +46,12 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-# Persistência (arquivo próprio deste app)
-SAVE_PATH = "session_state_loss_curto.json"
+# -----------------------------
+# PERSISTÊNCIA DO ESTADO
+# -----------------------------
+SAVE_DIR = "session_data"
+os.makedirs(SAVE_DIR, exist_ok=True)
+SAVE_PATH = os.path.join(SAVE_DIR, "state_loss_curto.json")
 
 def salvar_estado():
     estado = {
@@ -58,7 +62,7 @@ def salvar_estado():
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
         "status": st.session_state.get("status", {}),
         "precos_historicos": st.session_state.get("precos_historicos", {}),
-        "pausado": st.session_state.get("pausado", True),
+        "pausado": st.session_state.get("pausado", False),
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
@@ -80,11 +84,9 @@ def carregar_estado():
                 if k == "pausado" and pausado_atual is not None:
                     continue
                 st.session_state[k] = v
-            st.sidebar.info("💾 Estado (LOSS CURTO) restaurado!")
+            st.sidebar.info("💾 Estado (LOSS_CURTO) restaurado com sucesso!")
         except Exception as e:
             st.sidebar.error(f"Erro ao carregar estado: {e}")
-
-carregar_estado()
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -101,9 +103,7 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
         servidor.send_message(mensagem)
 
 def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
-    # E-mail
     enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
-    # Telegram (assíncrono)
     async def send_telegram():
         try:
             bot = Bot(token=token_telegram)
@@ -117,7 +117,6 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
     tk = Ticker(ticker_symbol)
-    # tenta preço em tempo real; fallback para fechamento recente
     try:
         p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
         if p is not None:
@@ -127,8 +126,7 @@ def obter_preco_atual(ticker_symbol):
     preco_atual = tk.history(period="3d")["close"].iloc[-1]
     return float(preco_atual)
 
-def agora_lx():
-    return datetime.datetime.now(TZ)
+def agora_lx(): return datetime.datetime.now(TZ)
 
 def dentro_pregao(dt_now):
     t = dt_now.time()
@@ -145,7 +143,7 @@ def segundos_ate_abertura(dt_now):
     else:
         return 0, hoje_abre
 
-# ---- Cores por ticker (para LOG/Gráfico) ----
+# ---- Cores por ticker ----
 def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
@@ -162,50 +160,9 @@ PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")
 
 def extract_ticker(line):
     m = TICKER_PAT.search(line)
-    if m:
-        return m.group(1)
+    if m: return m.group(1)
     m2 = PLAIN_TICKER_PAT.search(line)
     return m2.group(1) if m2 else None
-
-def render_log_html(lines, selected_tickers=None, max_lines=200):
-    if not lines:
-        st.write("—")
-        return
-    subset = lines[-max_lines:][::-1]
-    if selected_tickers:
-        subset = [l for l in subset if (extract_ticker(l) in selected_tickers)]
-
-    css = """
-    <style>
-      .log-card {
-        background: #0b1220;
-        border: 1px solid #1f2937;
-        border-radius: 10px;
-        padding: 10px 12px;
-        max-height: 360px;
-        overflow-y: auto;
-      }
-      .log-line{
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-        font-size: 13px; line-height: 1.35; margin: 2px 0; color: #e5e7eb;
-        display: flex; align-items: baseline; gap: 8px;
-      }
-      .ts{ color:#9ca3af; min-width:64px; text-align:right; }
-      .badge{ display:inline-block; padding:1px 8px; font-size:12px; border-radius:9999px; color:white; }
-      .msg{ white-space: pre-wrap; }
-    </style>
-    """
-    html = [css, "<div class='log-card'>"]
-    for l in subset:
-        if " | " in l:
-            ts, rest = l.split(" | ", 1)
-        else:
-            ts, rest = "", l
-        tk = extract_ticker(l)
-        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
-        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
-    html.append("</div>")
-    st.markdown("\n".join(html), unsafe_allow_html=True)
 
 # -----------------------------
 # ESTADOS GLOBAIS
@@ -215,13 +172,13 @@ for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado
     if var not in st.session_state:
         st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
 
-if "pausado" not in st.session_state:
-    st.session_state.pausado = True
-if "ultimo_estado_pausa" not in st.session_state:
-    st.session_state.ultimo_estado_pausa = None
-if "disparos" not in st.session_state:
-    st.session_state.disparos = {}
+if "pausado" not in st.session_state: st.session_state.pausado = True
+if "ultimo_estado_pausa" not in st.session_state: st.session_state.ultimo_estado_pausa = None
+if "disparos" not in st.session_state: st.session_state.disparos = {}
 ensure_color_map()
+
+# 🔽 Carrega o estado salvo
+carregar_estado()
 
 # -----------------------------
 # SIDEBAR
