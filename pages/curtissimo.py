@@ -205,7 +205,7 @@ if "disparos" not in st.session_state:
 ensure_color_map()
 
 # ==== Carrega estado persistido ====
-carregar_estado()------
+carregar_estado()
 # SIDEBAR
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
