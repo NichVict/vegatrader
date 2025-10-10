@@ -38,7 +38,9 @@ PALETTE = [
 ]
 
 # Persistência
-SAVE_PATH = "session_state_stop.json"
+SAVE_DIR = "session_data"
+os.makedirs(SAVE_DIR, exist_ok=True)
+SAVE_PATH = os.path.join(SAVE_DIR, "state_loss_clube.json")
 
 def salvar_estado():
     estado = {
@@ -49,7 +51,7 @@ def salvar_estado():
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
         "status": st.session_state.get("status", {}),
         "precos_historicos": st.session_state.get("precos_historicos", {}),
-        "pausado": st.session_state.get("pausado", True),
+        "pausado": st.session_state.get("pausado", False),
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
@@ -75,7 +77,6 @@ def carregar_estado():
         except Exception as e:
             st.sidebar.error(f"Erro ao carregar estado: {e}")
 
-carregar_estado()
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -211,7 +212,8 @@ if "ultimo_estado_pausa" not in st.session_state:
 if "disparos" not in st.session_state:
     st.session_state.disparos = {}
 ensure_color_map()
-
+# ==== Carrega estado salvo ====
+carregar_estado()
 # -----------------------------
 # SIDEBAR
 # -----------------------------
