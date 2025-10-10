@@ -8,6 +8,7 @@ LOSS CURTO PRAZO (Streamlit) — Encerramento por STOP
 - Credenciais: lidas de st.secrets
 - Keep-alive: https://losscurto.streamlit.app/
 """
+
 import streamlit as st
 from yahooquery import Ticker
 import datetime
@@ -37,8 +38,8 @@ TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
 HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
 
-INTERVALO_VERIFICACAO = 300
-TEMPO_ACUMULADO_MAXIMO = 1500
+INTERVALO_VERIFICACAO = 300          # 5 min entre re-runs durante o pregão
+TEMPO_ACUMULADO_MAXIMO = 1500        # 25 min (em segundos)
 LOG_MAX_LINHAS = 1000
 
 PALETTE = [
@@ -72,16 +73,12 @@ def salvar_estado():
         with open(SAVE_PATH, "w", encoding="utf-8") as f:
             json.dump(estado, f, ensure_ascii=False, default=str, indent=2)
 
-        # 🟩 DEBUG: confirma salvamento no log e no sidebar
-        msg = f"💾 Estado salvo com sucesso ({os.path.basename(SAVE_PATH)})"
+        # feedback leve (opcional) no log
         st.session_state.log_monitoramento.append(
-            f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | {msg}"
+            f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | 💾 Estado salvo ({os.path.basename(SAVE_PATH)})"
         )
-        # Mostra só se o usuário quiser ver isso no sidebar
-        st.sidebar.caption(msg)
 
     except Exception as e:
-        # 🟥 DEBUG: erro de salvamento
         erro_msg = f"Erro ao salvar estado: {e}"
         st.session_state.log_monitoramento.append(
             f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | ⚠️ {erro_msg}"
@@ -94,21 +91,20 @@ def carregar_estado():
             with open(SAVE_PATH, "r", encoding="utf-8") as f:
                 estado = json.load(f)
             pausado_atual = st.session_state.get("pausado")
-
             for k, v in estado.items():
                 if k == "pausado" and pausado_atual is not None:
                     continue
                 st.session_state[k] = v
 
-            # ✅ Mostra aviso apenas uma vez por sessão
-            if "estado_restaurado" not in st.session_state:
+            if not st.session_state.get("estado_restaurado", False):
                 st.session_state.estado_restaurado = True
                 st.sidebar.info("💾 Estado (LOSS_CURTO) restaurado com sucesso!")
                 st.session_state.log_monitoramento.append(
-                    f"{datetime.datetime.now().strftime('%H:%M:%S')} | 💾 Estado (LOSS_CURTO) restaurado com sucesso!"
+                    f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | 💾 Estado (LOSS_CURTO) restaurado"
                 )
         except Exception as e:
             st.sidebar.error(f"Erro ao carregar estado: {e}")
+
 # -----------------------------
 # FUNÇÕES AUXILIARES
 # -----------------------------
@@ -136,7 +132,8 @@ def obter_preco_atual(ticker_symbol):
     preco_atual = tk.history(period="3d")["close"].iloc[-1]
     return float(preco_atual)
 
-def agora_lx(): return datetime.datetime.now(TZ)
+def agora_lx():
+    return datetime.datetime.now(TZ)
 
 def dentro_pregao(dt_now):
     t = dt_now.time()
@@ -170,7 +167,8 @@ PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")
 
 def extract_ticker(line):
     m = TICKER_PAT.search(line)
-    if m: return m.group(1)
+    if m:
+        return m.group(1)
     m2 = PLAIN_TICKER_PAT.search(line)
     return m2.group(1) if m2 else None
 
@@ -218,38 +216,28 @@ def render_log_html(lines, selected_tickers=None, max_lines=200):
 # -----------------------------
 # ESTADOS GLOBAIS
 # -----------------------------
-# Inicializa log antes do carregamento
 if "log_monitoramento" not in st.session_state:
     st.session_state.log_monitoramento = []
 
-# Inicializa variáveis globais padrão
-for var in ["ativos", "historico_alertas", "tempo_acumulado",
-            "em_contagem", "status", "precos_historicos"]:
+for var in [
+    "ativos", "historico_alertas", "tempo_acumulado",
+    "em_contagem", "status", "precos_historicos",
+    "ultimo_update_tempo", "disparos", "ultimo_ping_keepalive"
+]:
     if var not in st.session_state:
-        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
+        st.session_state[var] = {} if var in [
+            "tempo_acumulado", "em_contagem", "status",
+            "precos_historicos", "ultimo_update_tempo", "disparos"
+        ] else ([] if var in ["ativos", "historico_alertas"] else None)
 
-if "pausado" not in st.session_state: st.session_state.pausado = True
-if "ultimo_estado_pausa" not in st.session_state: st.session_state.ultimo_estado_pausa = None
-if "disparos" not in st.session_state: st.session_state.disparos = {}
-ensure_color_map()
+if "pausado" not in st.session_state:
+    st.session_state.pausado = True
+if "ultimo_estado_pausa" not in st.session_state:
+    st.session_state.ultimo_estado_pausa = None
+if "avisou_abertura_pregao" not in st.session_state:
+    st.session_state.avisou_abertura_pregao = False
 
 # Carrega o estado salvo
-carregar_estado()
-
-# -----------------------------
-# ESTADOS GLOBAIS
-# -----------------------------
-for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
-            "em_contagem", "status", "precos_historicos"]:
-    if var not in st.session_state:
-        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
-
-if "pausado" not in st.session_state: st.session_state.pausado = True
-if "ultimo_estado_pausa" not in st.session_state: st.session_state.ultimo_estado_pausa = None
-if "disparos" not in st.session_state: st.session_state.disparos = {}
-ensure_color_map()
-
-# 🔽 Carrega o estado salvo
 carregar_estado()
 
 # -----------------------------
@@ -273,6 +261,9 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.session_state.status = {}
         st.session_state.precos_historicos = {}
         st.session_state.disparos = {}
+        st.session_state.ultimo_update_tempo = {}
+        st.session_state.ultimo_ping_keepalive = None
+        st.session_state.avisou_abertura_pregao = False
         now_tmp = agora_lx()
         st.session_state.log_monitoramento.append(
             f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado (LOSS CURTO)"
@@ -283,13 +274,13 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado: {e}")
 
-# Teste Telegram
+# Teste Telegram (corrigido)
 async def testar_telegram():
-    token_telegram = st.secrets.get("telegram_token", "")
-    chat_ids = [st.secrets.get("telegram_chat_id_losscurto", "")]
+    token = st.secrets.get("telegram_token", "")
+    chat = st.secrets.get("telegram_chat_id_losscurto", "")
     try:
         if not token or not chat:
-            raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
+            raise ValueError("Defina telegram_token e telegram_chat_id_losscurto em st.secrets.")
         bot = Bot(token=token)
         await bot.send_message(chat_id=chat, text="✅ Teste de alerta LOSS CURTO funcionando!")
         return True, None
@@ -356,6 +347,7 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.em_contagem[ticker] = False
         st.session_state.status[ticker] = "🟢 Monitorando"
         st.session_state.precos_historicos[ticker] = []
+        st.session_state.ultimo_update_tempo[ticker] = None
         st.success(f"Ativo {ticker} adicionado com sucesso!")
 
 # -----------------------------
@@ -371,7 +363,7 @@ if st.session_state.ativos:
         preco_atual = "-"
         try:
             preco_atual = obter_preco_atual(f"{t}.SA")
-        except:
+        except Exception:
             pass
         tempo = st.session_state.tempo_acumulado.get(t, 0)
         minutos = tempo / 60
@@ -400,15 +392,14 @@ log_container = st.empty()
 # -----------------------------
 def montar_mensagem_stop_curto(ticker_symbol_full, preco_alvo, preco_atual, operacao):
     """
-    Encerramento da operação anterior (COMPRA/VENDA A DESCOBERTO) — conforme script original.
-    """
+    Encerramento da operação anterior (COMPRA/VENDA A DESCOBERTO).
+   """
     ticker_symbol = ticker_symbol_full.replace(".SA", "")
-    # operação atingida => encerrar a operação ANTERIOR
     mensagem_operacao_anterior = "COMPRA" if operacao == "venda" else "VENDA A DESCOBERTO"
     mensagem = (
         f"Encerramento da operação de {mensagem_operacao_anterior} em {ticker_symbol}!\n"
         f"Realize a operação de {operacao.upper()} para zerar sua posição.\n"
-        f"STOP {preco_alvo:.2f} foi atingido ou ultrapassado.\n\n\n\n\n"
+        f"STOP {preco_alvo:.2f} foi atingido ou ultrapassado.\n\n"
         "COMPLIANCE: Esta mensagem é uma sugestão de compra/venda baseada em nossa CARTEIRA CURTO PRAZO. "
         "A compra ou venda é de total decisão e responsabilidade do Destinatário. Este e-mail contém informação "
         "CONFIDENCIAL de propriedade do Canal 1milhao e de seu DESTINATÁRIO tão somente. Se você NÃO for "
@@ -424,7 +415,7 @@ def notificar_stop_curto(ticker_symbol, preco_alvo, preco_atual, operacao):
     senha_ou_token = st.secrets.get("gmail_app_password", "")
     destinatario = st.secrets.get("email_recipient", "listasemanal@googlegroups.com")
     token_telegram = st.secrets.get("telegram_token", "")
-    chat_ids = [st.secrets.get("telegram_chat_id_losscurto", "")]
+    chat_id = st.secrets.get("telegram_chat_id_losscurto", "")
 
     assunto, mensagem = montar_mensagem_stop_curto(ticker_symbol, preco_alvo, preco_atual, operacao)
 
@@ -438,11 +429,10 @@ def notificar_stop_curto(ticker_symbol, preco_alvo, preco_atual, operacao):
 
     # Telegram
     try:
-        if not token_telegram or not chat_ids[0]:
-            raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
+        if not token_telegram or not chat_id:
+            raise ValueError("Defina telegram_token e telegram_chat_id_losscurto em st.secrets.")
         bot = Bot(token=token_telegram)
-        for chat_id in chat_ids:
-            bot.send_message(chat_id=chat_id, text=f"{mensagem}\n\nRobot 1milhão Invest.")
+        bot.send_message(chat_id=chat_id, text=f"{mensagem}\n\nRobot 1milhão Invest.")
     except Exception as e:
         st.session_state.log_monitoramento.append(f"⚠️ Erro ao enviar Telegram: {e}")
 
@@ -460,19 +450,22 @@ if st.session_state.pausado:
     pass
 else:
     if dentro_pregao(now):
-        # Aviso único de abertura
+        # Aviso único de abertura (corrigido para usar _losscurto)
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
             try:
                 token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id", "").strip()
-                if not token or not chat:
-                    raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
-                bot = Bot(token=token)
-                asyncio.run(bot.send_message(chat_id=chat, text="🛑 Robô LOSS CURTO ativo — Pregão Aberto! ⏱️"))
-                st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto (LOSS CURTO)"
-                )
+                chat = st.secrets.get("telegram_chat_id_losscurto", "").strip()
+                if token and chat:
+                    bot = Bot(token=token)
+                    asyncio.run(bot.send_message(chat_id=chat, text="🛑 Robô LOSS CURTO ativo — Pregão Aberto! ⏱️"))
+                    st.session_state.log_monitoramento.append(
+                        f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto (LOSS CURTO)"
+                    )
+                else:
+                    st.session_state.log_monitoramento.append(
+                        f"{now.strftime('%H:%M:%S')} | ⚠️ Aviso: token/chat_id não configurado — notificação ignorada."
+                    )
             except Exception as e:
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | ⚠️ Erro ao avisar abertura: {e}"
@@ -487,6 +480,7 @@ else:
             t = ativo["ticker"]
             st.session_state.em_contagem.setdefault(t, False)
             st.session_state.status.setdefault(t, "🟢 Monitorando")
+            st.session_state.ultimo_update_tempo.setdefault(t, None)
 
             tk_full = f"{t}.SA"
             preco_atual = "-"
@@ -534,26 +528,23 @@ else:
 
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
+
                 if not st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = True
                     st.session_state.tempo_acumulado[t] = 0
+                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
                     st.session_state.log_monitoramento.append(
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
                     )
-
-                # Contagem com base no delta real entre re-runs
-                agora_real = agora_lx()
-                ultimo_update_tempo = st.session_state.get("ultimo_update_tempo", {}).get(t)
-                if ultimo_update_tempo:
-                    delta = (agora_real - datetime.datetime.fromisoformat(ultimo_update_tempo)).total_seconds()
                 else:
-                    delta = 0
-                st.session_state.tempo_acumulado[t] += delta
-                st.session_state.setdefault("ultimo_update_tempo", {})[t] = agora_real.isoformat()
-
-                st.session_state.log_monitoramento.append(
-                    f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
-                )
+                    ultimo = st.session_state.ultimo_update_tempo.get(t)
+                    dt_ultimo = datetime.datetime.fromisoformat(ultimo) if ultimo else now
+                    delta = max(0, (now - dt_ultimo).total_seconds())
+                    st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
+                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
+                    st.session_state.log_monitoramento.append(
+                        f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
+                    )
 
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
                     alerta_msg = notificar_stop_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
@@ -573,17 +564,19 @@ else:
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
                     st.session_state.status[t] = "🔴 Fora da zona"
+                    st.session_state.ultimo_update_tempo[t] = None
                     st.session_state.log_monitoramento.append(
                         f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
 
-        # Remove da busca os tickers encerrados
+        # Remove da lista os tickers encerrados
         if tickers_para_remover:
             st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
             for t in tickers_para_remover:
                 st.session_state.tempo_acumulado.pop(t, None)
                 st.session_state.em_contagem.pop(t, None)
                 st.session_state.status[t] = "✅ Encerrado (removido)"
+                st.session_state.ultimo_update_tempo.pop(t, None)
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ENCERRAMENTO: {', '.join(tickers_para_remover)}"
             )
@@ -622,9 +615,11 @@ else:
         )
         grafico.plotly_chart(fig, use_container_width=True)
 
+        # ritmo normal durante pregão
         sleep_segundos = INTERVALO_VERIFICACAO
 
     else:
+        # Fora do pregão
         st.session_state["avisou_abertura_pregao"] = False
         faltam, prox_abertura = segundos_ate_abertura(now)
         elem_id = f"cd-{uuid.uuid4().hex[:8]}"
@@ -657,7 +652,7 @@ else:
             height=70
         )
 
-        # KEEP-ALIVE (URL do app)
+        # KEEP-ALIVE
         try:
             if not dentro_pregao(now):
                 APP_URL = "https://losscurto.streamlit.app/"
@@ -679,6 +674,7 @@ else:
                 f"{now.strftime('%H:%M:%S')} | ⚠️ Erro no keep-alive: {e}"
             )
 
+        # ritmo mais lento fora do pregão
         if faltam > 3600:
             sleep_segundos = 900
         elif faltam > 600:
