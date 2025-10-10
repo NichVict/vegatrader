@@ -1119,7 +1119,7 @@ salvar_estado()
 # -----------------------------
 # 🧪 PAINEL DE DEBUG / BACKUP DO ESTADO
 # -----------------------------
-with st.expander("🧪 Debug / Backup do estado", expanded=False):
+with st.expander("🧪 Debug / Backup do estado", expanded=True):
     st.caption(f"Arquivo: `{SAVE_PATH}`")
 
     # 1️⃣ EM MEMÓRIA (session_state filtrado)
