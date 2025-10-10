@@ -71,8 +71,22 @@ def salvar_estado():
     try:
         with open(SAVE_PATH, "w", encoding="utf-8") as f:
             json.dump(estado, f, ensure_ascii=False, default=str, indent=2)
+
+        # 🟩 DEBUG: confirma salvamento no log e no sidebar
+        msg = f"💾 Estado salvo com sucesso ({os.path.basename(SAVE_PATH)})"
+        st.session_state.log_monitoramento.append(
+            f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | {msg}"
+        )
+        # Mostra só se o usuário quiser ver isso no sidebar
+        st.sidebar.caption(msg)
+
     except Exception as e:
-        st.sidebar.error(f"Erro ao salvar estado: {e}")
+        # 🟥 DEBUG: erro de salvamento
+        erro_msg = f"Erro ao salvar estado: {e}"
+        st.session_state.log_monitoramento.append(
+            f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | ⚠️ {erro_msg}"
+        )
+        st.sidebar.error(erro_msg)
 
 def carregar_estado():
     if os.path.exists(SAVE_PATH):
