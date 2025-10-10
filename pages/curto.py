@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import streamlit as st
 from yahooquery import Ticker
 import datetime
@@ -27,8 +28,8 @@ TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)
 
-INTERVALO_VERIFICACAO = 300
-TEMPO_ACUMULADO_MAXIMO = 1500
+INTERVALO_VERIFICACAO = 300       # 5 min
+TEMPO_ACUMULADO_MAXIMO = 1500     # 25 min
 LOG_MAX_LINHAS = 1000
 
 PALETTE = [
@@ -92,15 +93,26 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
         servidor.login(remetente, senha_ou_token)
         servidor.send_message(mensagem)
 
-def enviar_notificacao_curto(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
-    enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
+def enviar_notificacao_curto(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_id):
+    # E-mail
+    if senha_ou_token and destinatario:
+        try:
+            enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
+        except Exception as e:
+            st.session_state.log_monitoramento.append(f"⚠️ Erro ao enviar e-mail: {e}")
+    else:
+        st.session_state.log_monitoramento.append("⚠️ Aviso: e-mail não configurado — envio ignorado.")
+
+    # Telegram
     async def send_telegram():
         try:
-            bot = Bot(token=token_telegram)
-            for chat_id in chat_ids:
+            if token_telegram and chat_id:
+                bot = Bot(token=token_telegram)
                 await bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest (CURTO PRAZO).")
+            else:
+                st.session_state.log_monitoramento.append("⚠️ Aviso: token/chat_id não configurado — Telegram ignorado.")
         except Exception as e:
-            print(f"Erro Telegram: {e}")
+            st.session_state.log_monitoramento.append(f"⚠️ Erro ao enviar Telegram: {e}")
     asyncio.run(send_telegram())
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
@@ -125,22 +137,24 @@ def notificar_preco_alvo_alcancado_curto(ticker_symbol, preco_alvo, preco_atual,
         "COMPLIANCE: Este aviso faz parte da estratégia da CARTEIRA CURTO PRAZO. "
         "A decisão de compra/venda é de responsabilidade do destinatário."
     )
-    remetente = "avisoscanal1milhao@gmail.com"
+    remetente = st.secrets.get("email_sender", "avisoscanal1milhao@gmail.com")
     senha_ou_token = st.secrets.get("gmail_app_password", "")
-    destinatario = "listasemanal@googlegroups.com"
+    destinatario = st.secrets.get("email_recipient_curto", "listasemanal@googlegroups.com")
     assunto = f"ALERTA CURTO PRAZO: {msg_op} em {ticker_symbol_sem_ext}"
     token_telegram = st.secrets.get("telegram_token", "")
-    chat_ids = [st.secrets.get("telegram_chat_id_curto", "")]
-    enviar_notificacao_curto(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
+    chat_id = st.secrets.get("telegram_chat_id_curto", "")
+    enviar_notificacao_curto(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_id)
     return mensagem
 
 async def testar_telegram():
     token = st.secrets.get("telegram_token", "")
     chat = st.secrets.get("telegram_chat_id_curto", "")
     try:
-        bot = Bot(token=token)
-        await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
-        return True, None
+        if token and chat:
+            bot = Bot(token=token)
+            await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
+            return True, None
+        return False, "token/chat_id não configurado"
     except Exception as e:
         return False, str(e)
 
@@ -359,7 +373,7 @@ if st.session_state.ativos:
             "Tempo Acumulado": f"{int(minutos)} min"
         })
     df = pd.DataFrame(data)
-    tabela_status.dataframe(df, use_container_width=True, height=220)  # menos flicker
+    tabela_status.dataframe(df, use_container_width=True, height=220)
 else:
     st.info("Nenhum ativo cadastrado ainda.")
 
@@ -367,10 +381,13 @@ st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
 
 st.subheader("🕒 Log de Monitoramento")
-# Cartão único de contagem regressiva (fora do pregão)
-countdown_container = st.empty()
-# Log estilizado
-log_container = st.empty()
+countdown_container = st.empty()  # shown fora do pregão
+log_container = st.empty()        # log estilizado
+
+# -----------------------------
+# LOOP DE MONITORAMENTO
+# -----------------------------
+sleep_segundos = 60
 
 if st.session_state.pausado != st.session_state.ultimo_estado_pausa:
     st.session_state.ultimo_estado_pausa = st.session_state.pausado
@@ -382,11 +399,10 @@ else:
         # ---- Notificação única na abertura do pregão ----
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
-                        
             try:
                 token = st.secrets.get("telegram_token", "").strip()
                 chat = st.secrets.get("telegram_chat_id_curto", "").strip()
-            
+
                 if token and chat:
                     bot = Bot(token=token)
                     asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô CURTO PRAZO ativo — Pregão Aberto!"))
@@ -397,12 +413,11 @@ else:
                     st.session_state.log_monitoramento.append(
                         f"{now.strftime('%H:%M:%S')} | ⚠️ Aviso: token/chat_id não configurado — notificação de abertura ignorada."
                     )
-            
+
             except Exception as e:
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | ⚠️ Erro real ao enviar notificação de abertura: {e}"
                 )
-             
 
         # Remove countdown
         countdown_container.empty()
@@ -461,7 +476,6 @@ else:
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
 
-                # Inicia contagem
                 if not st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = True
                     st.session_state.tempo_acumulado[t] = 0
@@ -470,7 +484,6 @@ else:
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
                     )
                 else:
-                    # Atualiza tempo acumulado com delta real
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
                     if ultimo:
                         try:
@@ -488,7 +501,6 @@ else:
                         f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                     )
 
-                # Disparo após tempo limite
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
                     alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
                     st.warning(alerta_msg)
@@ -503,7 +515,6 @@ else:
                     tickers_para_remover.append(t)
 
             else:
-                # Saiu da zona
                 if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
@@ -513,7 +524,6 @@ else:
                         f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
 
-        # Remove ativos disparados
         if tickers_para_remover:
             st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
             for t in tickers_para_remover:
@@ -544,17 +554,10 @@ else:
                 x=xs, y=ys,
                 mode="markers",
                 name=f"Ativação {t}",
-                marker=dict(
-                    symbol="star",
-                    size=12,
-                    color=color_for_ticker(t),
-                    line=dict(width=2, color="white")
-                ),
-                hovertemplate=(
-                    f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
-                    "<br><b>ATIVAÇÃO</b>"
-                    "<br>Preço: R$ %{y:.2f}<extra></extra>"
-                ),
+                marker=dict(symbol="star", size=12, color=color_for_ticker(t), line=dict(width=2, color="white")),
+                hovertemplate=(f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
+                               "<br><b>ATIVAÇÃO</b>"
+                               "<br>Preço: R$ %{y:.2f}<extra></extra>")
             ))
         fig.update_layout(
             title="📉 Evolução dos Preços (CARTEIRA CURTO PRAZO ⭐)",
@@ -664,3 +667,4 @@ salvar_estado()
 # Reexecução
 time.sleep(sleep_segundos)
 st.rerun()
+
