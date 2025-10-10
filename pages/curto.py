@@ -130,13 +130,13 @@ def notificar_preco_alvo_alcancado_curto(ticker_symbol, preco_alvo, preco_atual,
     destinatario = "listasemanal@googlegroups.com"
     assunto = f"ALERTA CURTO PRAZO: {msg_op} em {ticker_symbol_sem_ext}"
     token_telegram = st.secrets.get("telegram_token", "")
-    chat_ids = [st.secrets.get("telegram_chat_id", "-1002046197953")]
+    chat_ids = [st.secrets.get("telegram_chat_id_curto", "")]
     enviar_notificacao_curto(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
     return mensagem
 
 async def testar_telegram():
     token = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id", "")
+    chat = st.secrets.get("telegram_chat_id_curto", "")
     try:
         bot = Bot(token=token)
         await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
@@ -384,7 +384,7 @@ else:
             st.session_state["avisou_abertura_pregao"] = True
             try:
                 token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id", "").strip()
+                chat = st.secrets.get("telegram_chat_id_curto", "").strip()
                 if not token or not chat:
                     raise ValueError("Token ou chat_id ausente em st.secrets")
                 bot = Bot(token=token)
