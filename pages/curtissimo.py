@@ -374,7 +374,7 @@ def notificar_preco_alvo_alcancado_CURTISSIMO(ticker_symbol, preco_alvo, preco_a
     senha_ou_token = st.secrets.get("gmail_app_password", "")
     destinatario = st.secrets.get("email_recipient", "listacurtissimo@googlegroups.com")
     token_telegram = st.secrets.get("telegram_token", "")
-    chat_ids = [st.secrets.get("telegram_chat_id", "-1002074291817")]
+    chat_ids = [st.secrets.get("telegram_chat_id_losscurtissimo", "")]
 
     assunto, mensagem = montar_mensagem_curtissimo(ticker_symbol, preco_alvo, preco_atual, operacao)
 
@@ -415,7 +415,7 @@ else:
             st.session_state["avisou_abertura_pregao"] = True
             try:
                 token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id", "").strip()
+                chat = st.secrets.get("telegram_chat_id_losscurtissimo", "").strip()
                 if not token or not chat:
                     raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
                 bot = Bot(token=token)
