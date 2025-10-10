@@ -94,22 +94,21 @@ def carregar_estado():
             with open(SAVE_PATH, "r", encoding="utf-8") as f:
                 estado = json.load(f)
             pausado_atual = st.session_state.get("pausado")
+
             for k, v in estado.items():
                 if k == "pausado" and pausado_atual is not None:
                     continue
                 st.session_state[k] = v
-            msg = "💾 Estado (LOSS_CURTO) restaurado com sucesso!"
-            st.sidebar.info(msg)
-            st.session_state.log_monitoramento.append(
-                f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | {msg}"
-            )
-        except Exception as e:
-            erro_msg = f"Erro ao carregar estado: {e}"
-            st.sidebar.error(erro_msg)
-            st.session_state.log_monitoramento.append(
-                f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | ⚠️ {erro_msg}"
-            )
 
+            # ✅ Mostra aviso apenas uma vez por sessão
+            if "estado_restaurado" not in st.session_state:
+                st.session_state.estado_restaurado = True
+                st.sidebar.info("💾 Estado (LOSS_CURTO) restaurado com sucesso!")
+                st.session_state.log_monitoramento.append(
+                    f"{datetime.datetime.now().strftime('%H:%M:%S')} | 💾 Estado (LOSS_CURTO) restaurado com sucesso!"
+                )
+        except Exception as e:
+            st.sidebar.error(f"Erro ao carregar estado: {e}")
 # -----------------------------
 # FUNÇÕES AUXILIARES
 # -----------------------------
