@@ -1,15 +1,12 @@
 # -*- coding: utf-8 -*-
 """
 curtissimo.py
-CURTÍSSIMO - COMPRA E VENDA (Streamlit)
-
-- Lógica: dispara após 900s (15 min) de permanência na zona do preço-alvo
-- Mensagens: "CARTEIRA CURTISSIMO PRAZO" (ativação de operação)
-- Credenciais: lidas de st.secrets (veja modelo de secrets ao final)
-- Keep-alive: https://curtissimo.streamlit.app/
+CARTEIRA CURTÍSSIMO PRAZO - COMPRA E VENDA (Streamlit)
 """
+
 import streamlit as st
 st.set_page_config(page_title="CARTEIRA CURTÍSSIMO PRAZO", layout="wide")
+
 from yahooquery import Ticker
 import datetime
 import time
@@ -32,14 +29,12 @@ import os
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
-st.set_page_config(page_title="CURTÍSSIMO - COMPRA E VENDA", layout="wide")
+TZ = ZoneInfo("Europe/Lisbon")
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
 
-TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
-HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
-
-INTERVALO_VERIFICACAO = 300                       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 900                      # 15 min
+INTERVALO_VERIFICACAO = 300
+TEMPO_ACUMULADO_MAXIMO = 900
 LOG_MAX_LINHAS = 1000
 
 PALETTE = [
@@ -47,8 +42,10 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-# Persistência (arquivo separado para este modo)
-SAVE_PATH = "session_state_curtissimo.json"
+# ==== PERSISTÊNCIA LOCAL ====
+SAVE_DIR = "session_data"
+os.makedirs(SAVE_DIR, exist_ok=True)
+SAVE_PATH = os.path.join(SAVE_DIR, "state_curtissimo.json")
 
 def salvar_estado():
     estado = {
@@ -59,7 +56,7 @@ def salvar_estado():
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
         "status": st.session_state.get("status", {}),
         "precos_historicos": st.session_state.get("precos_historicos", {}),
-        "pausado": st.session_state.get("pausado", True),
+        "pausado": st.session_state.get("pausado", False),
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
@@ -85,8 +82,6 @@ def carregar_estado():
         except Exception as e:
             st.sidebar.error(f"Erro ao carregar estado: {e}")
 
-carregar_estado()
-
 # -----------------------------
 # FUNÇÕES AUXILIARES
 # -----------------------------
@@ -100,19 +95,6 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
         servidor.starttls()
         servidor.login(remetente, senha_ou_token)
         servidor.send_message(mensagem)
-
-def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
-    # E-mail
-    enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
-    # Telegram (assíncrono)
-    async def send_telegram():
-        try:
-            bot = Bot(token=token_telegram)
-            for chat_id in chat_ids:
-                await bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest.")
-        except Exception as e:
-            print(f"Erro Telegram: {e}")
-    asyncio.run(send_telegram())
 
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
@@ -145,7 +127,7 @@ def segundos_ate_abertura(dt_now):
     else:
         return 0, hoje_abre
 
-# ---- Cores por ticker (para LOG/Gráfico) ----
+# ---- Cores por ticker ----
 def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
@@ -174,7 +156,6 @@ def render_log_html(lines, selected_tickers=None, max_lines=200):
     subset = lines[-max_lines:][::-1]
     if selected_tickers:
         subset = [l for l in subset if (extract_ticker(l) in selected_tickers)]
-
     css = """
     <style>
       .log-card {
@@ -208,22 +189,23 @@ def render_log_html(lines, selected_tickers=None, max_lines=200):
     st.markdown("\n".join(html), unsafe_allow_html=True)
 
 # -----------------------------
-# ESTADOS GLOBAIS
+# ESTADOS INICIAIS
 # -----------------------------
 for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
-            "em_contagem", "status", "precos_historicos"]:
+            "em_contagem", "status", "precos_historicos", "ultimo_update_tempo"]:
     if var not in st.session_state:
-        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
+        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos", "ultimo_update_tempo"] else []
 
 if "pausado" not in st.session_state:
-    st.session_state.pausado = True
+    st.session_state.pausado = False
 if "ultimo_estado_pausa" not in st.session_state:
     st.session_state.ultimo_estado_pausa = None
 if "disparos" not in st.session_state:
     st.session_state.disparos = {}
 ensure_color_map()
 
-# -----------------------------
+# ==== Carrega estado persistido ====
+carregar_estado()------
 # SIDEBAR
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
