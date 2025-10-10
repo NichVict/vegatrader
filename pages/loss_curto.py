@@ -164,6 +164,46 @@ def extract_ticker(line):
     m2 = PLAIN_TICKER_PAT.search(line)
     return m2.group(1) if m2 else None
 
+def render_log_html(lines, selected_tickers=None, max_lines=200):
+    if not lines:
+        st.write("—")
+        return
+    subset = lines[-max_lines:][::-1]
+    if selected_tickers:
+        subset = [l for l in subset if (extract_ticker(l) in selected_tickers)]
+
+    css = """
+    <style>
+      .log-card {
+        background: #0b1220;
+        border: 1px solid #1f2937;
+        border-radius: 10px;
+        padding: 10px 12px;
+        max-height: 360px;
+        overflow-y: auto;
+      }
+      .log-line{
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 13px; line-height: 1.35; margin: 2px 0; color: #e5e7eb;
+        display: flex; align-items: baseline; gap: 8px;
+      }
+      .ts{ color:#9ca3af; min-width:64px; text-align:right; }
+      .badge{ display:inline-block; padding:1px 8px; font-size:12px; border-radius:9999px; color:white; }
+      .msg{ white-space: pre-wrap; }
+    </style>
+    """
+    html = [css, "<div class='log-card'>"]
+    for l in subset:
+        if " | " in l:
+            ts, rest = l.split(" | ", 1)
+        else:
+            ts, rest = "", l
+        tk = extract_ticker(l)
+        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
+        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
+    html.append("</div>")
+    st.markdown("\n".join(html), unsafe_allow_html=True)
+
 # -----------------------------
 # ESTADOS GLOBAIS
 # -----------------------------
