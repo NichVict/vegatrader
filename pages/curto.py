@@ -1,5 +1,4 @@
 import streamlit as st
-st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
 from yahooquery import Ticker
 import datetime
 import time
@@ -22,14 +21,14 @@ import os
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
-st.set_page_config(page_title="CURTO - COMPRA E VENDA", layout="wide")
+st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
 
-TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
-HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
+TZ = ZoneInfo("Europe/Lisbon")
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
+HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)
 
-INTERVALO_VERIFICACAO = 300                       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 1500                     # 25 min
+INTERVALO_VERIFICACAO = 300
+TEMPO_ACUMULADO_MAXIMO = 1500
 LOG_MAX_LINHAS = 1000
 
 PALETTE = [
@@ -37,8 +36,10 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-# Persistência (arquivo separado deste app)
-SAVE_PATH = "session_state_curto.json"
+# ==== PERSISTÊNCIA LOCAL ====
+SAVE_DIR = "session_data"
+os.makedirs(SAVE_DIR, exist_ok=True)
+SAVE_PATH = os.path.join(SAVE_DIR, "state_curto.json")
 
 def salvar_estado():
     estado = {
@@ -49,7 +50,7 @@ def salvar_estado():
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
         "status": st.session_state.get("status", {}),
         "precos_historicos": st.session_state.get("precos_historicos", {}),
-        "pausado": st.session_state.get("pausado", True),
+        "pausado": st.session_state.get("pausado", False),
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
@@ -71,7 +72,7 @@ def carregar_estado():
                 if k == "pausado" and pausado_atual is not None:
                     continue
                 st.session_state[k] = v
-            st.sidebar.info("💾 Estado (CURTO) restaurado!")
+            st.sidebar.info("💾 Estado (CURTO PRAZO) restaurado!")
         except Exception as e:
             st.sidebar.error(f"Erro ao carregar estado: {e}")
 
@@ -91,15 +92,13 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
         servidor.login(remetente, senha_ou_token)
         servidor.send_message(mensagem)
 
-def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
-    # E-mail
+def enviar_notificacao_curto(destinatario, assunto, corpo, remetente, senha_ou_token, token_telegram, chat_ids):
     enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token)
-    # Telegram (assíncrono)
     async def send_telegram():
         try:
             bot = Bot(token=token_telegram)
             for chat_id in chat_ids:
-                await bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest.")
+                await bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest (CURTO PRAZO).")
         except Exception as e:
             print(f"Erro Telegram: {e}")
     asyncio.run(send_telegram())
@@ -108,15 +107,42 @@ def enviar_notificacao(destinatario, assunto, corpo, remetente, senha_ou_token, 
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
     tk = Ticker(ticker_symbol)
-    # tenta preço em tempo real; fallback para fechamento recente
     try:
         p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
         if p is not None:
             return float(p)
     except Exception:
         pass
-    preco_atual = tk.history(period="3d")["close"].iloc[-1]
+    preco_atual = tk.history(period="1d")["close"].iloc[-1]
     return float(preco_atual)
+
+def notificar_preco_alvo_alcancado_curto(ticker_symbol, preco_alvo, preco_atual, operacao):
+    ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
+    msg_op = "VENDA A DESCOBERTO" if operacao == "venda" else operacao.upper()
+    mensagem = (
+        f"Operação de {msg_op} em {ticker_symbol_sem_ext} ativada na CARTEIRA CURTO PRAZO!\n"
+        f"Preço alvo: {preco_alvo:.2f} | Preço atual: {preco_atual:.2f}\n\n"
+        "COMPLIANCE: Este aviso faz parte da estratégia da CARTEIRA CURTO PRAZO. "
+        "A decisão de compra/venda é de responsabilidade do destinatário."
+    )
+    remetente = "avisoscanal1milhao@gmail.com"
+    senha_ou_token = st.secrets.get("gmail_app_password", "")
+    destinatario = "listasemanal@googlegroups.com"
+    assunto = f"ALERTA CURTO PRAZO: {msg_op} em {ticker_symbol_sem_ext}"
+    token_telegram = st.secrets.get("telegram_token", "")
+    chat_ids = [st.secrets.get("telegram_chat_id", "-1002046197953")]
+    enviar_notificacao_curto(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_ids)
+    return mensagem
+
+async def testar_telegram():
+    token = st.secrets.get("telegram_token", "")
+    chat = st.secrets.get("telegram_chat_id", "")
+    try:
+        bot = Bot(token=token)
+        await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
+        return True, None
+    except Exception as e:
+        return False, str(e)
 
 def agora_lx():
     return datetime.datetime.now(TZ)
@@ -136,7 +162,7 @@ def segundos_ate_abertura(dt_now):
     else:
         return 0, hoje_abre
 
-# ---- Cores por ticker (para LOG/Gráfico) ----
+# ---- LOG e cores ----
 def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
@@ -165,7 +191,6 @@ def render_log_html(lines, selected_tickers=None, max_lines=200):
     subset = lines[-max_lines:][::-1]
     if selected_tickers:
         subset = [l for l in subset if (extract_ticker(l) in selected_tickers)]
-
     css = """
     <style>
       .log-card {
@@ -199,15 +224,15 @@ def render_log_html(lines, selected_tickers=None, max_lines=200):
     st.markdown("\n".join(html), unsafe_allow_html=True)
 
 # -----------------------------
-# ESTADOS GLOBAIS
+# ESTADOS INICIAIS
 # -----------------------------
 for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
-            "em_contagem", "status", "precos_historicos"]:
+            "em_contagem", "status", "precos_historicos", "ultimo_update_tempo"]:
     if var not in st.session_state:
-        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
+        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos", "ultimo_update_tempo"] else []
 
 if "pausado" not in st.session_state:
-    st.session_state.pausado = True
+    st.session_state.pausado = False
 if "ultimo_estado_pausa" not in st.session_state:
     st.session_state.ultimo_estado_pausa = None
 if "disparos" not in st.session_state:
@@ -219,13 +244,12 @@ ensure_color_map()
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
-# Reset total
 if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
     try:
         if os.path.exists(SAVE_PATH):
             os.remove(SAVE_PATH)
         st.session_state.clear()
-        st.session_state.pausado = True
+        st.session_state.pausado = False
         st.session_state.ultimo_estado_pausa = None
         st.session_state.ativos = []
         st.session_state.historico_alertas = []
@@ -235,28 +259,14 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.session_state.status = {}
         st.session_state.precos_historicos = {}
         st.session_state.disparos = {}
+        st.session_state.ultimo_update_tempo = {}
         now_tmp = agora_lx()
-        st.session_state.log_monitoramento.append(
-            f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado (CURTO)"
-        )
+        st.session_state.log_monitoramento.append(f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual (CURTO PRAZO)")
         salvar_estado()
-        st.sidebar.success("✅ Estado (CURTO) apagado e reiniciado.")
+        st.sidebar.success("✅ Estado (CURTO PRAZO) apagado e reiniciado.")
         st.rerun()
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado: {e}")
-
-# Teste Telegram
-async def testar_telegram():
-    token = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id", "")
-    try:
-        if not token or not chat:
-            raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
-        bot = Bot(token=token)
-        await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO funcionando!")
-        return True, None
-    except Exception as e:
-        return False, str(e)
 
 if st.sidebar.button("📤 Testar Envio Telegram"):
     st.sidebar.info("Enviando mensagem de teste (usando st.secrets)...")
@@ -268,13 +278,13 @@ if st.sidebar.button("📤 Testar Envio Telegram"):
 
 st.sidebar.checkbox("⏸️ Pausar monitoramento (modo edição)", key="pausado")
 
-st.sidebar.header("📜 Histórico de Ativações")
+st.sidebar.header("📜 Histórico de Alertas")
 if st.session_state.historico_alertas:
     for alerta in reversed(st.session_state.historico_alertas):
         st.sidebar.write(f"**{alerta['ticker']}** - {alerta['operacao'].upper()}")
         st.sidebar.caption(f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}")
 else:
-    st.sidebar.info("Nenhuma ativação ainda.")
+    st.sidebar.info("Nenhum alerta ainda.")
 col_limp, col_limp2 = st.sidebar.columns(2)
 if col_limp.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
@@ -293,12 +303,12 @@ selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_exis
 # INTERFACE PRINCIPAL
 # -----------------------------
 now = agora_lx()
-st.title("📈 CURTO - COMPRA E VENDA")
+st.title("📈 CURTO PRAZO - COMPRA E VENDA")
 st.caption(
     f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
     f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}"
 )
-st.write("Cadastre tickers e preços-alvo. O robô envia **ATIVAÇÃO de operação** quando o preço permanece na zona por **25 minutos (1500s)**.")
+st.write("Robô automático para monitoramento da **CARTEIRA CURTO PRAZO** — dispara alerta após 25 minutos na zona de preço alvo.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -318,7 +328,9 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.em_contagem[ticker] = False
         st.session_state.status[ticker] = "🟢 Monitorando"
         st.session_state.precos_historicos[ticker] = []
+        st.session_state.ultimo_update_tempo[ticker] = None
         st.success(f"Ativo {ticker} adicionado com sucesso!")
+        salvar_estado()
 
 # -----------------------------
 # STATUS + GRÁFICO + LOG
@@ -333,7 +345,7 @@ if st.session_state.ativos:
         preco_atual = "-"
         try:
             preco_atual = obter_preco_atual(f"{t}.SA")
-        except:
+        except Exception:
             pass
         tempo = st.session_state.tempo_acumulado.get(t, 0)
         minutos = tempo / 60
@@ -346,7 +358,7 @@ if st.session_state.ativos:
             "Tempo Acumulado": f"{int(minutos)} min"
         })
     df = pd.DataFrame(data)
-    tabela_status.dataframe(df, use_container_width=True, height=220)
+    tabela_status.dataframe(df, use_container_width=True, height=220)  # menos flicker
 else:
     st.info("Nenhum ativo cadastrado ainda.")
 
@@ -354,60 +366,21 @@ st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
 
 st.subheader("🕒 Log de Monitoramento")
+# Cartão único de contagem regressiva (fora do pregão)
 countdown_container = st.empty()
+# Log estilizado
 log_container = st.empty()
 
 # -----------------------------
-# MENSAGENS ESPECÍFICAS (CURTO PRAZO - ATIVAÇÃO)
+# CICLO ÚNICO + REEXECUÇÃO AUTOMÁTICA
 # -----------------------------
-def montar_mensagem_ativacao_curto(ticker_symbol_full, preco_alvo, preco_atual, operacao):
-    ticker_symbol = ticker_symbol_full.replace(".SA", "")
-    mensagem_operacao = "VENDA A DESCOBERTO" if operacao == "venda" else operacao.upper()
-    mensagem = (
-        f"Operação de {mensagem_operacao} na ação {ticker_symbol} foi ativada, conforme nossa CARTEIRA CURTO PRAZO! \n"
-        f"Preço alvo de {preco_alvo:.2f} foi atingido ou ultrapassado. \n\n\n\n\n"
-        "COMPLIANCE: Esta mensagem é uma sugestão de compra/venda baseada em nossa CARTEIRA CURTO PRAZO. "
-        "A compra ou venda é de total decisão e responsabilidade do Destinatário. Este e-mail contém informação "
-        "CONFIDENCIAL de propriedade do Canal 1milhao e de seu DESTINATÁRIO tão somente. Se você NÃO for "
-        "DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir ou "
-        "divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI. A Lista de Ações "
-        "do Canal 1milhao é devidamente REGISTRADA."
-    )
-    assunto = f"*ALERTA CARTEIRA CURTO PRAZO* Ativada a Operação de {mensagem_operacao} em {ticker_symbol}"
-    return assunto, mensagem
-
-def notificar_preco_alvo_alcancado_CURTO(ticker_symbol, preco_alvo, preco_atual, operacao):
-    remetente = st.secrets.get("email_sender", "avisoscanal1milhao@gmail.com")
-    senha_ou_token = st.secrets.get("gmail_app_password", "")
-    destinatario = st.secrets.get("email_recipient", "listasemanal@googlegroups.com")
-    token_telegram = st.secrets.get("telegram_token", "")
-    chat_ids = [st.secrets.get("telegram_chat_id", "-1002046197953")]
-
-    assunto, mensagem = montar_mensagem_ativacao_curto(ticker_symbol, preco_alvo, preco_atual, operacao)
-
-    # E-mail
-    try:
-        if not senha_ou_token:
-            raise ValueError("Defina gmail_app_password em st.secrets.")
-        enviar_email(destinatario, assunto, mensagem, remetente, senha_ou_token)
-    except Exception as e:
-        st.session_state.log_monitoramento.append(f"⚠️ Erro ao enviar e-mail: {e}")
-
-    # Telegram
-    try:
-        if not token_telegram or not chat_ids[0]:
-            raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
-        bot = Bot(token=token_telegram)
-        for chat_id in chat_ids:
-            bot.send_message(chat_id=chat_id, text=f"{mensagem}\n\nRobot 1milhão Invest.")
-    except Exception as e:
-        st.session_state.log_monitoramento.append(f"⚠️ Erro ao enviar Telegram: {e}")
-
-    return mensagem
-
+# CICLO ÚNICO + REEXECUÇÃO AUTOMÁTICA
 # -----------------------------
-# CICLO ÚNICO + REEXECUÇÃO
-# -----------------------------
+grafico = st.empty()
+st.subheader("🕒 Log de Monitoramento")
+countdown_container = st.empty()
+log_container = st.empty()
+
 sleep_segundos = 60
 
 if st.session_state.pausado != st.session_state.ultimo_estado_pausa:
@@ -417,38 +390,38 @@ if st.session_state.pausado:
     pass
 else:
     if dentro_pregao(now):
-        # Aviso único de abertura
+        # ---- Notificação única na abertura do pregão ----
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
             try:
                 token = st.secrets.get("telegram_token", "").strip()
                 chat = st.secrets.get("telegram_chat_id", "").strip()
                 if not token or not chat:
-                    raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
+                    raise ValueError("Token ou chat_id ausente em st.secrets")
                 bot = Bot(token=token)
-                asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô CURTO ativo — Pregão Aberto! ⏱️"))
+                asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô CURTO PRAZO ativo — Pregão Aberto!"))
                 st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto (CURTO)"
+                    f"{now.strftime('%H:%M:%S')} | 📣 Mensagem Telegram enviada: Pregão Aberto (CURTO PRAZO)"
                 )
             except Exception as e:
                 st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | ⚠️ Erro ao avisar abertura: {e}"
+                    f"{now.strftime('%H:%M:%S')} | ⚠️ Erro ao enviar notificação de abertura: {e}"
                 )
 
-        # Esconde countdown
+        # Remove countdown
         countdown_container.empty()
 
-        # Atualiza status e histórico de preços
+        # Atualiza tabela e monitora
         data = []
         for ativo in st.session_state.ativos:
             t = ativo["ticker"]
             st.session_state.em_contagem.setdefault(t, False)
             st.session_state.status.setdefault(t, "🟢 Monitorando")
+            st.session_state.ultimo_update_tempo.setdefault(t, None)
 
-            tk_full = f"{t}.SA"
             preco_atual = "-"
             try:
-                preco_atual = obter_preco_atual(tk_full)
+                preco_atual = obter_preco_atual(f"{t}.SA")
             except Exception as e:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
 
@@ -468,7 +441,7 @@ else:
         if data:
             tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
 
-        # Lógica por ativo (25 min)
+        # ---- Lógica por ativo ----
         tickers_para_remover = []
         for ativo in st.session_state.ativos:
             t = ativo["ticker"]
@@ -491,29 +464,37 @@ else:
 
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
+
+                # Inicia contagem
                 if not st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = True
                     st.session_state.tempo_acumulado[t] = 0
+                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
                     st.session_state.log_monitoramento.append(
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
                     )
-
-                # Contagem com base no delta real entre re-runs
-                agora_real = agora_lx()
-                ultimo_update_tempo = st.session_state.get("ultimo_update_tempo", {}).get(t)
-                if ultimo_update_tempo:
-                    delta = (agora_real - datetime.datetime.fromisoformat(ultimo_update_tempo)).total_seconds()
                 else:
-                    delta = 0
-                st.session_state.tempo_acumulado[t] += delta
-                st.session_state.setdefault("ultimo_update_tempo", {})[t] = agora_real.isoformat()
+                    # Atualiza tempo acumulado com delta real
+                    ultimo = st.session_state.ultimo_update_tempo.get(t)
+                    if ultimo:
+                        try:
+                            dt_ultimo = datetime.datetime.fromisoformat(ultimo)
+                        except Exception:
+                            dt_ultimo = now
+                    else:
+                        dt_ultimo = now
+                    delta = (now - dt_ultimo).total_seconds()
+                    if delta < 0:
+                        delta = 0
+                    st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
+                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
+                    st.session_state.log_monitoramento.append(
+                        f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
+                    )
 
-                st.session_state.log_monitoramento.append(
-                    f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
-                )
-
+                # Disparo após tempo limite
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
-                    alerta_msg = notificar_preco_alvo_alcancado_CURTO(tk_full, preco_alvo, preco_atual, operacao_atv)
+                    alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
                     st.warning(alerta_msg)
                     st.session_state.historico_alertas.append({
                         "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
@@ -526,34 +507,29 @@ else:
                     tickers_para_remover.append(t)
 
             else:
+                # Saiu da zona
                 if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
                     st.session_state.status[t] = "🔴 Fora da zona"
+                    st.session_state.ultimo_update_tempo[t] = None
                     st.session_state.log_monitoramento.append(
                         f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
 
-        if not dentro_pregao(now):
-            for t in list(st.session_state.tempo_acumulado.keys()):
-                st.session_state.tempo_acumulado[t] = 0
-                st.session_state.em_contagem[t] = False
-            st.session_state["ultimo_update_tempo"] = {}
-            st.session_state.log_monitoramento.append(
-                f"{now.strftime('%H:%M:%S')} | 🧭 Pregão encerrado — contadores resetados."
-            )
-
+        # Remove ativos disparados
         if tickers_para_remover:
             st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
             for t in tickers_para_remover:
                 st.session_state.tempo_acumulado.pop(t, None)
                 st.session_state.em_contagem.pop(t, None)
                 st.session_state.status[t] = "✅ Ativado (removido)"
+                st.session_state.ultimo_update_tempo.pop(t, None)
             st.session_state.log_monitoramento.append(
-                f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ATIVAÇÃO: {', '.join(tickers_para_remover)}"
+                f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ativação: {', '.join(tickers_para_remover)}"
             )
 
-        # Gráfico (linhas + marcadores ⭐)
+        # ---- Gráfico ----
         fig = go.Figure()
         for t, dados in st.session_state.precos_historicos.items():
             if len(dados) > 1:
@@ -564,7 +540,6 @@ else:
                     name=t,
                     line=dict(color=color_for_ticker(t), width=2)
                 ))
-        # Disparos (ativações)
         for t, pontos in st.session_state.disparos.items():
             if not pontos:
                 continue
@@ -573,15 +548,22 @@ else:
                 x=xs, y=ys,
                 mode="markers",
                 name=f"Ativação {t}",
-                marker=dict(symbol="star", size=12, color=color_for_ticker(t), line=dict(width=2, color="white")),
-                hovertemplate=(f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
-                               "<br><b>ATIVAÇÃO</b>"
-                               "<br>Preço: R$ %{y:.2f}<extra></extra>")
+                marker=dict(
+                    symbol="star",
+                    size=12,
+                    color=color_for_ticker(t),
+                    line=dict(width=2, color="white")
+                ),
+                hovertemplate=(
+                    f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
+                    "<br><b>ATIVAÇÃO</b>"
+                    "<br>Preço: R$ %{y:.2f}<extra></extra>"
+                ),
             ))
-
         fig.update_layout(
-            title="📉 Evolução dos Preços (ativações ⭐)",
-            xaxis_title="Tempo", yaxis_title="Preço (R$)",
+            title="📉 Evolução dos Preços (CARTEIRA CURTO PRAZO ⭐)",
+            xaxis_title="Tempo",
+            yaxis_title="Preço (R$)",
             legend_title="Legenda",
             template="plotly_dark"
         )
@@ -590,6 +572,7 @@ else:
         sleep_segundos = INTERVALO_VERIFICACAO
 
     else:
+        # ---- Fora do pregão ----
         st.session_state["avisou_abertura_pregao"] = False
         faltam, prox_abertura = segundos_ate_abertura(now)
         elem_id = f"cd-{uuid.uuid4().hex[:8]}"
@@ -622,11 +605,11 @@ else:
             height=70
         )
 
-        # KEEP-ALIVE (URL informada)
+        # ---- Keep-alive ----
         try:
             if not dentro_pregao(now):
-                APP_URL = "https://curtoprazo.streamlit.app/"
-                intervalo_ping = 15 * 60  # 15 min
+                APP_URL = "https://curtoprazo.streamlit.app"
+                intervalo_ping = 15 * 60
                 ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
                 if isinstance(ultimo_ping, str):
                     try:
@@ -658,8 +641,30 @@ if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, max_lines=250)
 
+# -----------------------------
+# 🧪 Debug / Backup JSON
+# -----------------------------
+with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
+    st.caption(f"Arquivo: `{SAVE_PATH}`")
+    try:
+        if os.path.exists(SAVE_PATH):
+            with open(SAVE_PATH, "r", encoding="utf-8") as f:
+                state_preview = json.load(f)
+            st.json(state_preview)
+            st.download_button(
+                "⬇️ Baixar state_curto.json",
+                data=json.dumps(state_preview, ensure_ascii=False, indent=2),
+                file_name="state_curto.json",
+                mime="application/json",
+            )
+        else:
+            st.info("Ainda não existe arquivo salvo.")
+    except Exception as e:
+        st.error(f"Erro ao exibir JSON: {e}")
+
+# Salva antes de dormir
 salvar_estado()
 
-# Dorme e reexecuta (server-side; não depende do navegador)
+# Reexecução
 time.sleep(sleep_segundos)
 st.rerun()
