@@ -382,20 +382,27 @@ else:
         # ---- Notificação única na abertura do pregão ----
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
+                        
             try:
                 token = st.secrets.get("telegram_token", "").strip()
                 chat = st.secrets.get("telegram_chat_id_curto", "").strip()
-                if not token or not chat:
-                    raise ValueError("Token ou chat_id ausente em st.secrets")
-                bot = Bot(token=token)
-                asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô CURTO PRAZO ativo — Pregão Aberto!"))
-                st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | 📣 Mensagem Telegram enviada: Pregão Aberto (CURTO PRAZO)"
-                )
+            
+                if token and chat:
+                    bot = Bot(token=token)
+                    asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô CURTO PRAZO ativo — Pregão Aberto!"))
+                    st.session_state.log_monitoramento.append(
+                        f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto (CURTO PRAZO)"
+                    )
+                else:
+                    st.session_state.log_monitoramento.append(
+                        f"{now.strftime('%H:%M:%S')} | ⚠️ Aviso: token/chat_id não configurado — notificação de abertura ignorada."
+                    )
+            
             except Exception as e:
                 st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | ⚠️ Erro ao enviar notificação de abertura: {e}"
+                    f"{now.strftime('%H:%M:%S')} | ⚠️ Erro real ao enviar notificação de abertura: {e}"
                 )
+             
 
         # Remove countdown
         countdown_container.empty()
