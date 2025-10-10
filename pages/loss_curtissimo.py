@@ -255,7 +255,7 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
 
 async def testar_telegram():
     token = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id", "")
+    chat = st.secrets.get("telegram_chat_id_losscurtissimo", "")
     try:
         if not token or not chat:
             raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
@@ -365,7 +365,7 @@ countdown_container = st.empty()
 log_container = st.empty()
 
 # -----------------------------
-# MENSAGENS ESPECÍFICAS (LOS S CURTÍSSIMO - STOP)
+# MENSAGENS ESPECÍFICAS (LOSS CURTÍSSIMO - STOP)
 # -----------------------------
 def montar_mensagem_encerramento_curtissimo(ticker_symbol_full, preco_alvo, preco_atual, operacao):
     ticker_symbol = ticker_symbol_full.replace(".SA", "")
@@ -389,7 +389,8 @@ def notificar_preco_alvo_alcancado_STOP_CURTISSIMO(ticker_symbol, preco_alvo, pr
     senha_ou_token = st.secrets.get("gmail_app_password", "")
     destinatario = st.secrets.get("email_recipient", "listacurtissimo@googlegroups.com")
     token_telegram = st.secrets.get("telegram_token", "")
-    chat_ids = [st.secrets.get("telegram_chat_id", "-1002074291817")]
+    chat_ids = [st.secrets.get("telegram_chat_id_losscurtissimo", "")]
+
 
     assunto, mensagem = montar_mensagem_encerramento_curtissimo(ticker_symbol, preco_alvo, preco_atual, operacao)
 
@@ -430,11 +431,11 @@ else:
             st.session_state["avisou_abertura_pregao"] = True
             try:
                 token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id", "").strip()
+                chat = st.secrets.get("telegram_chat_id_losscurtissimo", "").strip()
                 if not token or not chat:
                     raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
                 bot = Bot(token=token)
-                asyncio.run(bot.send_message(chat_id=chat, text="🛑 Robô LOS S CURTÍSSIMO ativo — Pregão Aberto! ⏱️"))
+                asyncio.run(bot.send_message(chat_id=chat, text="🛑 Robô LOSS CURTÍSSIMO ativo — Pregão Aberto! ⏱️"))
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto (LOS S CURTÍSSIMO)"
                 )
