@@ -248,13 +248,13 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
             f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado (LOS S CURTÍSSIMO)"
         )
         salvar_estado()
-        st.sidebar.success("✅ Estado (LOS S CURTÍSSIMO) apagado e reiniciado.")
+        st.sidebar.success("✅ Estado (LOSS CURTÍSSIMO) apagado e reiniciado.")
         st.rerun()
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado: {e}")
 
 async def testar_telegram():
-    token = st.secrets.get("telegram_token", "")
+    token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
     chat = st.secrets.get("telegram_chat_id_losscurtissimo", "-1002074291817")
     try:
         if not token or not chat:
