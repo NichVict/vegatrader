@@ -358,6 +358,8 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.precos_historicos[ticker] = []
         st.session_state.ultimo_update_tempo[ticker] = None
         st.success(f"Ativo {ticker} adicionado com sucesso!")
+        salvar_estado()
+
 
 # -----------------------------
 # STATUS + GRÁFICO + LOG
