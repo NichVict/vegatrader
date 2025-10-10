@@ -285,8 +285,8 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
 
 # Teste Telegram
 async def testar_telegram():
-    token = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id", "")
+    token_telegram = st.secrets.get("telegram_token", "")
+    chat_ids = [st.secrets.get("telegram_chat_id_losscurto", "")]
     try:
         if not token or not chat:
             raise ValueError("Defina telegram_token e telegram_chat_id em st.secrets.")
@@ -424,7 +424,7 @@ def notificar_stop_curto(ticker_symbol, preco_alvo, preco_atual, operacao):
     senha_ou_token = st.secrets.get("gmail_app_password", "")
     destinatario = st.secrets.get("email_recipient", "listasemanal@googlegroups.com")
     token_telegram = st.secrets.get("telegram_token", "")
-    chat_ids = [st.secrets.get("telegram_chat_id", "-1002046197953")]
+    chat_ids = [st.secrets.get("telegram_chat_id_losscurto", "")]
 
     assunto, mensagem = montar_mensagem_stop_curto(ticker_symbol, preco_alvo, preco_atual, operacao)
 
