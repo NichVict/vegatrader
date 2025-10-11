@@ -23,6 +23,33 @@ import plotly.graph_objects as go
 # ============================
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
 
+# ============================
+# ESTILO GLOBAL DE MOLDURAS
+# ============================
+st.markdown(
+    """
+    <style>
+    .card-box {
+        border-radius: 16px;
+        border: 2px solid rgba(255,255,255,0.1);
+        padding: 20px;
+        margin-bottom: 25px;
+        transition: border-color 0.3s ease, box-shadow 0.3s ease;
+    }
+    .card-green {
+        border-color: #10B981;
+        box-shadow: 0 0 15px #10B98140;
+    }
+    .card-red {
+        border-color: #EF4444;
+        box-shadow: 0 0 15px #EF444440;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
 TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)  # Lisboa
 HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)  # Lisboa
@@ -315,24 +342,16 @@ left_col, right_col = st.columns(2)
 st.markdown("---")
 
 
-def render_robot_card(robo: Dict[str, Any], container, border_color: str):
-    """Renderiza um card individual de robô com moldura colorida."""
+def render_robot_card(robo: Dict[str, Any], container, card_class: str):
+    """Renderiza um card completo dentro de uma moldura colorida."""
     key = robo["key"]
     title = robo["title"]
     emoji = robo.get("emoji", "")
     app_url = robo.get("app_url")
 
     with container:
-        st.markdown(
-            f"""
-            <div style='border: 2px solid {border_color};
-                        border-radius: 16px;
-                        padding: 20px;
-                        margin-bottom: 20px;
-                        box-shadow: 0 0 12px {border_color}40;'>
-            """,
-            unsafe_allow_html=True,
-        )
+        # Abre o container HTML da moldura
+        st.markdown(f"<div class='card-box {card_class}'>", unsafe_allow_html=True)
 
         st.markdown(f"### {emoji} {title}")
 
@@ -391,7 +410,9 @@ def render_robot_card(robo: Dict[str, Any], container, border_color: str):
             bt_col1.link_button("Abrir app", app_url, type="primary")
         bt_col2.button("Forçar refresh", key=f"refresh_{key}")
 
+        # Fecha o container HTML
         st.markdown("</div>", unsafe_allow_html=True)
+
 
 
 # ============================
