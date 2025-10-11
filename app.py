@@ -1,4 +1,3 @@
-
 # -*- coding: utf-8 -*-
 """
 app.py
@@ -39,12 +38,10 @@ PALETTE = [
 ]
 
 # ============================
-# MAPEAMENTO DOS ROBÔS
-# Ajuste as URLs se quiser.
-# O painel tenta carregar em ordem os arquivos listados em "files".
-# O primeiro que existir será usado.
+# MAPEAMENTO DOS ROBÔS (ORDENADOS E ALINHADOS)
 # ============================
 ROBOS = [
+    # LINHA 1
     {
         "key": "curto",
         "title": "CURTO PRAZO",
@@ -56,6 +53,18 @@ ROBOS = [
         "app_url": "https://curtoprazo.streamlit.app"
     },
     {
+        "key": "loss_curto",
+        "title": "LOSS CURTO",
+        "emoji": "🛑",
+        "files": [
+            "session_data/state_loss_curto.json",
+            "state_loss_curto.json"
+        ],
+        "app_url": "https://losscurto.streamlit.app"
+    },
+
+    # LINHA 2
+    {
         "key": "curtissimo",
         "title": "CURTÍSSIMO PRAZO",
         "emoji": "⚡",
@@ -66,27 +75,18 @@ ROBOS = [
         "app_url": "https://curtissimo.streamlit.app"
     },
     {
-        "key": "loss_curto",
-        "title": "LOSS CURTO",
-        "emoji": "🛑",
-        "files": [
-            "session_data/state_loss_curto.json",
-            "state_loss_curto.json"
-        ],
-        "app_url": "https://losscurto.streamlit.app"
-    },
-    {
         "key": "loss_curtissimo",
         "title": "LOSS CURTÍSSIMO",
         "emoji": "🛑⚡",
         "files": [
-            # este app às vezes salva fora de session_data:
             "session_data/state_loss_curtissimo.json",
             "session_state_losscurtissimo.json",
             "state_losscurtissimo.json"
         ],
         "app_url": "https://losscurtissimo.streamlit.app"
     },
+
+    # LINHA 3
     {
         "key": "clube",
         "title": "CLUBE",
@@ -95,7 +95,7 @@ ROBOS = [
             "session_data/state_clube_compra_venda.json",
             "state_clube_compra_venda.json"
         ],
-        "app_url": None  # ajuste se tiver URL do app
+        "app_url": None
     },
     {
         "key": "loss_clube",
@@ -105,7 +105,7 @@ ROBOS = [
             "session_data/state_loss_clube.json",
             "state_loss_clube.json"
         ],
-        "app_url": None  # ajuste se tiver URL do app
+        "app_url": None
     },
 ]
 
@@ -139,7 +139,6 @@ def format_badge(text: str, color: str = "#1f2937", bg: str = "#e5e7eb"):
 
 def get_last_log_lines(state: Dict[str, Any], n: int = 5) -> List[str]:
     lines = state.get("log_monitoramento") or []
-    # garante que é lista de strings
     lines = [str(x) for x in lines]
     if not lines:
         return []
@@ -157,12 +156,9 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
     fig = go.Figure()
     color_map = {}
     i = 0
-
     added_any = False
 
     for ticker, pts in precos.items():
-        # pts pode vir como lista de pares [ts_str, preco] (do JSON)
-        # ou tuplas. Vamos normalizar.
         try:
             if not isinstance(pts, list) or len(pts) < 2:
                 continue
@@ -170,12 +166,9 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
             for p in pts[-SPARK_MAX_POINTS:]:
                 if isinstance(p, (list, tuple)) and len(p) == 2:
                     ts, price = p
-                    # ts pode ser string ISO
                     try:
-                        # tenta parsear ISO
                         dt = datetime.datetime.fromisoformat(str(ts))
                     except Exception:
-                        # se não der, tenta como timestamp numérico
                         try:
                             dt = datetime.datetime.fromtimestamp(float(ts), tz=TZ)
                         except Exception:
@@ -218,12 +211,8 @@ def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
     status = state.get("status") or {}
     historico_alertas = state.get("historico_alertas") or []
     pausado = bool(state.get("pausado", False))
-
-    # últimos disparos: usa 'disparos' se existir
     disparos = state.get("disparos") or {}
     total_disparos = sum(len(v or []) for v in disparos.values()) if isinstance(disparos, dict) else 0
-
-    # último update (heurístico): max de ultimo_update_tempo
     ultimo_update_map = state.get("ultimo_update_tempo") or {}
     last_update_dt = None
     if isinstance(ultimo_update_map, dict) and ultimo_update_map:
@@ -259,7 +248,6 @@ def badge_pause(pausado: bool) -> str:
 def nice_dt(dt: Optional[datetime.datetime]) -> str:
     if not dt:
         return "—"
-    # Mostra no timezone local configurado do painel
     if not dt.tzinfo:
         dt = dt.replace(tzinfo=TZ)
     return dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
@@ -278,7 +266,6 @@ with colh:
 with colr:
     st.caption(f"🔄 Auto-refresh: a cada **{REFRESH_SECONDS}s**")
 
-
 st.info("Dica: mantenha os apps individuais rodando (ou use keep-alive lá) para que os JSONs estejam sempre atualizados.")
 
 # ============================
@@ -290,7 +277,6 @@ total_ativos = 0
 total_disparos = 0
 total_alertas = 0
 
-# Primeiro pass: carregar tudo e já sumarizar
 loaded_states: Dict[str, Dict[str, Any]] = {}
 resolved_paths: Dict[str, str] = {}
 errors: Dict[str, str] = {}
@@ -307,9 +293,6 @@ for robo in ROBOS:
         apps_ok += 1
     elif err:
         errors[robo["key"]] = err
-    else:
-        # não encontrado — não é erro, apenas ausente
-        pass
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Robôs ativos (com estado)", f"{apps_ok}/{total_apps}")
@@ -318,10 +301,11 @@ col3.metric("Disparos acumulados", total_disparos)
 col4.metric("Alertas (histórico)", total_alertas)
 
 # ============================
-# GRID DE CARDS POR ROBÔ
+# GRID DE CARDS POR ROBÔ (ALINHADO)
 # ============================
 st.markdown("---")
-grid_cols = st.columns(2)
+
+left_col, right_col = st.columns(2)
 
 def render_robot_card(robo: Dict[str, Any], container):
     key = robo["key"]
@@ -334,47 +318,39 @@ def render_robot_card(robo: Dict[str, Any], container):
 
         state = loaded_states.get(key)
         if state is None:
-            # mostra porque não carregou
-            not_found = "Arquivo de estado ainda não foi criado por este robô."
             err = errors.get(key)
             if err:
                 st.error(err)
             else:
-                st.warning(not_found)
-            # Link pro app (se existir)
+                st.warning("Arquivo de estado ainda não foi criado por este robô.")
             if app_url:
                 st.link_button("Abrir app", app_url, type="primary")
             st.markdown("---")
             return
 
-        # STATUS SUPERIOR
         now_dt = agora_lx()
         badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
         st.markdown(badges, unsafe_allow_html=True)
 
         summary = summarize_robot_state(state)
 
-        # LINHA DE MÉTRICAS
         c1, c2, c3 = st.columns(3)
         c1.metric("Ativos monitorados", summary["ativos_monitorados"])
         c2.metric("Disparos (sessão)", summary["total_disparos"])
         c3.metric("Alertas (histórico)", summary["total_alertas"])
 
-        # INFO TICKERS ATUAIS
         tickers = summary["tickers"] or []
         if tickers:
             st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
         else:
             st.caption("Tickers: —")
 
-        # SPARKLINE (se houver histórico)
         fig = build_sparkline(state)
         if fig:
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
             st.caption("Sem histórico suficiente para gráfico.")
 
-        # LOG (últimas N linhas)
         st.markdown("**Log recente:**")
         lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
         if lines:
@@ -383,7 +359,6 @@ def render_robot_card(robo: Dict[str, Any], container):
         else:
             st.caption("Sem entradas de log ainda.")
 
-        # DETALHES TÉCNICOS
         p1, p2 = st.columns(2)
         with p1:
             st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
@@ -391,19 +366,66 @@ def render_robot_card(robo: Dict[str, Any], container):
             path_used = resolved_paths.get(key, "—")
             st.caption(f"Fonte de estado: `{path_used}`")
 
-        # LINKS DO APP
         bt_col1, bt_col2 = st.columns([1, 3])
         if app_url:
             bt_col1.link_button("Abrir app", app_url, type="primary")
         bt_col2.button("Forçar refresh", key=f"refresh_{key}")
 
+        st.markdown("---")
+
+# Renderiza em pares (esquerda ↔ direita)
+for i in range(0, len(ROBOS), 2):
+    render_robot_card(ROBOS[i], left_col)
+    if i + 1 < len(ROBOS):
+        render_robot_card(ROBOS[i + 1], right_col)
+
+# ============================
+# RODAPÉ
+# ============================
+st.caption("© Painel Central 1Milhão — consolidado dos robôs. Mantenha cada app em execução para dados atualizados.")
+
+        summary = summarize_robot_state(state)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Ativos monitorados", summary["ativos_monitorados"])
+        c2.metric("Disparos (sessão)", summary["total_disparos"])
+        c3.metric("Alertas (histórico)", summary["total_alertas"])
+
+        tickers = summary["tickers"] or []
+        st.caption("Tickers: " + ", ".join(tickers) if tickers else "Tickers: —")
+
+        fig = build_sparkline(state)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.caption("Sem histórico suficiente para gráfico.")
+
+        st.markdown("**Log recente:**")
+        lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
+        if lines:
+            for ln in lines:
+                st.code(ln, language="text")
+        else:
+            st.caption("Sem entradas de log ainda.")
+
+        p1, p2 = st.columns(2)
+        with p1:
+            st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
+        with p2:
+            st.caption(f"Fonte de estado: `{resolved_paths.get(key, '—')}`")
+
+        bt_col1, bt_col2 = st.columns([1, 3])
+        if app_url:
+            bt_col1.link_button("Abrir app", app_url, type="primary")
+        bt_col2.button("Forçar refresh", key=f"refresh_{key}")
 
         st.markdown("---")
 
-# Render em 2 colunas
-left, right = grid_cols
-for i, robo in enumerate(ROBOS):
-    render_robot_card(robo, left if i % 2 == 0 else right)
+# Renderiza em pares (esquerda ↔ direita)
+for i in range(0, len(ROBOS), 2):
+    render_robot_card(ROBOS[i], left_col)
+    if i + 1 < len(ROBOS):
+        render_robot_card(ROBOS[i + 1], right_col)
 
 # ============================
 # RODAPÉ
