@@ -19,6 +19,10 @@ import streamlit.components.v1 as components
 import json
 import os
 
+# === NOVO: Supabase + autorefresh ===
+from supabase import create_client
+from streamlit_autorefresh import st_autorefresh
+
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
@@ -37,13 +41,18 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-# ==== PERSISTÊNCIA LOCAL ====
-SAVE_DIR = "session_data"
-os.makedirs(SAVE_DIR, exist_ok=True)
-SAVE_PATH = os.path.join(SAVE_DIR, "state_curtissimoo.json")
+# ==== PERSISTÊNCIA DURÁVEL (Supabase) ====
+STATE_KEY = "curtissimo_przo_v1"
 
-def salvar_estado():
-    estado = {
+@st.cache_resource
+def get_supabase():
+    # Lê de st.secrets; usa os valores fornecidos como fallback
+    url = st.secrets.get("supabase_url", "https://kflwifvrkcqmrzgpvhqe.supabase.co")
+    key = st.secrets.get("supabase_key", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmbHdpZnZya2NxbXJ6Z3B2aHFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwOTU1NDcsImV4cCI6MjA3NTY3MTU0N30.E2hmdWSKG5_Qt3btbiTISqB7lPXH5PY-rrj9BjiP1y8")
+    return create_client(url, key)
+
+def _snapshot_estado():
+    return {
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
         "log_monitoramento": st.session_state.get("log_monitoramento", []),
@@ -57,27 +66,40 @@ def salvar_estado():
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
         "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
     }
-    try:
-        with open(SAVE_PATH, "w", encoding="utf-8") as f:
-            json.dump(estado, f, ensure_ascii=False, default=str, indent=2)
-    except Exception as e:
-        st.sidebar.error(f"Erro ao salvar estado: {e}")
 
-def carregar_estado():
-    if os.path.exists(SAVE_PATH):
-        try:
-            with open(SAVE_PATH, "r", encoding="utf-8") as f:
-                estado = json.load(f)
+def salvar_estado_duravel():
+    try:
+        sb = get_supabase()
+        sb.table("kv_state").upsert({"k": STATE_KEY, "v": _snapshot_estado()}).execute()
+    except Exception as e:
+        st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
+
+def carregar_estado_duravel():
+    try:
+        sb = get_supabase()
+        res = sb.table("kv_state").select("v").eq("k", STATE_KEY).single().execute()
+        if res.data and "v" in res.data:
+            estado = res.data["v"]
             pausado_atual = st.session_state.get("pausado")
             for k, v in estado.items():
                 if k == "pausado" and pausado_atual is not None:
                     continue
                 st.session_state[k] = v
-            st.sidebar.info("💾 Estado (CURTISSIMO PRAZO) restaurado!")
-        except Exception as e:
-            st.sidebar.error(f"Erro ao carregar estado: {e}")
+            st.sidebar.info("💾 Estado (CURTISSIMO PRAZO) restaurado da nuvem!")
+        else:
+            st.sidebar.info("ℹ️ Nenhum estado remoto ainda.")
+    except Exception as e:
+        st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
 
-carregar_estado()
+def apagar_estado_remoto():
+    try:
+        sb = get_supabase()
+        sb.table("kv_state").delete().eq("k", STATE_KEY).execute()
+    except Exception as e:
+        st.sidebar.error(f"Erro ao apagar estado remoto: {e}")
+
+# Carrega estado remoto logo no início
+carregar_estado_duravel()
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -103,7 +125,7 @@ def enviar_notificacao_curto(destinatario, assunto, corpo, remetente, senha_ou_t
     else:
         st.session_state.log_monitoramento.append("⚠️ Aviso: e-mail não configurado — envio ignorado.")
 
-    # Telegram
+    # Telegram (mantido como no original - assíncrono)
     async def send_telegram():
         try:
             if token_telegram and chat_id:
@@ -115,6 +137,7 @@ def enviar_notificacao_curto(destinatario, assunto, corpo, remetente, senha_ou_t
             st.session_state.log_monitoramento.append(f"⚠️ Erro ao enviar Telegram: {e}")
     asyncio.run(send_telegram())
 
+@st.cache_data(ttl=60)
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
@@ -261,9 +284,9 @@ st.sidebar.header("⚙️ Configurações")
 
 if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
     try:
-        if os.path.exists(SAVE_PATH):
-            os.remove(SAVE_PATH)
+        apagar_estado_remoto()
         st.session_state.clear()
+        # Re-inicializa chaves necessárias
         st.session_state.pausado = False
         st.session_state.ultimo_estado_pausa = None
         st.session_state.ativos = []
@@ -275,11 +298,11 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.session_state.precos_historicos = {}
         st.session_state.disparos = {}
         st.session_state.ultimo_update_tempo = {}
-        now_tmp = agora_lx()
+        now_tmp = datetime.datetime.now(TZ)
         st.session_state.log_monitoramento.append(f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual (CURTISSIMO PRAZO)")
-        salvar_estado()
+        salvar_estado_duravel()
         st.sidebar.success("✅ Estado (CURTISSIMO PRAZO) apagado e reiniciado.")
-        st.rerun()
+        # Sem st.rerun; autorefresh cuidará do ciclo
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado: {e}")
 
@@ -292,6 +315,7 @@ if st.sidebar.button("📤 Testar Envio Telegram"):
         st.sidebar.error(f"❌ Falha: {erro}")
 
 st.sidebar.checkbox("⏸️ Pausar monitoramento (modo edição)", key="pausado")
+salvar_estado_duravel()  # persiste mudanças de 'pausado'
 
 st.sidebar.header("📜 Histórico de Alertas")
 if st.session_state.historico_alertas:
@@ -303,12 +327,15 @@ else:
 col_limp, col_limp2 = st.sidebar.columns(2)
 if col_limp.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
+    salvar_estado_duravel()
     st.sidebar.success("Histórico limpo!")
 if col_limp2.button("🧽 Limpar LOG"):
     st.session_state.log_monitoramento.clear()
+    salvar_estado_duravel()
     st.sidebar.success("Log limpo!")
 if st.sidebar.button("🧼 Limpar marcadores ⭐"):
     st.session_state.disparos = {}
+    salvar_estado_duravel()
     st.sidebar.success("Marcadores limpos!")
 
 tickers_existentes = sorted(set([a["ticker"] for a in st.session_state.ativos])) if st.session_state.ativos else []
@@ -345,7 +372,7 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.precos_historicos[ticker] = []
         st.session_state.ultimo_update_tempo[ticker] = None
         st.success(f"Ativo {ticker} adicionado com sucesso!")
-        salvar_estado()
+        salvar_estado_duravel()
 
 # -----------------------------
 # STATUS + GRÁFICO + LOG
@@ -385,12 +412,13 @@ countdown_container = st.empty()  # shown fora do pregão
 log_container = st.empty()        # log estilizado
 
 # -----------------------------
-# LOOP DE MONITORAMENTO
+# LOOP DE MONITORAMENTO (controlado por autorefresh)
 # -----------------------------
 sleep_segundos = 60
 
 if st.session_state.pausado != st.session_state.ultimo_estado_pausa:
     st.session_state.ultimo_estado_pausa = st.session_state.pausado
+    salvar_estado_duravel()
 
 if st.session_state.pausado:
     pass
@@ -418,6 +446,7 @@ else:
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | ⚠️ Erro real ao enviar notificação de abertura: {e}"
                 )
+            salvar_estado_duravel()
 
         # Remove countdown
         countdown_container.empty()
@@ -495,6 +524,8 @@ else:
                     delta = (now - dt_ultimo).total_seconds()
                     if delta < 0:
                         delta = 0
+                    # proteção para acordar de hibernação: limita ao intervalo esperado
+                    delta = min(delta, INTERVALO_VERIFICACAO + 5)
                     st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
                     st.session_state.ultimo_update_tempo[t] = now.isoformat()
                     st.session_state.log_monitoramento.append(
@@ -513,6 +544,7 @@ else:
                     })
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
                     tickers_para_remover.append(t)
+                    salvar_estado_duravel()
 
             else:
                 if st.session_state.em_contagem.get(t, False):
@@ -523,6 +555,7 @@ else:
                     st.session_state.log_monitoramento.append(
                         f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
+                    salvar_estado_duravel()
 
         if tickers_para_remover:
             st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
@@ -534,6 +567,7 @@ else:
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ativação: {', '.join(tickers_para_remover)}"
             )
+            salvar_estado_duravel()
 
         # ---- Gráfico ----
         fig = go.Figure()
@@ -604,7 +638,7 @@ else:
             height=70
         )
 
-        # ---- Keep-alive ----
+        # ---- Keep-alive (ok manter; não preserva sessão, mas agora o estado é durável) ----
         try:
             if not dentro_pregao(now):
                 APP_URL = "https://curtoprazo.streamlit.app"
@@ -621,10 +655,12 @@ else:
                     st.session_state.log_monitoramento.append(
                         f"{now.strftime('%H:%M:%S')} | 🔄 Keep-alive ping enviado para {APP_URL}"
                     )
+                    salvar_estado_duravel()
         except Exception as e:
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | ⚠️ Erro no keep-alive: {e}"
             )
+            salvar_estado_duravel()
 
         if faltam > 3600:
             sleep_segundos = 900
@@ -636,19 +672,21 @@ else:
 # Limita crescimento do log
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
+    salvar_estado_duravel()
 
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, max_lines=250)
 
 # -----------------------------
-# 🧪 Debug / Backup JSON
+# 🧪 Debug / Backup do estado (JSON) – versão remota (Supabase)
 # -----------------------------
 with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
-    st.caption(f"Arquivo: `{SAVE_PATH}`")
+    st.caption("Fonte: Supabase (tabela kv_state)")
     try:
-        if os.path.exists(SAVE_PATH):
-            with open(SAVE_PATH, "r", encoding="utf-8") as f:
-                state_preview = json.load(f)
+        sb = get_supabase()
+        res = sb.table("kv_state").select("v, updated_at").eq("k", STATE_KEY).single().execute()
+        if res.data and "v" in res.data:
+            state_preview = res.data["v"]
             st.json(state_preview)
             st.download_button(
                 "⬇️ Baixar state_curto.json",
@@ -657,13 +695,14 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
                 mime="application/json",
             )
         else:
-            st.info("Ainda não existe arquivo salvo.")
+            st.info("Ainda não existe estado salvo remotamente.")
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
-# Salva antes de dormir
-salvar_estado()
+# Salva alterações pendentes
+salvar_estado_duravel()
 
-# Reexecução
-time.sleep(sleep_segundos)
-st.rerun()
+# === NOVO: autorefresh (substitui time.sleep + st.rerun) ===
+# Enquanto a página estiver aberta, o navegador refaz o run periodicamente.
+refresh_ms = 1000 * (INTERVALO_VERIFICACAO if dentro_pregao(agora_lx()) else sleep_segundos)
+st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
