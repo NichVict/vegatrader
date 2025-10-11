@@ -394,7 +394,12 @@ def render_robot_card(robo: Dict[str, Any], container):
         bt_col1, bt_col2 = st.columns([1, 3])
         if app_url:
             bt_col1.link_button("Abrir app", app_url, type="primary")
-        bt_col2.button("Forçar refresh", on_click=lambda: st.experimental_rerun())
+        bt_col2.button(
+            "Forçar refresh",
+            key=f"refresh_{key}",
+            on_click=lambda: st.experimental_rerun()
+        )
+
 
         st.markdown("---")
 
