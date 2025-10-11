@@ -315,8 +315,8 @@ left_col, right_col = st.columns(2)
 st.markdown("---")
 
 
-def render_robot_card(robo: Dict[str, Any], container, bg_color: str, border_color: str):
-    """Renderiza um card individual de robô com fundo e borda personalizados."""
+def render_robot_card(robo: Dict[str, Any], container, border_color: str):
+    """Renderiza um card individual de robô com moldura colorida."""
     key = robo["key"]
     title = robo["title"]
     emoji = robo.get("emoji", "")
@@ -325,11 +325,11 @@ def render_robot_card(robo: Dict[str, Any], container, bg_color: str, border_col
     with container:
         st.markdown(
             f"""
-            <div style='background-color:{bg_color};
-                        border:2px solid {border_color};
-                        border-radius:16px;
-                        padding:20px;
-                        margin-bottom:10px;'>
+            <div style='border: 2px solid {border_color};
+                        border-radius: 16px;
+                        padding: 20px;
+                        margin-bottom: 20px;
+                        box-shadow: 0 0 12px {border_color}40;'>
             """,
             unsafe_allow_html=True,
         )
@@ -401,17 +401,13 @@ for i in range(0, len(ROBOS), 2):
     with st.container():
         col_left, col_right = st.columns(2)
 
-        # cores distintas para robôs normais e de LOSS
-        normal_bg = "#ECFDF5"   # verde-azulado suave
-        normal_border = "#10B981"
-        loss_bg = "#FEF2F2"     # vermelho-claro
-        loss_border = "#EF4444"
+        normal_border = "#10B981"  # verde
+        loss_border = "#EF4444"    # vermelho
 
-        render_robot_card(ROBOS[i], col_left, normal_bg, normal_border)
+        render_robot_card(ROBOS[i], col_left, normal_border)
         if i + 1 < len(ROBOS):
-            render_robot_card(ROBOS[i + 1], col_right, loss_bg, loss_border)
+            render_robot_card(ROBOS[i + 1], col_right, loss_border)
 
-    # divisória entre linhas
     st.markdown("---")
 
 
