@@ -20,7 +20,7 @@ import pandas as pd
 import plotly.graph_objects as go
 
 # Import Supabase client
-from supabase import create_client
+from supabase.client import create_client
 
 # ============================
 # CONFIGURAÇÕES GERAIS
