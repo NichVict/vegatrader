@@ -20,9 +20,5 @@ tenacity
 requests
 python-telegram-bot==20.7
 psycopg2-binary
-supabase==2.5.1
-gotrue==2.5.0
-postgrest==0.16.2
-storage3==0.5.3
-realtime==1.0.3
-streamlit_autorefresh
+supabase
+
