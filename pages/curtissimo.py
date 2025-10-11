@@ -20,7 +20,7 @@ import json
 import os
 
 # === NOVO: Supabase + autorefresh ===
-from supabase_py import create_client
+from supabase import create_client, Client
 from streamlit_autorefresh import st_autorefresh
 
 # -----------------------------
@@ -42,14 +42,13 @@ PALETTE = [
 ]
 
 # ==== PERSISTÊNCIA DURÁVEL (Supabase) ====
-STATE_KEY = "curtissimo_przo_v1"
-
 @st.cache_resource
-def get_supabase():
-    # Lê de st.secrets; usa os valores fornecidos como fallback
-    url = st.secrets.get("supabase_url", "https://kflwifvrkcqmrzgpvhqe.supabase.co")
-    key = st.secrets.get("supabase_key", "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtmbHdpZnZya2NxbXJ6Z3B2aHFlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjAwOTU1NDcsImV4cCI6MjA3NTY3MTU0N30.E2hmdWSKG5_Qt3btbiTISqB7lPXH5PY-rrj9BjiP1y8")
+def get_supabase() -> Client:
+    url = st.secrets["supabase_url"]
+    key = st.secrets["supabase_key"]
     return create_client(url, key)
+
+STATE_KEY = "curtissimo_przo_v1"
 
 def _snapshot_estado():
     return {
@@ -68,26 +67,39 @@ def _snapshot_estado():
     }
 
 def salvar_estado_duravel():
+    sb = get_supabase()
+    estado = {
+        "ativos": st.session_state.get("ativos", []),
+        "historico_alertas": st.session_state.get("historico_alertas", []),
+        "log_monitoramento": st.session_state.get("log_monitoramento", []),
+        "disparos": st.session_state.get("disparos", {}),
+        "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
+        "status": st.session_state.get("status", {}),
+        "precos_historicos": st.session_state.get("precos_historicos", {}),
+        "pausado": st.session_state.get("pausado", False),
+        "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
+        "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
+        "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
+        "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
+    }
     try:
-        sb = get_supabase()
-        sb.table("kv_state").upsert({"k": STATE_KEY, "v": _snapshot_estado()}).execute()
+        sb.table("kv_state").upsert({"k": STATE_KEY, "v": estado}).execute()
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
 
 def carregar_estado_duravel():
+    sb = get_supabase()
     try:
-        sb = get_supabase()
         res = sb.table("kv_state").select("v").eq("k", STATE_KEY).single().execute()
         if res.data and "v" in res.data:
             estado = res.data["v"]
-            pausado_atual = st.session_state.get("pausado")
             for k, v in estado.items():
-                if k == "pausado" and pausado_atual is not None:
+                if k == "pausado" and "pausado" in st.session_state:
                     continue
                 st.session_state[k] = v
-            st.sidebar.info("💾 Estado (CURTISSIMO PRAZO) restaurado da nuvem!")
+            st.sidebar.success("💾 Estado restaurado da nuvem (Supabase).")
         else:
-            st.sidebar.info("ℹ️ Nenhum estado remoto ainda.")
+            st.sidebar.info("ℹ️ Nenhum estado remoto encontrado.")
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
 
