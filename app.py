@@ -45,7 +45,6 @@ with header_col2:
     st.markdown(
         """
         <h1 style="color:#10B981; font-size: 2.2em; margin-bottom:0;">
-            Painel Central
         </h1>
         """,
         unsafe_allow_html=True,
@@ -282,7 +281,7 @@ def nice_dt(dt: Optional[datetime.datetime]) -> str:
 # ============================
 # TÍTULO + AUTO-REFRESH
 # ============================
-st.title("📊 Painel Central — Robôs 1Milhão")
+st.title("📊 Painel Central")
 
 colh, colr = st.columns([3, 1])
 with colh:
