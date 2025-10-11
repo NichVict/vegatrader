@@ -353,69 +353,70 @@ left_col, right_col = st.columns(2)
 st.markdown("---")
 
 
-def render_robot_card(robo: Dict[str, Any], container):
+def render_robot_card(robo: Dict[str, Any], ui):
+    """Renderiza o conteúdo do card usando o objeto ui (ex.: st)."""
     key = robo["key"]
     title = robo["title"]
     emoji = robo.get("emoji", "")
     app_url = robo.get("app_url")
 
-    with container:
-        st.markdown(f"### {emoji} {title}")
+    ui.markdown(f"### {emoji} {title}")
 
-        state = loaded_states.get(key)
-        if state is None:
-            err = errors.get(key)
-            if err:
-                st.error(err)
-            else:
-                st.warning("Arquivo de estado ainda não foi criado por este robô.")
-            if app_url:
-                st.link_button("Abrir app", app_url, type="primary")
-            return
-
-        now_dt = agora_lx()
-        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
-        st.markdown(badges, unsafe_allow_html=True)
-
-        summary = summarize_robot_state(state)
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Ativos monitorados", summary["ativos_monitorados"])
-        c2.metric("Disparos (sessão)", summary["total_disparos"])
-        c3.metric("Alertas (histórico)", summary["total_alertas"])
-
-        tickers = summary["tickers"] or []
-        st.caption("Tickers: " + ", ".join([str(t) for t in tickers])) if tickers else st.caption("Tickers: —")
-
-        fig = build_sparkline(state)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    state = loaded_states.get(key)
+    if state is None:
+        err = errors.get(key)
+        if err:
+            ui.error(err)
         else:
-            st.caption("Sem histórico suficiente para gráfico.")
-
-        st.markdown("**Log recente:**")
-        lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
-        if lines:
-            for ln in lines:
-                st.code(ln, language="text")
-        else:
-            st.caption("Sem entradas de log ainda.")
-
-        p1, p2 = st.columns(2)
-        with p1:
-            st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
-        with p2:
-            path_used = resolved_paths.get(key, "—")
-            st.caption(f"Fonte de estado: `{path_used}`")
-
-        bt_col1, bt_col2 = st.columns([1, 3])
+            ui.warning("Arquivo de estado ainda não foi criado por este robô.")
         if app_url:
-            bt_col1.link_button("Abrir app", app_url, type="primary")
-        bt_col2.button("Forçar refresh", key=f"refresh_{key}")
+            ui.link_button("Abrir app", app_url, type="primary")
+        return
+
+    now_dt = agora_lx()
+    badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
+    ui.markdown(badges, unsafe_allow_html=True)
+
+    summary = summarize_robot_state(state)
+
+    c1, c2, c3 = ui.columns(3)
+    c1.metric("Ativos monitorados", summary["ativos_monitorados"])
+    c2.metric("Disparos (sessão)", summary["total_disparos"])
+    c3.metric("Alertas (histórico)", summary["total_alertas"])
+
+    tickers = summary["tickers"] or []
+    if tickers:
+        ui.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
+    else:
+        ui.caption("Tickers: —")
+
+    fig = build_sparkline(state)
+    if fig:
+        ui.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+    else:
+        ui.caption("Sem histórico suficiente para gráfico.")
+
+    ui.markdown("**Log recente:**")
+    lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
+    if lines:
+        for ln in lines:
+            ui.code(ln, language="text")
+    else:
+        ui.caption("Sem entradas de log ainda.")
+
+    p1, p2 = ui.columns(2)
+    p1.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
+    p2.caption(f"Fonte de estado: `{resolved_paths.get(key, '—')}`")
+
+    bt_col1, bt_col2 = ui.columns([1, 3])
+    if app_url:
+        bt_col1.link_button("Abrir app", app_url, type="primary")
+    bt_col2.button("Forçar refresh", key=f"refresh_{key}")
 
 
-        # Fecha o container HTML
-        st.markdown("</div>", unsafe_allow_html=True)
+
+    # Fecha o container HTML
+    st.markdown("</div>", unsafe_allow_html=True)
 
 
 
@@ -428,14 +429,12 @@ def render_robot_card(robo: Dict[str, Any], container):
 for i in range(0, len(ROBOS), 2):
     cols = st.columns(2)
 
-    # robôs principais (esquerda = verde)
     with cols[0]:
         with st.container():
             st.markdown('<div class="card-container card-green">', unsafe_allow_html=True)
             render_robot_card(ROBOS[i], st)
             st.markdown("</div>", unsafe_allow_html=True)
 
-    # robôs de loss (direita = vermelho)
     if i + 1 < len(ROBOS):
         with cols[1]:
             with st.container():
@@ -444,6 +443,7 @@ for i in range(0, len(ROBOS), 2):
                 st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
+
 
 
 
