@@ -2,7 +2,6 @@
 import streamlit as st
 from yahooquery import Ticker
 import datetime
-import time
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
@@ -18,9 +17,6 @@ import uuid
 import streamlit.components.v1 as components
 import json
 import os
-
-# === NOVO: Supabase + autorefresh ===
-from supabase import create_client, Client
 from streamlit_autorefresh import st_autorefresh
 
 # -----------------------------
@@ -41,16 +37,18 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-# ==== PERSISTÊNCIA DURÁVEL (Supabase) ====
-@st.cache_resource
-def get_supabase() -> Client:
-    url = st.secrets["supabase_url"]
-    key = st.secrets["supabase_key"]
-    return create_client(url, key)
-
+# =============================
+# PERSISTÊNCIA (SUPABASE via REST API)
+# =============================
+# Defina em st.secrets:
+# supabase_url = "https://....supabase.co"
+# supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+SUPABASE_URL = st.secrets["supabase_url"]
+SUPABASE_KEY = st.secrets["supabase_key"]
+TABLE = "kv_state"
 STATE_KEY = "curtissimo_przo_v1"
 
-def _snapshot_estado():
+def _estado_snapshot():
     return {
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
@@ -67,46 +65,52 @@ def _snapshot_estado():
     }
 
 def salvar_estado_duravel():
-    sb = get_supabase()
-    estado = {
-        "ativos": st.session_state.get("ativos", []),
-        "historico_alertas": st.session_state.get("historico_alertas", []),
-        "log_monitoramento": st.session_state.get("log_monitoramento", []),
-        "disparos": st.session_state.get("disparos", {}),
-        "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
-        "status": st.session_state.get("status", {}),
-        "precos_historicos": st.session_state.get("precos_historicos", {}),
-        "pausado": st.session_state.get("pausado", False),
-        "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
-        "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
-        "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
-        "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates",
     }
+    payload = {"k": STATE_KEY, "v": _estado_snapshot()}
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}"
     try:
-        sb.table("kv_state").upsert({"k": STATE_KEY, "v": estado}).execute()
+        r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+        if r.status_code not in (200, 201, 204):
+            st.sidebar.error(f"Erro ao salvar estado remoto: {r.text}")
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
 
 def carregar_estado_duravel():
-    sb = get_supabase()
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+    }
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v"
     try:
-        res = sb.table("kv_state").select("v").eq("k", STATE_KEY).single().execute()
-        if res.data and "v" in res.data:
-            estado = res.data["v"]
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code == 200 and r.json():
+            estado = r.json()[0]["v"]
+            pausado_atual = st.session_state.get("pausado")
             for k, v in estado.items():
-                if k == "pausado" and "pausado" in st.session_state:
+                if k == "pausado" and pausado_atual is not None:
                     continue
                 st.session_state[k] = v
-            st.sidebar.success("💾 Estado restaurado da nuvem (Supabase).")
+            st.sidebar.info("💾 Estado (CURTISSIMO PRAZO) restaurado da nuvem!")
         else:
-            st.sidebar.info("ℹ️ Nenhum estado remoto encontrado.")
+            st.sidebar.info("ℹ️ Nenhum estado remoto ainda.")
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
 
 def apagar_estado_remoto():
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+    }
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
     try:
-        sb = get_supabase()
-        sb.table("kv_state").delete().eq("k", STATE_KEY).execute()
+        r = requests.delete(url, headers=headers, timeout=15)
+        if r.status_code not in (200, 204):
+            st.sidebar.error(f"Erro ao apagar estado remoto: {r.text}")
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado remoto: {e}")
 
@@ -137,7 +141,7 @@ def enviar_notificacao_curto(destinatario, assunto, corpo, remetente, senha_ou_t
     else:
         st.session_state.log_monitoramento.append("⚠️ Aviso: e-mail não configurado — envio ignorado.")
 
-    # Telegram (mantido como no original - assíncrono)
+    # Telegram (mantido conforme original)
     async def send_telegram():
         try:
             if token_telegram and chat_id:
@@ -310,11 +314,10 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.session_state.precos_historicos = {}
         st.session_state.disparos = {}
         st.session_state.ultimo_update_tempo = {}
-        now_tmp = datetime.datetime.now(TZ)
+        now_tmp = agora_lx()
         st.session_state.log_monitoramento.append(f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual (CURTISSIMO PRAZO)")
         salvar_estado_duravel()
         st.sidebar.success("✅ Estado (CURTISSIMO PRAZO) apagado e reiniciado.")
-        # Sem st.rerun; autorefresh cuidará do ciclo
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado: {e}")
 
@@ -420,7 +423,7 @@ st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
 
 st.subheader("🕒 Log de Monitoramento")
-countdown_container = st.empty()  # shown fora do pregão
+countdown_container = st.empty()  # fora do pregão
 log_container = st.empty()        # log estilizado
 
 # -----------------------------
@@ -524,6 +527,7 @@ else:
                     st.session_state.log_monitoramento.append(
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
                     )
+                    salvar_estado_duravel()
                 else:
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
                     if ultimo:
@@ -543,6 +547,7 @@ else:
                     st.session_state.log_monitoramento.append(
                         f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                     )
+                    salvar_estado_duravel()
 
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
                     alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
@@ -650,7 +655,7 @@ else:
             height=70
         )
 
-        # ---- Keep-alive (ok manter; não preserva sessão, mas agora o estado é durável) ----
+        # ---- Keep-alive (não mantém sessão, mas agora o estado é durável) ----
         try:
             if not dentro_pregao(now):
                 APP_URL = "https://curtoprazo.streamlit.app"
@@ -690,15 +695,19 @@ with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, max_lines=250)
 
 # -----------------------------
-# 🧪 Debug / Backup do estado (JSON) – versão remota (Supabase)
+# 🧪 Debug / Backup do estado (JSON) – versão remota (Supabase REST)
 # -----------------------------
 with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
     st.caption("Fonte: Supabase (tabela kv_state)")
     try:
-        sb = get_supabase()
-        res = sb.table("kv_state").select("v, updated_at").eq("k", STATE_KEY).single().execute()
-        if res.data and "v" in res.data:
-            state_preview = res.data["v"]
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+        }
+        url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v,updated_at"
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code == 200 and res.json():
+            state_preview = res.json()[0]["v"]
             st.json(state_preview)
             st.download_button(
                 "⬇️ Baixar state_curto.json",
@@ -714,7 +723,6 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
 # Salva alterações pendentes
 salvar_estado_duravel()
 
-# === NOVO: autorefresh (substitui time.sleep + st.rerun) ===
-# Enquanto a página estiver aberta, o navegador refaz o run periodicamente.
+# === Auto-refresh (substitui time.sleep + st.rerun) ===
 refresh_ms = 1000 * (INTERVALO_VERIFICACAO if dentro_pregao(agora_lx()) else sleep_segundos)
 st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
