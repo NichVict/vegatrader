@@ -252,6 +252,96 @@ def nice_dt(dt: Optional[datetime.datetime]) -> str:
         dt = dt.replace(tzinfo=TZ)
     return dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
 
+st.markdown("---")
+
+left_col, right_col = st.columns(2)
+
+
+def render_robot_card(robo: Dict[str, Any], container):
+    key = robo["key"]
+    title = robo["title"]
+    emoji = robo.get("emoji", "")
+    app_url = robo.get("app_url")
+
+    with container:
+        st.markdown(f"### {emoji} {title}")
+
+        state = loaded_states.get(key)
+        if state is None:
+            err = errors.get(key)
+            if err:
+                st.error(err)
+            else:
+                st.warning("Arquivo de estado ainda não foi criado por este robô.")
+            if app_url:
+                st.link_button("Abrir app", app_url, type="primary")
+            st.markdown("---")
+            return
+
+        now_dt = agora_lx()
+        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
+        st.markdown(badges, unsafe_allow_html=True)
+
+        # Calcula o resumo do estado
+        summary = summarize_robot_state(state)
+
+        # Métricas principais
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Ativos monitorados", summary["ativos_monitorados"])
+        c2.metric("Disparos (sessão)", summary["total_disparos"])
+        c3.metric("Alertas (histórico)", summary["total_alertas"])
+
+        # Lista de tickers
+        tickers = summary["tickers"] or []
+        if tickers:
+            st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
+        else:
+            st.caption("Tickers: —")
+
+        # Sparkline
+        fig = build_sparkline(state)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.caption("Sem histórico suficiente para gráfico.")
+
+        # Log recente
+        st.markdown("**Log recente:**")
+        lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
+        if lines:
+            for ln in lines:
+                st.code(ln, language="text")
+        else:
+            st.caption("Sem entradas de log ainda.")
+
+        # Detalhes técnicos
+        p1, p2 = st.columns(2)
+        with p1:
+            st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
+        with p2:
+            path_used = resolved_paths.get(key, '—')
+            st.caption(f"Fonte de estado: `{path_used}`")
+
+        # Botões inferiores
+        bt_col1, bt_col2 = st.columns([1, 3])
+        if app_url:
+            bt_col1.link_button("Abrir app", app_url, type="primary")
+        bt_col2.button("Forçar refresh", key=f"refresh_{key}")
+
+        st.markdown("---")
+
+
+# ============================
+# RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
+# ============================
+for i in range(0, len(ROBOS), 2):
+    render_robot_card(ROBOS[i], left_col)
+    if i + 1 < len(ROBOS):
+        render_robot_card(ROBOS[i + 1], right_col)
+
+
+
+
 # ============================
 # TÍTULO + AUTO-REFRESH
 # ============================
