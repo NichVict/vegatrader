@@ -92,8 +92,8 @@ ROBOS = [
         "title": "CLUBE",
         "emoji": "🏛️",
         "files": [
-            "session_data/state_clube.json",
-            "state_clube.json"
+            "session_data/state_clube_compra_venda.json",
+            "state_clube_compra_venda.json"
         ],
         "app_url": None  # ajuste se tiver URL do app
     },
