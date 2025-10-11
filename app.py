@@ -29,20 +29,31 @@ st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_ico
 st.markdown(
     """
     <style>
-    .card-box {
-        border-radius: 16px;
+    div[data-testid="stHorizontalBlock"] > div > div > div {
+        /* Remove margens internas do layout padrão */
+        padding: 0 !important;
+    }
+
+    .card-container {
         border: 2px solid rgba(255,255,255,0.1);
-        padding: 20px;
+        border-radius: 16px;
+        padding: 25px;
         margin-bottom: 25px;
         transition: border-color 0.3s ease, box-shadow 0.3s ease;
     }
+
     .card-green {
-        border-color: #10B981;
-        box-shadow: 0 0 15px #10B98140;
+        border-color: #10B981 !important;
+        box-shadow: 0 0 20px #10B98140;
     }
+
     .card-red {
-        border-color: #EF4444;
-        box-shadow: 0 0 15px #EF444440;
+        border-color: #EF4444 !important;
+        box-shadow: 0 0 20px #EF444440;
+    }
+
+    .card-container:hover {
+        box-shadow: 0 0 25px rgba(255,255,255,0.15);
     }
     </style>
     """,
@@ -342,17 +353,13 @@ left_col, right_col = st.columns(2)
 st.markdown("---")
 
 
-def render_robot_card(robo: Dict[str, Any], container, card_class: str):
-    """Renderiza um card completo dentro de uma moldura colorida."""
+def render_robot_card(robo: Dict[str, Any], container):
     key = robo["key"]
     title = robo["title"]
     emoji = robo.get("emoji", "")
     app_url = robo.get("app_url")
 
     with container:
-        # Abre o container HTML da moldura
-        st.markdown(f"<div class='card-box {card_class}'>", unsafe_allow_html=True)
-
         st.markdown(f"### {emoji} {title}")
 
         state = loaded_states.get(key)
@@ -364,7 +371,6 @@ def render_robot_card(robo: Dict[str, Any], container, card_class: str):
                 st.warning("Arquivo de estado ainda não foi criado por este robô.")
             if app_url:
                 st.link_button("Abrir app", app_url, type="primary")
-            st.markdown("</div>", unsafe_allow_html=True)
             return
 
         now_dt = agora_lx()
@@ -379,10 +385,7 @@ def render_robot_card(robo: Dict[str, Any], container, card_class: str):
         c3.metric("Alertas (histórico)", summary["total_alertas"])
 
         tickers = summary["tickers"] or []
-        if tickers:
-            st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
-        else:
-            st.caption("Tickers: —")
+        st.caption("Tickers: " + ", ".join([str(t) for t in tickers])) if tickers else st.caption("Tickers: —")
 
         fig = build_sparkline(state)
         if fig:
@@ -410,6 +413,7 @@ def render_robot_card(robo: Dict[str, Any], container, card_class: str):
             bt_col1.link_button("Abrir app", app_url, type="primary")
         bt_col2.button("Forçar refresh", key=f"refresh_{key}")
 
+
         # Fecha o container HTML
         st.markdown("</div>", unsafe_allow_html=True)
 
@@ -422,12 +426,22 @@ def render_robot_card(robo: Dict[str, Any], container, card_class: str):
 # RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
 # ============================
 for i in range(0, len(ROBOS), 2):
-    with st.container():
-        col_left, col_right = st.columns(2)
+    cols = st.columns(2)
 
-        render_robot_card(ROBOS[i], col_left, "card-green")
-        if i + 1 < len(ROBOS):
-            render_robot_card(ROBOS[i + 1], col_right, "card-red")
+    # robôs principais (esquerda = verde)
+    with cols[0]:
+        with st.container():
+            st.markdown('<div class="card-container card-green">', unsafe_allow_html=True)
+            render_robot_card(ROBOS[i], st)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    # robôs de loss (direita = vermelho)
+    if i + 1 < len(ROBOS):
+        with cols[1]:
+            with st.container():
+                st.markdown('<div class="card-container card-red">', unsafe_allow_html=True)
+                render_robot_card(ROBOS[i + 1], st)
+                st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("---")
 
