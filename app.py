@@ -27,23 +27,29 @@ st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_ico
 # CABEÇALHO COM LOGO E TÍTULO
 # ============================
 
-logo_path = "logo_vega_gpt_transp.png"  # nome do arquivo do logo (deve estar na mesma pasta do app)
+# ============================
+# CABEÇALHO COM LOGO E TÍTULO (VERSÃO FUNCIONAL)
+# ============================
 
-st.markdown(
-    f"""
-    <div style="
-        display: flex;
-        align-items: center;
-        justify-content: flex-start;
-        margin-bottom: 10px;
-        margin-top: -20px;
-    ">
-        <img src="{logo_path}" alt="Logo VegaGPT" width="160" style="margin-right: 20px;">
-        <h1 style="color: white; font-size: 2.2em; margin: 0;">📊 Painel Central — Robôs 1Milhão</h1>
-    </div>
-    """,
-    unsafe_allow_html=True,
-)
+logo_path = "logo_vega_gpt_transp.png"  # certifique-se de que o arquivo está na mesma pasta que o app.py
+
+header_col1, header_col2 = st.columns([1, 6])
+
+with header_col1:
+    try:
+        st.image(logo_path, width=120)
+    except Exception:
+        st.warning("⚠️ Logo não encontrado: verifique o nome do arquivo e a pasta.")
+
+with header_col2:
+    st.markdown(
+        """
+        <h1 style="color:#10B981; font-size: 2.2em; margin-bottom:0;">
+            📊 Painel Central — Robôs 1Milhão
+        </h1>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 TZ = ZoneInfo("Europe/Lisbon")
