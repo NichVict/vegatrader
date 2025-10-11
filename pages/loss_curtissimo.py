@@ -116,15 +116,37 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
+    """
+    Obtém preço atual do YahooQuery tratando tanto dict quanto DataFrame,
+    e com fallback para último fechamento do dia ('1d').
+    Retorna float ou None.
+    """
     tk = Ticker(ticker_symbol)
     try:
-        p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
-        if p is not None:
-            return float(p)
+        price_data = tk.price
+        # price_data pode ser dict OU DataFrame dependendo da versão/latência
+        if isinstance(price_data, dict):
+            node = price_data.get(ticker_symbol, {})
+            p = node.get("regularMarketPrice")
+            if p is not None:
+                return float(p)
+        elif isinstance(price_data, pd.DataFrame):
+            # DataFrame indexado por ticker
+            if ticker_symbol in price_data.index and "regularMarketPrice" in price_data.columns:
+                val = price_data.loc[ticker_symbol, "regularMarketPrice"]
+                if not pd.isna(val):
+                    return float(val)
     except Exception:
         pass
-    preco_atual = tk.history(period="3d")["close"].iloc[-1]
-    return float(preco_atual)
+    # fallback: último close
+    try:
+        hist = tk.history(period="1d")
+        if isinstance(hist, pd.DataFrame) and "close" in hist.columns and len(hist) > 0:
+            preco_atual = hist["close"].iloc[-1]
+            return float(preco_atual)
+    except Exception:
+        pass
+    return None
 
 def agora_lx():
     return datetime.datetime.now(TZ)
@@ -335,38 +357,23 @@ if st.button("➕ Adicionar STOP"):
         st.session_state.status[ticker] = "🟢 Monitorando"
         st.session_state.precos_historicos.setdefault(ticker, [])
         st.session_state.ultimo_update_tempo[ticker] = None
+
+        # ⬇️ tenta capturar um 1º ponto imediatamente (melhor UX)
+        try:
+            preco_inicial = obter_preco_atual(f"{ticker}.SA")
+            if preco_inicial is not None:
+                st.session_state.precos_historicos[ticker].append((agora_lx(), float(preco_inicial)))
+        except Exception as e:
+            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Não foi possível capturar preço inicial de {ticker}: {e}")
+
         st.success(f"STOP de {ticker} adicionado com sucesso!")
         salvar_estado()
 
 # -----------------------------
-# STATUS + GRÁFICO + LOG
+# STATUS + CONTROLES
 # -----------------------------
 st.subheader("📊 Status dos STOPs Monitorados")
 tabela_status = st.empty()
-
-if st.session_state.ativos:
-    data = []
-    for ativo in st.session_state.ativos:
-        t = ativo["ticker"]
-        preco_atual = "-"
-        try:
-            preco_atual = obter_preco_atual(f"{t}.SA")
-        except Exception:
-            pass
-        tempo = st.session_state.tempo_acumulado.get(t, 0)
-        minutos = tempo / 60
-        data.append({
-            "Ticker": t,
-            "Zerar com": ativo["operacao"].upper(),
-            "STOP": f"R$ {ativo['preco']:.2f}",
-            "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
-            "Status": st.session_state.status.get(t, "🟢 Monitorando"),
-            "Tempo Acumulado": f"{int(minutos)} min"
-        })
-    df = pd.DataFrame(data)
-    tabela_status.dataframe(df, use_container_width=True, height=220)
-else:
-    st.info("Nenhum STOP cadastrado ainda.")
 
 st.subheader("📉 Gráfico em Tempo Real dos Preços")
 grafico = st.empty()
@@ -469,14 +476,14 @@ else:
             st.session_state.ultimo_update_tempo.setdefault(t, None)
 
             tk_full = f"{t}.SA"
-            preco_atual = "-"
+            preco_atual = None
             try:
                 preco_atual = obter_preco_atual(tk_full)
             except Exception as e:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
 
-            if preco_atual != "-":
-                st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
+            if preco_atual is not None:
+                st.session_state.precos_historicos.setdefault(t, []).append((now, float(preco_atual)))
 
             tempo = st.session_state.tempo_acumulado.get(t, 0)
             minutos = tempo / 60
@@ -484,7 +491,7 @@ else:
                 "Ticker": t,
                 "Zerar com": ativo["operacao"].upper(),
                 "STOP": f"R$ {ativo['preco']:.2f}",
-                "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
+                "Preço Atual": f"R$ {preco_atual:.2f}" if preco_atual is not None else "-",
                 "Status": st.session_state.status.get(t, "🟢 Monitorando"),
                 "Tempo Acumulado": f"{int(minutos)} min"
             })
@@ -505,7 +512,10 @@ else:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
                 continue
 
-            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
+            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}" if preco_atual is not None else f"{now.strftime('%H:%M:%S')} | {tk_full}: preço indisponível")
+
+            if preco_atual is None:
+                continue
 
             condicao = (
                 (operacao_atv == "compra" and preco_atual >= preco_alvo) or
@@ -576,57 +586,6 @@ else:
                 f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ENCERRAMENTO: {', '.join(tickers_para_remover)}"
             )
 
-        # ---- Gráfico ----
-        # ---- Gráfico (mostra mesmo com 1 ponto) ----
-        fig = go.Figure()
-        
-        for t, dados in st.session_state.precos_historicos.items():
-            if len(dados) >= 1:
-                xs, ys = zip(*dados)
-                nome_trace = t if len(dados) > 1 else f"{t} ⚠️ (1 ponto)"
-                fig.add_trace(go.Scatter(
-                    x=xs,
-                    y=ys,
-                    mode="lines+markers" if len(dados) > 1 else "markers",
-                    name=nome_trace,
-                    line=dict(color=color_for_ticker(t), width=2),
-                    marker=dict(size=10 if len(dados) == 1 else 6)
-                ))
-            else:
-                st.session_state.log_monitoramento.append(f"{t}: sem dados suficientes para plotar.")
-        
-        # Marcadores de encerramento ⭐
-        for t, pontos in st.session_state.disparos.items():
-            if not pontos:
-                continue
-            xs, ys = zip(*pontos)
-            fig.add_trace(go.Scatter(
-                x=xs, y=ys,
-                mode="markers",
-                name=f"Encerramento {t}",
-                marker=dict(
-                    symbol="star",
-                    size=12,
-                    color=color_for_ticker(t),
-                    line=dict(width=2, color="white")
-                ),
-                hovertemplate=(f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
-                               "<br><b>ENCERRAMENTO</b>"
-                               "<br>Preço: R$ %{y:.2f}<extra></extra>")
-            ))
-        
-        fig.update_layout(
-            title="📉 Evolução dos Preços (encerramentos ⭐)",
-            xaxis_title="Tempo",
-            yaxis_title="Preço (R$)",
-            legend_title="Legenda",
-            template="plotly_dark",
-            height=500
-        )
-        
-        grafico.plotly_chart(fig, use_container_width=True)
-
-
         sleep_segundos = INTERVALO_VERIFICACAO
 
     else:
@@ -692,10 +651,81 @@ else:
         else:
             sleep_segundos = 180
 
-# Limita crescimento do log
-if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
-    st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
+# -----------------------------
+# GRÁFICO (sempre renderiza; aceita 1 ponto; normaliza datas)
+# -----------------------------
+def _to_dt(x):
+    if isinstance(x, datetime.datetime):
+        return x
+    # aceita ISO string ou timestamps convertíveis
+    try:
+        return datetime.datetime.fromisoformat(x)
+    except Exception:
+        try:
+            return pd.to_datetime(x).to_pydatetime()
+        except Exception:
+            return None
 
+fig = go.Figure()
+
+# Linhas dos preços coletados
+for t, dados in st.session_state.precos_historicos.items():
+    if not dados:
+        continue
+    xs_raw, ys = zip(*dados)
+    xs = [_to_dt(xx) for xx in xs_raw]
+    pares_validos = [(x, y) for x, y in zip(xs, ys) if x is not None]
+    if not pares_validos:
+        continue
+    xs, ys = zip(*pares_validos)
+    nome_trace = t if len(xs) > 1 else f"{t} ⚠️ (1 ponto)"
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys,
+        mode="lines+markers" if len(xs) > 1 else "markers",
+        name=nome_trace,
+        line=dict(color=color_for_ticker(t), width=2),
+        marker=dict(size=10 if len(xs) == 1 else 6),
+        hovertemplate=(f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
+                       "<br>Preço: R$ %{y:.2f}<extra></extra>")
+    ))
+
+# Marcadores de encerramento ⭐
+for t, pontos in st.session_state.disparos.items():
+    if not pontos:
+        continue
+    xs_raw, ys = zip(*pontos)
+    xs = [_to_dt(xx) for xx in xs_raw]
+    pares_validos = [(x, y) for x, y in zip(xs, ys) if x is not None]
+    if not pares_validos:
+        continue
+    xs, ys = zip(*pares_validos)
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys,
+        mode="markers",
+        name=f"Encerramento {t}",
+        marker=dict(
+            symbol="star",
+            size=12,
+            color=color_for_ticker(t),
+            line=dict(width=2, color="white")
+        ),
+        hovertemplate=(f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
+                       "<br><b>ENCERRAMENTO</b>"
+                       "<br>Preço: R$ %{y:.2f}<extra></extra>")
+    ))
+
+fig.update_layout(
+    title="📉 Evolução dos Preços (encerramentos ⭐)",
+    xaxis_title="Tempo",
+    yaxis_title="Preço (R$)",
+    legend_title="Legenda",
+    template="plotly_dark"
+)
+grafico.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# LOG (com filtro por ticker)
+# -----------------------------
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, max_lines=250)
 
@@ -720,10 +750,18 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
+# -----------------------------
+# PÓS-CICLO: Limites / Persistência / Reexecução
+# -----------------------------
+# Limita crescimento do log
+if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
+    st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
+
 # Salva antes de dormir
 salvar_estado()
 
 # Reexecução
 time.sleep(sleep_segundos)
 st.rerun()
+
 
