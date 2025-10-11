@@ -332,6 +332,7 @@ def render_robot_card(robo: Dict[str, Any], container):
         badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
         st.markdown(badges, unsafe_allow_html=True)
 
+        # <- aqui estava o erro: o "summary =" estava 1 nível de indentação a mais
         summary = summarize_robot_state(state)
 
         c1, c2, c3 = st.columns(3)
@@ -372,6 +373,7 @@ def render_robot_card(robo: Dict[str, Any], container):
         bt_col2.button("Forçar refresh", key=f"refresh_{key}")
 
         st.markdown("---")
+
 
 # Renderiza em pares (esquerda ↔ direita)
 for i in range(0, len(ROBOS), 2):
