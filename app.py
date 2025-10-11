@@ -72,7 +72,7 @@ ROBOS = [
     {
         "key": "curto",
         "title": "CURTO PRAZO",
-        "emoji": "📈",
+        "emoji": "⚡",
         "files": [
             "session_data/state_curto.json",
             "state_curto.json"
@@ -104,7 +104,7 @@ ROBOS = [
     {
         "key": "loss_curtissimo",
         "title": "LOSS CURTÍSSIMO",
-        "emoji": "🛑⚡",
+        "emoji": "🛑",
         "files": [
             "session_data/state_loss_curtissimo.json",
             "session_state_losscurtissimo.json",
@@ -127,7 +127,7 @@ ROBOS = [
     {
         "key": "loss_clube",
         "title": "LOSS CLUBE",
-        "emoji": "🏛️🛑",
+        "emoji": "🛑",
         "files": [
             "session_data/state_loss_clube.json",
             "state_loss_clube.json"
