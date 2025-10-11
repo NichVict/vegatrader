@@ -23,6 +23,25 @@ import plotly.graph_objects as go
 # ============================
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
 
+# ============================
+# LOGO NO TOPO
+# ============================
+
+logo_path = "logo_vega_gpt_transp.png"
+
+# Exibe o logo centralizado
+st.markdown(
+    f"""
+    <div style="display:flex;justify-content:center;align-items:center;margin-top:-30px;margin-bottom:10px;">
+        <img src="{logo_path}" width="260">
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("📊 Painel Central — Robôs 1Milhão")
+
+
 TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)  # Lisboa
 HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)  # Lisboa
