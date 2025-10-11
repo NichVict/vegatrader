@@ -77,7 +77,7 @@ ROBOS = [
             "session_data/state_curto.json",
             "state_curto.json"
         ],
-        "app_url": "https://curtoprazo.streamlit.app"
+         "app_url": None
     },
     {
         "key": "loss_curto",
@@ -87,7 +87,7 @@ ROBOS = [
             "session_data/state_loss_curto.json",
             "state_loss_curto.json"
         ],
-        "app_url": "https://losscurto.streamlit.app"
+         "app_url": None
     },
 
     # LINHA 2
@@ -99,7 +99,7 @@ ROBOS = [
             "session_data/state_curtissimo.json",
             "state_curtissimo.json"
         ],
-        "app_url": "https://curtissimo.streamlit.app"
+         "app_url": None
     },
     {
         "key": "loss_curtissimo",
@@ -110,7 +110,7 @@ ROBOS = [
             "session_state_losscurtissimo.json",
             "state_losscurtissimo.json"
         ],
-        "app_url": "https://losscurtissimo.streamlit.app"
+         "app_url": None
     },
 
     # LINHA 3
