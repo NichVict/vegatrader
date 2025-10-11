@@ -277,14 +277,6 @@ with colh:
 with colr:
     st.caption(f"🔄 Auto-refresh: a cada **{REFRESH_SECONDS}s**")
 
-st.autorefresh = st.experimental_rerun  # compat shim se precisar
-st.experimental_set_query_params()  # noop para evitar warning
-st.experimental_rerun  # attribute presence
-
-st.experimental_set_query_params(refresh=str(agora_lx().timestamp()))
-st_autorefresh = st.experimental_data_editor if False else None  # só pra silenciar linters :)
-
-st.experimental_rerun if False else None  # no-op
 
 st.info("Dica: mantenha os apps individuais rodando (ou use keep-alive lá) para que os JSONs estejam sempre atualizados.")
 
