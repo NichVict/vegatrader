@@ -18,6 +18,7 @@ import streamlit.components.v1 as components
 import json
 import os
 from streamlit_autorefresh import st_autorefresh
+import time  # Adicionado para time.sleep
 
 # -----------------------------
 # CONFIGURAÇÕES
@@ -28,7 +29,7 @@ TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)
 
-INTERVALO_VERIFICACAO = 300       # 5 min
+INTERVALO_VERIFICACAO = 300       # 5 min (para produção; mude para 30 em testes)
 TEMPO_ACUMULADO_MAXIMO = 1500     # 25 min
 LOG_MAX_LINHAS = 1000
 
@@ -386,7 +387,24 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.status[ticker] = "🟢 Monitorando"
         st.session_state.precos_historicos[ticker] = []
         st.session_state.ultimo_update_tempo[ticker] = None
-        st.success(f"Ativo {ticker} adicionado com sucesso!")
+        
+        # NOVO: Coleta preço inicial imediatamente para gráfico
+        try:
+            preco_inicial = obter_preco_atual(f"{ticker}.SA")
+            if preco_inicial != "-":
+                st.session_state.precos_historicos[ticker].append((now, preco_inicial))
+                # Simula segunda coleta rápida para linha imediata (útil para demo/testes)
+                time.sleep(1)  # Pequeno delay para diferenciar timestamps
+                preco_segundo = obter_preco_atual(f"{ticker}.SA")
+                if preco_segundo != "-":
+                    st.session_state.precos_historicos[ticker].append((agora_lx(), preco_segundo))
+                st.success(f"Ativo {ticker} adicionado com sucesso! Gráfico inicializado com 2 pontos.")
+            else:
+                st.warning(f"Ativo {ticker} adicionado, mas preço inicial não disponível.")
+        except Exception as e:
+            st.error(f"Erro ao coletar preço inicial para {ticker}: {e}")
+            st.success(f"Ativo {ticker} adicionado com sucesso!")
+        
         salvar_estado_duravel()
 
 # -----------------------------
@@ -586,39 +604,6 @@ else:
             )
             salvar_estado_duravel()
 
-        # ---- Gráfico ----
-        fig = go.Figure()
-        for t, dados in st.session_state.precos_historicos.items():
-            if len(dados) > 1:
-                xs, ys = zip(*dados)
-                fig.add_trace(go.Scatter(
-                    x=xs, y=ys,
-                    mode="lines+markers",
-                    name=t,
-                    line=dict(color=color_for_ticker(t), width=2)
-                ))
-        for t, pontos in st.session_state.disparos.items():
-            if not pontos:
-                continue
-            xs, ys = zip(*pontos)
-            fig.add_trace(go.Scatter(
-                x=xs, y=ys,
-                mode="markers",
-                name=f"Ativação {t}",
-                marker=dict(symbol="star", size=12, color=color_for_ticker(t), line=dict(width=2, color="white")),
-                hovertemplate=(f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
-                               "<br><b>ATIVAÇÃO</b>"
-                               "<br>Preço: R$ %{y:.2f}<extra></extra>")
-            ))
-        fig.update_layout(
-            title="📉 Evolução dos Preços (CARTEIRA CURTISSIMO PRAZO ⭐)",
-            xaxis_title="Tempo",
-            yaxis_title="Preço (R$)",
-            legend_title="Legenda",
-            template="plotly_dark"
-        )
-        grafico.plotly_chart(fig, use_container_width=True)
-
         sleep_segundos = INTERVALO_VERIFICACAO
 
     else:
@@ -686,6 +671,39 @@ else:
         else:
             sleep_segundos = 180
 
+# ---- Gráfico (MOVIDO PARA FORA DO IF PARA SEMPRE RENDERIZAR) ----
+fig = go.Figure()
+for t, dados in st.session_state.precos_historicos.items():
+    if len(dados) > 0:  # Mudança: >0 para mostrar marcadores mesmo com 1 ponto
+        xs, ys = zip(*dados)
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys,
+            mode="lines+markers",
+            name=t,
+            line=dict(color=color_for_ticker(t), width=2)
+        ))
+for t, pontos in st.session_state.disparos.items():
+    if not pontos:
+        continue
+    xs, ys = zip(*pontos)
+    fig.add_trace(go.Scatter(
+        x=xs, y=ys,
+        mode="markers",
+        name=f"Ativação {t}",
+        marker=dict(symbol="star", size=12, color=color_for_ticker(t), line=dict(width=2, color="white")),
+        hovertemplate=(f"{t}<br>%{{x|%Y-%m-%d %H:%M:%S}}"
+                       "<br><b>ATIVAÇÃO</b>"
+                       "<br>Preço: R$ %{y:.2f}<extra></extra>")
+    ))
+fig.update_layout(
+    title="📉 Evolução dos Preços (CARTEIRA CURTISSIMO PRAZO ⭐)",
+    xaxis_title="Tempo",
+    yaxis_title="Preço (R$)",
+    legend_title="Legenda",
+    template="plotly_dark"
+)
+grafico.plotly_chart(fig, use_container_width=True)
+
 # Limita crescimento do log
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
@@ -719,6 +737,11 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
             st.info("Ainda não existe estado salvo remotamente.")
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
+
+# NOVO: Debug para gráfico
+with st.expander("🔍 Debug Gráfico"):
+    for t, dados in st.session_state.precos_historicos.items():
+        st.write(f"{t}: {len(dados)} pontos — {[(dt.strftime('%H:%M:%S'), p) for dt, p in dados[-5:]]}")  # Últimos 5 pontos
 
 # Salva alterações pendentes
 salvar_estado_duravel()
