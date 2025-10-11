@@ -306,7 +306,14 @@ st.markdown("---")
 left_col, right_col = st.columns(2)
 
 
+# ============================
+# GRID DE CARDS POR ROBÔ (ALINHADO)
+# ============================
+st.markdown("---")
+
+
 def render_robot_card(robo: Dict[str, Any], container):
+    """Renderiza um card individual de robô dentro do container fornecido."""
     key = robo["key"]
     title = robo["title"]
     emoji = robo.get("emoji", "")
@@ -324,8 +331,7 @@ def render_robot_card(robo: Dict[str, Any], container):
                 st.warning("Arquivo de estado ainda não foi criado por este robô.")
             if app_url:
                 st.link_button("Abrir app", app_url, type="primary")
-            st.markdown("---")
-            return
+            return  # sem st.markdown("---") aqui para manter altura constante
 
         now_dt = agora_lx()
         badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
@@ -370,21 +376,28 @@ def render_robot_card(robo: Dict[str, Any], container):
             bt_col1.link_button("Abrir app", app_url, type="primary")
         bt_col2.button("Forçar refresh", key=f"refresh_{key}")
 
-        st.markdown("---")
-
 
 # ============================
 # RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
 # ============================
 for i in range(0, len(ROBOS), 2):
-    render_robot_card(ROBOS[i], left_col)
-    if i + 1 < len(ROBOS):
-        render_robot_card(ROBOS[i + 1], right_col)
+    with st.container():
+        col_left, col_right = st.columns(2)
+        render_robot_card(ROBOS[i], col_left)
+        if i + 1 < len(ROBOS):
+            render_robot_card(ROBOS[i + 1], col_right)
+    # divisória entre linhas
+    st.markdown("---")
+
 
 # ============================
 # RODAPÉ
 # ============================
-st.caption("© Painel Central 1Milhão — consolidado dos robôs. Mantenha cada app em execução para dados atualizados.")
+st.caption(
+    "© Painel Central 1Milhão — consolidado dos robôs. "
+    "Mantenha cada app em execução para dados atualizados."
+)
+
 
 
 
