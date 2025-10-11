@@ -349,6 +349,17 @@ def render_robot_card(robo: Dict[str, Any], container):
 
     with container:
         st.markdown(f"### {emoji} {title}")
+        if st.button("Forçar refresh", key=f"refresh_{key}"):
+    data, path, err = try_load_state(robo["files"])
+    if data is not None:
+        loaded_states[key] = data
+        resolved_paths[key] = path or "—"
+        st.success(f"{title} atualizado com sucesso.")
+    elif err:
+        st.error(err)
+    else:
+        st.warning("Arquivo de estado não encontrado.")
+
 
         state = loaded_states.get(key)
         if state is None:
