@@ -307,11 +307,7 @@ st.markdown("---")
 
 left_col, right_col = st.columns(2)
 
-Script execution error
-File "/mount/src/vegatrader/app.py", line 389
-          summary = summarize_robot_state(state)
-         ^
-IndentationError: unexpected indent
+
 # ============================
 # RODAPÉ
 # ============================
