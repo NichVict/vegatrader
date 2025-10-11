@@ -418,18 +418,19 @@ def render_robot_card(robo: Dict[str, Any], container, card_class: str):
 # ============================
 # RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
 # ============================
+# ============================
+# RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
+# ============================
 for i in range(0, len(ROBOS), 2):
     with st.container():
         col_left, col_right = st.columns(2)
 
-        normal_border = "#10B981"  # verde
-        loss_border = "#EF4444"    # vermelho
-
-        render_robot_card(ROBOS[i], col_left, normal_border)
+        render_robot_card(ROBOS[i], col_left, "card-green")
         if i + 1 < len(ROBOS):
-            render_robot_card(ROBOS[i + 1], col_right, loss_border)
+            render_robot_card(ROBOS[i + 1], col_right, "card-red")
 
     st.markdown("---")
+
 
 
 # ============================
