@@ -20,7 +20,7 @@ import json
 import os
 
 # === NOVO: Supabase + autorefresh ===
-from supabase import create_client
+from supabase_py import create_client
 from streamlit_autorefresh import st_autorefresh
 
 # -----------------------------
