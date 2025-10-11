@@ -281,7 +281,7 @@ def nice_dt(dt: Optional[datetime.datetime]) -> str:
 # ============================
 # TÍTULO + AUTO-REFRESH
 # ============================
-st.title("📊 Painel Central")
+st.title("Painel Central")
 
 colh, colr = st.columns([3, 1])
 with colh:
