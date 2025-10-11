@@ -24,22 +24,26 @@ import plotly.graph_objects as go
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
 
 # ============================
-# LOGO NO TOPO
+# CABEÇALHO COM LOGO E TÍTULO
 # ============================
 
-logo_path = "logo_vega_gpt_transp.png"
+logo_path = "logo_vega_gpt_transp.png"  # nome do arquivo do logo (deve estar na mesma pasta do app)
 
-# Exibe o logo centralizado
 st.markdown(
     f"""
-    <div style="display:flex;justify-content:center;align-items:center;margin-top:-30px;margin-bottom:10px;">
-        <img src="{logo_path}" width="260">
+    <div style="
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        margin-bottom: 10px;
+        margin-top: -20px;
+    ">
+        <img src="{logo_path}" alt="Logo VegaGPT" width="160" style="margin-right: 20px;">
+        <h1 style="color: white; font-size: 2.2em; margin: 0;">📊 Painel Central — Robôs 1Milhão</h1>
     </div>
     """,
     unsafe_allow_html=True,
 )
-
-st.title("📊 Painel Central — Robôs 1Milhão")
 
 
 TZ = ZoneInfo("Europe/Lisbon")
