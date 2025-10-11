@@ -577,16 +577,25 @@ else:
             )
 
         # ---- Gráfico ----
+        # ---- Gráfico (mostra mesmo com 1 ponto) ----
         fig = go.Figure()
+        
         for t, dados in st.session_state.precos_historicos.items():
-            if len(dados) > 1:
+            if len(dados) >= 1:
                 xs, ys = zip(*dados)
+                nome_trace = t if len(dados) > 1 else f"{t} ⚠️ (1 ponto)"
                 fig.add_trace(go.Scatter(
-                    x=xs, y=ys,
-                    mode="lines+markers",
-                    name=t,
-                    line=dict(color=color_for_ticker(t), width=2)
+                    x=xs,
+                    y=ys,
+                    mode="lines+markers" if len(dados) > 1 else "markers",
+                    name=nome_trace,
+                    line=dict(color=color_for_ticker(t), width=2),
+                    marker=dict(size=10 if len(dados) == 1 else 6)
                 ))
+            else:
+                st.session_state.log_monitoramento.append(f"{t}: sem dados suficientes para plotar.")
+        
+        # Marcadores de encerramento ⭐
         for t, pontos in st.session_state.disparos.items():
             if not pontos:
                 continue
@@ -605,14 +614,18 @@ else:
                                "<br><b>ENCERRAMENTO</b>"
                                "<br>Preço: R$ %{y:.2f}<extra></extra>")
             ))
+        
         fig.update_layout(
             title="📉 Evolução dos Preços (encerramentos ⭐)",
             xaxis_title="Tempo",
             yaxis_title="Preço (R$)",
             legend_title="Legenda",
-            template="plotly_dark"
+            template="plotly_dark",
+            height=500
         )
+        
         grafico.plotly_chart(fig, use_container_width=True)
+
 
         sleep_segundos = INTERVALO_VERIFICACAO
 
