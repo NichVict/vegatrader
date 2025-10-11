@@ -4,6 +4,7 @@ app.py
 Painel Central 1Milhão — Monitor de Robôs (Streamlit)
 
 - Lê os arquivos JSON persistidos por cada robô
+- Lê o estado do CURTÍSSIMO via Supabase
 - Mostra status consolidado + resumo por robô
 - Auto-refresh a cada 60s
 """
@@ -18,20 +19,22 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 
+# Import Supabase client
+from supabase import create_client
+
 # ============================
 # CONFIGURAÇÕES GERAIS
 # ============================
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
 
 TZ = ZoneInfo("Europe/Lisbon")
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)  # Lisboa
-HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)  # Lisboa
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
 
 REFRESH_SECONDS = 60
-LOG_PREVIEW_LINES = 5  # linhas de log por robô
-SPARK_MAX_POINTS = 300  # limita pontos da sparkline por robô
+LOG_PREVIEW_LINES = 5
+SPARK_MAX_POINTS = 300
 
-# Paleta discreta para linhas
 PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
@@ -39,9 +42,6 @@ PALETTE = [
 
 # ============================
 # MAPEAMENTO DOS ROBÔS
-# Ajuste as URLs se quiser.
-# O painel tenta carregar em ordem os arquivos listados em "files".
-# O primeiro que existir será usado.
 # ============================
 ROBOS = [
     {
@@ -52,17 +52,16 @@ ROBOS = [
             "session_data/state_curto.json",
             "state_curto.json"
         ],
-        "app_url": "https://curtoprazo.streamlit.app"
+        "app_url": "https://curtoprazo.streamlit.app",
+        "source": "file"
     },
     {
         "key": "curtissimo",
         "title": "CURTÍSSIMO PRAZO",
         "emoji": "⚡",
-        "files": [
-            "session_data/state_curtissimo.json",
-            "state_curtissimo.json"
-        ],
-        "app_url": "https://curtissimo.streamlit.app"
+        "files": [],
+        "app_url": "https://curtissimo.streamlit.app",
+        "source": "supabase"  # ⚙️ busca no banco
     },
     {
         "key": "loss_curto",
@@ -72,19 +71,20 @@ ROBOS = [
             "session_data/state_loss_curto.json",
             "state_loss_curto.json"
         ],
-        "app_url": "https://losscurto.streamlit.app"
+        "app_url": "https://losscurto.streamlit.app",
+        "source": "file"
     },
     {
         "key": "loss_curtissimo",
         "title": "LOSS CURTÍSSIMO",
         "emoji": "🛑⚡",
         "files": [
-            # este app às vezes salva fora de session_data:
             "session_data/state_loss_curtissimo.json",
             "session_state_losscurtissimo.json",
             "state_losscurtissimo.json"
         ],
-        "app_url": "https://losscurtissimo.streamlit.app"
+        "app_url": "https://losscurtissimo.streamlit.app",
+        "source": "file"
     },
     {
         "key": "clube",
@@ -92,9 +92,10 @@ ROBOS = [
         "emoji": "🏛️",
         "files": [
             "session_data/state_clube_compra_venda.json",
-            "tate_clube_compra_venda.json"
+            "state_clube_compra_venda.json"
         ],
-        "app_url": None  # ajuste se tiver URL do app
+        "app_url": "https://clube.streamlit.app",
+        "source": "file"
     },
     {
         "key": "loss_clube",
@@ -104,9 +105,39 @@ ROBOS = [
             "session_data/state_loss_clube.json",
             "state_loss_clube.json"
         ],
-        "app_url": None  # ajuste se tiver URL do app
+        "app_url": "https://lossclube.streamlit.app",
+        "source": "file"
     },
 ]
+
+# ============================
+# SUPABASE CONFIG
+# ============================
+SUPABASE_URL = st.secrets.get("supabase_url", "")
+SUPABASE_KEY = st.secrets.get("supabase_key", "")
+TABLE_NAME = "kv_state_curtissimo"
+STATE_KEY = "curtissimo_przo_v1"
+
+def try_load_state_supabase() -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
+    """Lê o estado do CURTÍSSIMO diretamente do Supabase."""
+    try:
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            raise ValueError("Credenciais Supabase ausentes em st.secrets")
+        supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+        res = supabase.table(TABLE_NAME).select("*").eq("key", STATE_KEY).execute()
+        if not res.data:
+            return None, "supabase", "Nenhum estado encontrado no Supabase"
+        record = res.data[0]
+        value = record.get("value")
+        if isinstance(value, str):
+            state = json.loads(value)
+        elif isinstance(value, dict):
+            state = value
+        else:
+            return None, "supabase", "Formato inesperado no campo 'value'"
+        return state, "supabase", None
+    except Exception as e:
+        return None, "supabase", f"Erro Supabase: {e}"
 
 # ============================
 # FUNÇÕES AUXILIARES
@@ -119,10 +150,6 @@ def dentro_pregao(dt: datetime.datetime) -> bool:
     return HORARIO_INICIO_PREGAO <= t <= HORARIO_FIM_PREGAO
 
 def try_load_state(file_candidates: List[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
-    """
-    Tenta carregar o primeiro arquivo de estado existente da lista.
-    Retorna (estado_dict, caminho_encontrado, erro_msg)
-    """
     for path in file_candidates:
         try:
             if os.path.exists(path):
@@ -138,30 +165,20 @@ def format_badge(text: str, color: str = "#1f2937", bg: str = "#e5e7eb"):
 
 def get_last_log_lines(state: Dict[str, Any], n: int = 5) -> List[str]:
     lines = state.get("log_monitoramento") or []
-    # garante que é lista de strings
     lines = [str(x) for x in lines]
     if not lines:
         return []
     return lines[-n:][::-1]
 
 def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
-    """
-    Monta uma pequena figura com as últimas séries (uma linha por ticker).
-    Usa 'precos_historicos': { "TICKER": [[ts_str, preco], ...], ... }
-    """
     precos = state.get("precos_historicos") or {}
     if not isinstance(precos, dict) or not precos:
         return None
-
     fig = go.Figure()
     color_map = {}
     i = 0
-
     added_any = False
-
     for ticker, pts in precos.items():
-        # pts pode vir como lista de pares [ts_str, preco] (do JSON)
-        # ou tuplas. Vamos normalizar.
         try:
             if not isinstance(pts, list) or len(pts) < 2:
                 continue
@@ -169,12 +186,9 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
             for p in pts[-SPARK_MAX_POINTS:]:
                 if isinstance(p, (list, tuple)) and len(p) == 2:
                     ts, price = p
-                    # ts pode ser string ISO
                     try:
-                        # tenta parsear ISO
                         dt = datetime.datetime.fromisoformat(str(ts))
                     except Exception:
-                        # se não der, tenta como timestamp numérico
                         try:
                             dt = datetime.datetime.fromtimestamp(float(ts), tz=TZ)
                         except Exception:
@@ -183,22 +197,16 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
                     ys.append(float(price))
             if len(xs) < 2:
                 continue
-
             if ticker not in color_map:
                 color_map[ticker] = PALETTE[i % len(PALETTE)]
                 i += 1
-
-            fig.add_trace(go.Scatter(
-                x=xs, y=ys, mode="lines", name=str(ticker),
-                line=dict(color=color_map[ticker], width=2)
-            ))
+            fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", name=str(ticker),
+                                     line=dict(color=color_map[ticker], width=2)))
             added_any = True
         except Exception:
             continue
-
     if not added_any:
         return None
-
     fig.update_layout(
         margin=dict(l=10, r=10, t=30, b=10),
         height=160,
@@ -210,19 +218,12 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
     return fig
 
 def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Extrai métricas-chave de um estado.
-    """
     ativos = state.get("ativos") or []
     status = state.get("status") or {}
     historico_alertas = state.get("historico_alertas") or []
     pausado = bool(state.get("pausado", False))
-
-    # últimos disparos: usa 'disparos' se existir
     disparos = state.get("disparos") or {}
     total_disparos = sum(len(v or []) for v in disparos.values()) if isinstance(disparos, dict) else 0
-
-    # último update (heurístico): max de ultimo_update_tempo
     ultimo_update_map = state.get("ultimo_update_tempo") or {}
     last_update_dt = None
     if isinstance(ultimo_update_map, dict) and ultimo_update_map:
@@ -232,7 +233,6 @@ def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
                 last_update_dt = datetime.datetime.fromisoformat(last_iso)
         except Exception:
             last_update_dt = None
-
     return {
         "ativos_monitorados": len(ativos),
         "tickers": [a.get("ticker") for a in ativos if isinstance(a, dict)],
@@ -258,44 +258,38 @@ def badge_pause(pausado: bool) -> str:
 def nice_dt(dt: Optional[datetime.datetime]) -> str:
     if not dt:
         return "—"
-    # Mostra no timezone local configurado do painel
     if not dt.tzinfo:
         dt = dt.replace(tzinfo=TZ)
     return dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 # ============================
-# TÍTULO + AUTO-REFRESH
+# CABEÇALHO
 # ============================
 st.title("📊 Painel Central — Robôs 1Milhão")
 
-colh, colr = st.columns([3,1])
+colh, colr = st.columns([3, 1])
 with colh:
-    st.caption(
-        f"Agora: **{agora_lx().strftime('%Y-%m-%d %H:%M:%S %Z')}** — "
-        f"{'🟩 Dentro do pregão' if dentro_pregao(agora_lx()) else '🟥 Fora do pregão'}"
-    )
+    st.caption(f"Agora: **{agora_lx().strftime('%Y-%m-%d %H:%M:%S %Z')}** — "
+               f"{'🟩 Dentro do pregão' if dentro_pregao(agora_lx()) else '🟥 Fora do pregão'}")
 with colr:
     st.caption(f"🔄 Auto-refresh: a cada **{REFRESH_SECONDS}s**")
 
-
-st.info("Dica: mantenha os apps individuais rodando (ou use keep-alive lá) para que os JSONs estejam sempre atualizados.")
+st.info("Dica: mantenha os apps individuais rodando (ou use keep-alive lá) para que os dados estejam sempre atualizados.")
 
 # ============================
-# CARDS RESUMO (TOPO)
+# LEITURA DOS ESTADOS
 # ============================
+loaded_states = {}
+resolved_paths = {}
+errors = {}
 total_apps = len(ROBOS)
-apps_ok = 0
-total_ativos = 0
-total_disparos = 0
-total_alertas = 0
-
-# Primeiro pass: carregar tudo e já sumarizar
-loaded_states: Dict[str, Dict[str, Any]] = {}
-resolved_paths: Dict[str, str] = {}
-errors: Dict[str, str] = {}
+apps_ok = total_ativos = total_disparos = total_alertas = 0
 
 for robo in ROBOS:
-    data, path, err = try_load_state(robo["files"])
+    if robo.get("source") == "supabase":
+        data, path, err = try_load_state_supabase()
+    else:
+        data, path, err = try_load_state(robo["files"])
     if data is not None:
         loaded_states[robo["key"]] = data
         resolved_paths[robo["key"]] = path or "—"
@@ -306,23 +300,20 @@ for robo in ROBOS:
         apps_ok += 1
     elif err:
         errors[robo["key"]] = err
-    else:
-        # não encontrado — não é erro, apenas ausente
-        pass
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Robôs ativos (com estado)", f"{apps_ok}/{total_apps}")
-col2.metric("Ativos monitorados (total)", total_ativos)
+col2.metric("Ativos monitorados", total_ativos)
 col3.metric("Disparos acumulados", total_disparos)
 col4.metric("Alertas (histórico)", total_alertas)
 
 # ============================
-# GRID DE CARDS POR ROBÔ
+# RENDERIZAÇÃO DOS CARDS
 # ============================
 st.markdown("---")
 grid_cols = st.columns(2)
 
-def render_robot_card(robo: Dict[str, Any], container):
+def render_robot_card(robo, container):
     key = robo["key"]
     title = robo["title"]
     emoji = robo.get("emoji", "")
@@ -330,76 +321,55 @@ def render_robot_card(robo: Dict[str, Any], container):
 
     with container:
         st.markdown(f"### {emoji} {title}")
-
         state = loaded_states.get(key)
         if state is None:
-            # mostra porque não carregou
-            not_found = "Arquivo de estado ainda não foi criado por este robô."
             err = errors.get(key)
             if err:
                 st.error(err)
             else:
-                st.warning(not_found)
-            # Link pro app (se existir)
+                st.warning("Estado não encontrado ainda.")
             if app_url:
                 st.link_button("Abrir app", app_url, type="primary")
             st.markdown("---")
             return
 
-        # STATUS SUPERIOR
-        now_dt = agora_lx()
-        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
+        badges = f"{badge_pregao(agora_lx())} &nbsp;&nbsp; {badge_pause(state.get('pausado', False))}"
         st.markdown(badges, unsafe_allow_html=True)
 
         summary = summarize_robot_state(state)
-
-        # LINHA DE MÉTRICAS
         c1, c2, c3 = st.columns(3)
         c1.metric("Ativos monitorados", summary["ativos_monitorados"])
-        c2.metric("Disparos (sessão)", summary["total_disparos"])
-        c3.metric("Alertas (histórico)", summary["total_alertas"])
+        c2.metric("Disparos", summary["total_disparos"])
+        c3.metric("Alertas", summary["total_alertas"])
 
-        # INFO TICKERS ATUAIS
         tickers = summary["tickers"] or []
-        if tickers:
-            st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
-        else:
-            st.caption("Tickers: —")
+        st.caption("Tickers: " + ", ".join(tickers) if tickers else "Tickers: —")
 
-        # SPARKLINE (se houver histórico)
         fig = build_sparkline(state)
         if fig:
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
             st.caption("Sem histórico suficiente para gráfico.")
 
-        # LOG (últimas N linhas)
         st.markdown("**Log recente:**")
         lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
         if lines:
             for ln in lines:
                 st.code(ln, language="text")
         else:
-            st.caption("Sem entradas de log ainda.")
+            st.caption("Sem entradas de log.")
 
-        # DETALHES TÉCNICOS
         p1, p2 = st.columns(2)
-        with p1:
-            st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
-        with p2:
-            path_used = resolved_paths.get(key, "—")
-            st.caption(f"Fonte de estado: `{path_used}`")
+        p1.caption(f"Último update: **{nice_dt(summary['last_update'])}**")
+        p2.caption(f"Fonte: `{resolved_paths.get(key, 'Supabase' if robo.get('source')=='supabase' else '—')}`")
 
-        # LINKS DO APP
-        bt_col1, bt_col2 = st.columns([1, 3])
+        b1, b2 = st.columns([1, 3])
         if app_url:
-            bt_col1.link_button("Abrir app", app_url, type="primary")
-        bt_col2.button("Forçar refresh", key=f"refresh_{key}")
-
+            b1.link_button("Abrir app", app_url, type="primary")
+        b2.button("Forçar refresh", key=f"refresh_{key}")
 
         st.markdown("---")
 
-# Render em 2 colunas
 left, right = grid_cols
 for i, robo in enumerate(ROBOS):
     render_robot_card(robo, left if i % 2 == 0 else right)
@@ -407,7 +377,8 @@ for i, robo in enumerate(ROBOS):
 # ============================
 # RODAPÉ
 # ============================
-st.caption("© Painel Central 1Milhão — consolidado dos robôs. Mantenha cada app em execução para dados atualizados.")
+st.caption("© Painel Central 1Milhão — consolidado dos robôs. Todos os dados em tempo real.")
+
 
 
 
