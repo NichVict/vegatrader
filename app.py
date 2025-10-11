@@ -355,73 +355,90 @@ left_col, right_col = st.columns(2)
 st.markdown("---")
 
 
-def render_robot_card(robo: Dict[str, Any]):
-    key = robo["key"]
-    title = robo["title"]
-    emoji = robo.get("emoji", "")
-    app_url = robo.get("app_url")
+# ============================
+# FUNÇÃO PARA RENDERIZAR CARDS COM MOLDURA REAIS
+# ============================
 
-    st.markdown(f"### {emoji} {title}")
+def render_robot_card(robo: Dict[str, Any], border_color: str):
+    """Renderiza um card com uma moldura completa em volta de todo o conteúdo."""
+    # Cria um container isolado para o card
+    with st.container():
+        st.markdown(
+            f"""
+            <div style="
+                border: 2px solid {border_color};
+                border-radius: 16px;
+                padding: 24px;
+                margin-bottom: 24px;
+                box-shadow: 0 0 18px {border_color}40;
+                ">
+            """,
+            unsafe_allow_html=True,
+        )
 
-    state = loaded_states.get(key)
-    if state is None:
-        err = errors.get(key)
-        if err:
-            st.error(err)
+        # ======= Conteúdo do card =======
+        key = robo["key"]
+        title = robo["title"]
+        emoji = robo.get("emoji", "")
+        app_url = robo.get("app_url")
+
+        st.markdown(f"### {emoji} {title}")
+
+        state = loaded_states.get(key)
+        if state is None:
+            err = errors.get(key)
+            if err:
+                st.error(err)
+            else:
+                st.warning("Arquivo de estado ainda não foi criado por este robô.")
+            if app_url:
+                st.link_button("Abrir app", app_url, type="primary")
+            st.markdown("</div>", unsafe_allow_html=True)
+            return
+
+        now_dt = agora_lx()
+        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
+        st.markdown(badges, unsafe_allow_html=True)
+
+        summary = summarize_robot_state(state)
+
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Ativos monitorados", summary["ativos_monitorados"])
+        c2.metric("Disparos (sessão)", summary["total_disparos"])
+        c3.metric("Alertas (histórico)", summary["total_alertas"])
+
+        tickers = summary["tickers"] or []
+        st.caption("Tickers: " + ", ".join([str(t) for t in tickers])) if tickers else st.caption("Tickers: —")
+
+        fig = build_sparkline(state)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         else:
-            st.warning("Arquivo de estado ainda não foi criado por este robô.")
+            st.caption("Sem histórico suficiente para gráfico.")
+
+        st.markdown("**Log recente:**")
+        lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
+        if lines:
+            for ln in lines:
+                st.code(ln, language="text")
+        else:
+            st.caption("Sem entradas de log ainda.")
+
+        p1, p2 = st.columns(2)
+        with p1:
+            st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
+        with p2:
+            path_used = resolved_paths.get(key, "—")
+            st.caption(f"Fonte de estado: `{path_used}`")
+
+        bt_col1, bt_col2 = st.columns([1, 3])
         if app_url:
-            st.link_button("Abrir app", app_url, type="primary")
-        return
+            bt_col1.link_button("Abrir app", app_url, type="primary")
+        bt_col2.button("Forçar refresh", key=f"refresh_{key}")
 
-    now_dt = agora_lx()
-    badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
-    st.markdown(badges, unsafe_allow_html=True)
+        # Fecha o container HTML
+        st.markdown("</div>", unsafe_allow_html=True)
 
-    summary = summarize_robot_state(state)
-
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Ativos monitorados", summary["ativos_monitorados"])
-    c2.metric("Disparos (sessão)", summary["total_disparos"])
-    c3.metric("Alertas (histórico)", summary["total_alertas"])
-
-    tickers = summary["tickers"] or []
-    if tickers:
-        st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
-    else:
-        st.caption("Tickers: —")
-
-    fig = build_sparkline(state)
-    if fig:
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-    else:
-        st.caption("Sem histórico suficiente para gráfico.")
-
-    st.markdown("**Log recente:**")
-    lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
-    if lines:
-        for ln in lines:
-            st.code(ln, language="text")
-    else:
-        st.caption("Sem entradas de log ainda.")
-
-    p1, p2 = st.columns(2)
-    with p1:
-        st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
-    with p2:
-        path_used = resolved_paths.get(key, "—")
-        st.caption(f"Fonte de estado: `{path_used}`")
-
-    bt_col1, bt_col2 = st.columns([1, 3])
-    if app_url:
-        bt_col1.link_button("Abrir app", app_url, type="primary")
-    bt_col2.button("Forçar refresh", key=f"refresh_{key}")
-
-
-
-
-    # Fecha o container HTML
-    st.markdown("</div>", unsafe_allow_html=True)
 
 
 
@@ -434,28 +451,24 @@ def render_robot_card(robo: Dict[str, Any]):
 # ============================
 # RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
 # ============================
+# ============================
+# RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
+# ============================
+
 for i in range(0, len(ROBOS), 2):
     cols = st.columns(2)
 
+    # Robô normal → moldura verde
     with cols[0]:
-        with st.container():
-            st.markdown(
-                '<div class="element-container card-box card-green"></div>',
-                unsafe_allow_html=True,
-            )
-        card = st.container()
-        card.markdown('<div class="element-container card-box card-green">', unsafe_allow_html=True)
-        render_robot_card(ROBOS[i])
-        card.markdown("</div>", unsafe_allow_html=True)
+        render_robot_card(ROBOS[i], "#10B981")
 
+    # Robô loss → moldura vermelha
     if i + 1 < len(ROBOS):
         with cols[1]:
-            card = st.container()
-            card.markdown('<div class="element-container card-box card-red">', unsafe_allow_html=True)
-            render_robot_card(ROBOS[i + 1])
-            card.markdown("</div>", unsafe_allow_html=True)
+            render_robot_card(ROBOS[i + 1], "#EF4444")
 
     st.markdown("---")
+
 
 
 
