@@ -45,7 +45,7 @@ with header_col2:
     st.markdown(
         """
         <h1 style="color:#10B981; font-size: 2.2em; margin-bottom:0;">
-            📊 Painel Central — Robôs 1Milhão
+            Painel Central
         </h1>
         """,
         unsafe_allow_html=True,
