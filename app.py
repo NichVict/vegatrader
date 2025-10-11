@@ -25,13 +25,12 @@ st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_ico
 
 TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)  # Lisboa
-HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)  # Lisboa
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)  # Lisboa
 
 REFRESH_SECONDS = 60
 LOG_PREVIEW_LINES = 5  # linhas de log por robô
 SPARK_MAX_POINTS = 300  # limita pontos da sparkline por robô
 
-# Paleta discreta para linhas
 PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
@@ -115,15 +114,13 @@ ROBOS = [
 def agora_lx() -> datetime.datetime:
     return datetime.datetime.now(TZ)
 
+
 def dentro_pregao(dt: datetime.datetime) -> bool:
     t = dt.time()
     return HORARIO_INICIO_PREGAO <= t <= HORARIO_FIM_PREGAO
 
+
 def try_load_state(file_candidates: List[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
-    """
-    Tenta carregar o primeiro arquivo de estado existente da lista.
-    Retorna (estado_dict, caminho_encontrado, erro_msg)
-    """
     for path in file_candidates:
         try:
             if os.path.exists(path):
@@ -134,8 +131,10 @@ def try_load_state(file_candidates: List[str]) -> Tuple[Optional[Dict[str, Any]]
             return None, path, f"Erro ao ler {path}: {e}"
     return None, None, None
 
+
 def format_badge(text: str, color: str = "#1f2937", bg: str = "#e5e7eb"):
     return f"<span style='font-size:12px;padding:2px 8px;border-radius:999px;color:{color};background:{bg};display:inline-block'>{text}</span>"
+
 
 def get_last_log_lines(state: Dict[str, Any], n: int = 5) -> List[str]:
     lines = state.get("log_monitoramento") or []
@@ -144,11 +143,8 @@ def get_last_log_lines(state: Dict[str, Any], n: int = 5) -> List[str]:
         return []
     return lines[-n:][::-1]
 
+
 def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
-    """
-    Monta uma pequena figura com as últimas séries (uma linha por ticker).
-    Usa 'precos_historicos': { "TICKER": [[ts_str, preco], ...], ... }
-    """
     precos = state.get("precos_historicos") or {}
     if not isinstance(precos, dict) or not precos:
         return None
@@ -203,10 +199,8 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
     fig.update_yaxes(title="")
     return fig
 
+
 def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
-    """
-    Extrai métricas-chave de um estado.
-    """
     ativos = state.get("ativos") or []
     status = state.get("status") or {}
     historico_alertas = state.get("historico_alertas") or []
@@ -233,17 +227,20 @@ def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
         "last_update": last_update_dt
     }
 
+
 def badge_pregao(now_dt: datetime.datetime) -> str:
     if dentro_pregao(now_dt):
         return format_badge("Pregão ABERTO", color="#065f46", bg="#d1fae5")
     else:
         return format_badge("Pregão FECHADO", color="#7c2d12", bg="#ffedd5")
 
+
 def badge_pause(pausado: bool) -> str:
     if pausado:
         return format_badge("PAUSADO", color="#7c2d12", bg="#fee2e2")
     else:
         return format_badge("ATIVO", color="#065f46", bg="#dcfce7")
+
 
 def nice_dt(dt: Optional[datetime.datetime]) -> str:
     if not dt:
@@ -252,102 +249,13 @@ def nice_dt(dt: Optional[datetime.datetime]) -> str:
         dt = dt.replace(tzinfo=TZ)
     return dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
 
-st.markdown("---")
-
-left_col, right_col = st.columns(2)
-
-
-def render_robot_card(robo: Dict[str, Any], container):
-    key = robo["key"]
-    title = robo["title"]
-    emoji = robo.get("emoji", "")
-    app_url = robo.get("app_url")
-
-    with container:
-        st.markdown(f"### {emoji} {title}")
-
-        state = loaded_states.get(key)
-        if state is None:
-            err = errors.get(key)
-            if err:
-                st.error(err)
-            else:
-                st.warning("Arquivo de estado ainda não foi criado por este robô.")
-            if app_url:
-                st.link_button("Abrir app", app_url, type="primary")
-            st.markdown("---")
-            return
-
-        now_dt = agora_lx()
-        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
-        st.markdown(badges, unsafe_allow_html=True)
-
-        # Calcula o resumo do estado
-        summary = summarize_robot_state(state)
-
-        # Métricas principais
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Ativos monitorados", summary["ativos_monitorados"])
-        c2.metric("Disparos (sessão)", summary["total_disparos"])
-        c3.metric("Alertas (histórico)", summary["total_alertas"])
-
-        # Lista de tickers
-        tickers = summary["tickers"] or []
-        if tickers:
-            st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
-        else:
-            st.caption("Tickers: —")
-
-        # Sparkline
-        fig = build_sparkline(state)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        else:
-            st.caption("Sem histórico suficiente para gráfico.")
-
-        # Log recente
-        st.markdown("**Log recente:**")
-        lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
-        if lines:
-            for ln in lines:
-                st.code(ln, language="text")
-        else:
-            st.caption("Sem entradas de log ainda.")
-
-        # Detalhes técnicos
-        p1, p2 = st.columns(2)
-        with p1:
-            st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
-        with p2:
-            path_used = resolved_paths.get(key, '—')
-            st.caption(f"Fonte de estado: `{path_used}`")
-
-        # Botões inferiores
-        bt_col1, bt_col2 = st.columns([1, 3])
-        if app_url:
-            bt_col1.link_button("Abrir app", app_url, type="primary")
-        bt_col2.button("Forçar refresh", key=f"refresh_{key}")
-
-        st.markdown("---")
-
-
-# ============================
-# RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
-# ============================
-for i in range(0, len(ROBOS), 2):
-    render_robot_card(ROBOS[i], left_col)
-    if i + 1 < len(ROBOS):
-        render_robot_card(ROBOS[i + 1], right_col)
-
-
-
 
 # ============================
 # TÍTULO + AUTO-REFRESH
 # ============================
 st.title("📊 Painel Central — Robôs 1Milhão")
 
-colh, colr = st.columns([3,1])
+colh, colr = st.columns([3, 1])
 with colh:
     st.caption(
         f"Agora: **{agora_lx().strftime('%Y-%m-%d %H:%M:%S %Z')}** — "
@@ -398,10 +306,30 @@ st.markdown("---")
 left_col, right_col = st.columns(2)
 
 
-# ============================
-# RODAPÉ
-# ============================
-st.caption("© Painel Central 1Milhão — consolidado dos robôs. Mantenha cada app em execução para dados atualizados.")
+def render_robot_card(robo: Dict[str, Any], container):
+    key = robo["key"]
+    title = robo["title"]
+    emoji = robo.get("emoji", "")
+    app_url = robo.get("app_url")
+
+    with container:
+        st.markdown(f"### {emoji} {title}")
+
+        state = loaded_states.get(key)
+        if state is None:
+            err = errors.get(key)
+            if err:
+                st.error(err)
+            else:
+                st.warning("Arquivo de estado ainda não foi criado por este robô.")
+            if app_url:
+                st.link_button("Abrir app", app_url, type="primary")
+            st.markdown("---")
+            return
+
+        now_dt = agora_lx()
+        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
+        st.markdown(badges, unsafe_allow_html=True)
 
         summary = summarize_robot_state(state)
 
@@ -411,7 +339,10 @@ st.caption("© Painel Central 1Milhão — consolidado dos robôs. Mantenha cada
         c3.metric("Alertas (histórico)", summary["total_alertas"])
 
         tickers = summary["tickers"] or []
-        st.caption("Tickers: " + ", ".join(tickers) if tickers else "Tickers: —")
+        if tickers:
+            st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
+        else:
+            st.caption("Tickers: —")
 
         fig = build_sparkline(state)
         if fig:
@@ -431,7 +362,8 @@ st.caption("© Painel Central 1Milhão — consolidado dos robôs. Mantenha cada
         with p1:
             st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
         with p2:
-            st.caption(f"Fonte de estado: `{resolved_paths.get(key, '—')}`")
+            path_used = resolved_paths.get(key, "—")
+            st.caption(f"Fonte de estado: `{path_used}`")
 
         bt_col1, bt_col2 = st.columns([1, 3])
         if app_url:
@@ -440,7 +372,10 @@ st.caption("© Painel Central 1Milhão — consolidado dos robôs. Mantenha cada
 
         st.markdown("---")
 
-# Renderiza em pares (esquerda ↔ direita)
+
+# ============================
+# RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
+# ============================
 for i in range(0, len(ROBOS), 2):
     render_robot_card(ROBOS[i], left_col)
     if i + 1 < len(ROBOS):
@@ -450,6 +385,7 @@ for i in range(0, len(ROBOS), 2):
 # RODAPÉ
 # ============================
 st.caption("© Painel Central 1Milhão — consolidado dos robôs. Mantenha cada app em execução para dados atualizados.")
+
 
 
 
