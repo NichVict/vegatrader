@@ -45,7 +45,7 @@ PALETTE = [
 # supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_key"]
-TABLE = "kv_state"
+TABLE = "kv_state_curtissimo"
 STATE_KEY = "curtissimo_przo_v1"
 
 def _estado_snapshot():
