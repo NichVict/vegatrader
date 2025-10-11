@@ -50,20 +50,34 @@ TABLE = "kv_state_curtissimo"
 STATE_KEY = "curtissimo_przo_v1"
 
 def _estado_snapshot():
-    return {
+    snapshot = {
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
         "log_monitoramento": st.session_state.get("log_monitoramento", []),
-        "disparos": st.session_state.get("disparos", {}),
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
         "status": st.session_state.get("status", {}),
-        "precos_historicos": st.session_state.get("precos_historicos", {}),
         "pausado": st.session_state.get("pausado", False),
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
         "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
     }
+    
+    # Serializa precos_historicos convertendo datetimes para ISO strings
+    precos_historicos = {}
+    for t, dados in st.session_state.get("precos_historicos", {}).items():
+        serial_dados = [(dt.isoformat() if isinstance(dt, datetime.datetime) else dt, p) for dt, p in dados]
+        precos_historicos[t] = serial_dados
+    snapshot["precos_historicos"] = precos_historicos
+    
+    # Serializa disparos (também tem datetimes)
+    disparos_serial = {}
+    for t, pontos in st.session_state.get("disparos", {}).items():
+        serial_pontos = [(pt[0].isoformat() if isinstance(pt[0], datetime.datetime) else pt[0], pt[1]) for pt in pontos]
+        disparos_serial[t] = serial_pontos
+    snapshot["disparos"] = disparos_serial
+    
+    return snapshot
 
 def salvar_estado_duravel():
     headers = {
@@ -95,7 +109,22 @@ def carregar_estado_duravel():
             for k, v in estado.items():
                 if k == "pausado" and pausado_atual is not None:
                     continue
-                st.session_state[k] = v
+                if k == "precos_historicos":
+                    # Reconverte strings ISO para datetimes
+                    precos_reconv = {}
+                    for t, dados in v.items():
+                        reconv_dados = [(datetime.datetime.fromisoformat(dt_str) if isinstance(dt_str, str) else dt_str, p) for dt_str, p in dados]
+                        precos_reconv[t] = reconv_dados
+                    st.session_state[k] = precos_reconv
+                elif k == "disparos":
+                    # Reconverte disparos
+                    disparos_reconv = {}
+                    for t, pontos in v.items():
+                        reconv_pontos = [(datetime.datetime.fromisoformat(pt_str) if isinstance(pt_str, str) else pt_str, p) for pt_str, p in pontos]
+                        disparos_reconv[t] = reconv_pontos
+                    st.session_state[k] = disparos_reconv
+                else:
+                    st.session_state[k] = v
             st.sidebar.info("💾 Estado (CURTISSIMO PRAZO) restaurado da nuvem!")
         else:
             st.sidebar.info("ℹ️ Nenhum estado remoto ainda.")
