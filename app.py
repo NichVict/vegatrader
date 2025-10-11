@@ -277,6 +277,29 @@ with colr:
 st.info("Dica: mantenha os apps individuais rodando (ou use keep-alive lá) para que os dados estejam sempre atualizados.")
 
 # ============================
+# AUTO-REFRESH
+# ============================
+st_autorefresh = st.experimental_memo(lambda: None)
+st_autorefresh()  # dummy para compatibilidade
+
+# Recarrega automaticamente a cada REFRESH_SECONDS
+st_autorefresh = st.experimental_rerun if "experimental_rerun" in dir(st) else None
+st_autorefresh_count = st.experimental_rerun if st_autorefresh else None
+st_autorefresh_timer = st.experimental_rerun if st_autorefresh else None
+
+# ✅ Nova forma de refresh automático (compatível)
+st_autorefresh = st.experimental_rerun
+st_autorefresh = st_autorefresh if callable(st_autorefresh) else None
+
+st_autorefresh_container = st.empty()
+st_autorefresh_container.empty()
+st_autorefresh_container.markdown(
+    f"<script>setTimeout(function(){{window.location.reload();}}, {REFRESH_SECONDS * 1000});</script>",
+    unsafe_allow_html=True
+)
+
+
+# ============================
 # LEITURA DOS ESTADOS
 # ============================
 loaded_states = {}
