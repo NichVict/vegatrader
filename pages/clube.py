@@ -41,9 +41,7 @@ PALETTE = [
 # ==== PERSISTÊNCIA LOCAL ====
 SAVE_DIR = "session_data"
 os.makedirs(SAVE_DIR, exist_ok=True)
-
-APP_NAME = "clube_compra_venda"  # <- defina um nome único para cada script
-SAVE_PATH = os.path.join(SAVE_DIR, f"state_{APP_NAME}.json")
+SAVE_PATH = os.path.join(SAVE_DIR, "state_clube.json")
 
 def salvar_estado():
     """Salva os dados essenciais do app em JSON."""
