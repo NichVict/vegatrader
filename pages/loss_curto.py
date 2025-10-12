@@ -276,8 +276,8 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
 
 # Teste Telegram (corrigido)
 async def testar_telegram():
-    token = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id_losscurto", "")
+    token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+    chat = st.secrets.get("telegram_chat_id_losscurto", "-1002046197953")
     try:
         if not token or not chat:
             raise ValueError("Defina telegram_token e telegram_chat_id_losscurto em st.secrets.")
@@ -412,10 +412,10 @@ def montar_mensagem_stop_curto(ticker_symbol_full, preco_alvo, preco_atual, oper
 
 def notificar_stop_curto(ticker_symbol, preco_alvo, preco_atual, operacao):
     remetente = st.secrets.get("email_sender", "avisoscanal1milhao@gmail.com")
-    senha_ou_token = st.secrets.get("gmail_app_password", "")
+    senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
     destinatario = st.secrets.get("email_recipient", "listasemanal@googlegroups.com")
-    token_telegram = st.secrets.get("telegram_token", "")
-    chat_id = st.secrets.get("telegram_chat_id_losscurto", "")
+    token_telegram = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+    chat_id = st.secrets.get("telegram_chat_id_losscurto", "-1002046197953")
 
     assunto, mensagem = montar_mensagem_stop_curto(ticker_symbol, preco_alvo, preco_atual, operacao)
 
@@ -454,8 +454,8 @@ else:
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
             try:
-                token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id_losscurto", "").strip()
+                token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY").strip()
+                chat = st.secrets.get("telegram_chat_id_losscurto", "-1002046197953").strip()
                 if token and chat:
                     bot = Bot(token=token)
                     asyncio.run(bot.send_message(chat_id=chat, text="🛑 Robô LOSS CURTO ativo — Pregão Aberto! ⏱️"))
