@@ -264,17 +264,17 @@ def notificar_preco_alvo_alcancado_curto(ticker_symbol, preco_alvo, preco_atual,
         "A decisão de compra/venda é de responsabilidade do destinatário."
     )
     remetente = st.secrets.get("email_sender", "avisoscanal1milhao@gmail.com")
-    senha_ou_token = st.secrets.get("gmail_app_password", "")
-    destinatario = st.secrets.get("email_recipient_curto", "listasemanal@googlegroups.com")
+    senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
+    destinatario = st.secrets.get("email_recipient_curto", "listacurtissimo@googlegroups.com")
     assunto = f"ALERTA CURTO PRAZO: {msg_op} em {ticker_symbol_sem_ext}"
-    token_telegram = st.secrets.get("telegram_token", "")
-    chat_id = st.secrets.get("telegram_chat_id_curtissimo", "")
+    token_telegram = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+    chat_id = st.secrets.get("telegram_chat_id_curtissimo", "-1002074291817")
     enviar_notificacao_curto(destinatario, assunto, mensagem, remetente, senha_ou_token, token_telegram, chat_id)
     return mensagem
 
 async def testar_telegram():
-    token = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id_curtissimo", "")
+    token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+    chat = st.secrets.get("telegram_chat_id_curtissimo", "-1002074291817")
     try:
         if token and chat:
             bot = Bot(token=token)
@@ -547,8 +547,8 @@ else:
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
             try:
-                token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id_curtissimo", "").strip()
+                token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY").strip()
+                chat = st.secrets.get("telegram_chat_id_curtissimo", "-1002074291817").strip()
 
                 if token and chat:
                     bot = Bot(token=token)
