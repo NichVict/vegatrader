@@ -29,7 +29,7 @@ HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 
 INTERVALO_VERIFICACAO = 300                       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 1500                     # 30 min
+TEMPO_ACUMULADO_MAXIMO = 1500                     # 25 min (1500s)
 LOG_MAX_LINHAS = 1000                             # limite de linhas do log
 
 # Paleta de cores (rotaciona entre tickers)
@@ -38,8 +38,12 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-# ==== ADIÇÃO: persistência de estado ====
-SAVE_PATH = "session_state.json"
+# ==== PERSISTÊNCIA LOCAL ====
+SAVE_DIR = "session_data"
+os.makedirs(SAVE_DIR, exist_ok=True)
+
+APP_NAME = "clube_compra_venda"  # <- defina um nome único para cada script
+SAVE_PATH = os.path.join(SAVE_DIR, f"state_{APP_NAME}.json")
 
 def salvar_estado():
     """Salva os dados essenciais do app em JSON."""
@@ -51,10 +55,11 @@ def salvar_estado():
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
         "status": st.session_state.get("status", {}),
         "precos_historicos": st.session_state.get("precos_historicos", {}),
-        "pausado": st.session_state.get("pausado", True),
+        "pausado": st.session_state.get("pausado", False),  # começa ATIVO
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
+        "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
     }
     try:
         with open(SAVE_PATH, "w", encoding="utf-8") as f:
@@ -68,20 +73,18 @@ def carregar_estado():
         try:
             with open(SAVE_PATH, "r", encoding="utf-8") as f:
                 estado = json.load(f)
-            # Mantém valor atual do checkbox "pausado" se já existir
+
+            # 🚫 preserva o valor atual do checkbox, se já existir
             pausado_atual = st.session_state.get("pausado")
+
             for k, v in estado.items():
-                # não sobrescreve se o usuário já mudou na interface
                 if k == "pausado" and pausado_atual is not None:
-                    continue
+                    continue  # mantém o valor clicado
                 st.session_state[k] = v
+
             st.sidebar.info("💾 Estado restaurado com sucesso!")
         except Exception as e:
             st.sidebar.error(f"Erro ao carregar estado: {e}")
-
-
-# Carrega estado salvo logo no início
-carregar_estado()
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -159,7 +162,6 @@ def dentro_pregao(dt_now):
     return HORARIO_INICIO_PREGAO <= t <= HORARIO_FIM_PREGAO
 
 def segundos_ate_abertura(dt_now):
-    # (mantido conforme sua versão atual; se quiser horários "quebrados", ajustamos aqui)
     hoje_abre = dt_now.replace(hour=HORARIO_INICIO_PREGAO.hour, minute=0, second=0, microsecond=0)
     hoje_fecha = dt_now.replace(hour=HORARIO_FIM_PREGAO.hour, minute=0, second=0, microsecond=0)
     if dt_now < hoje_abre:
@@ -241,17 +243,17 @@ def render_log_html(lines, selected_tickers=None, max_lines=200):
     st.markdown("\n".join(html), unsafe_allow_html=True)
 
 # -----------------------------
-# ESTADOS GLOBAIS
+# ESTADOS GLOBAIS (defaults)
 # -----------------------------
 for var in ["ativos", "historico_alertas", "log_monitoramento", "tempo_acumulado",
-            "em_contagem", "status", "precos_historicos"]:
+            "em_contagem", "status", "precos_historicos", "ultimo_update_tempo"]:
     if var not in st.session_state:
-        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos"] else []
+        st.session_state[var] = {} if var in ["tempo_acumulado", "em_contagem", "status", "precos_historicos", "ultimo_update_tempo"] else []
 
-# Modo edição/pausa (começa pausado para cadastrar vários tickers)
+# Modo edição/pausa (COMEÇA ATIVO = False)
 if "pausado" not in st.session_state:
-    st.session_state.pausado = True
-# Último estado de pausa (para logar apenas quando muda)
+    st.session_state.pausado = False
+# Último estado de pausa (para evitar spam)
 if "ultimo_estado_pausa" not in st.session_state:
     st.session_state.ultimo_estado_pausa = None
 # Pontos de disparo (para marcar ⭐ no gráfico)
@@ -259,6 +261,9 @@ if "disparos" not in st.session_state:
     st.session_state.disparos = {}  # { 'TICKER': [(datetime, preco), ...] }
 
 ensure_color_map()
+
+# 🟢 ADICIONE ESTA LINHA AQUI:
+carregar_estado()
 
 # -----------------------------
 # SIDEBAR - CONFIGURAÇÕES
@@ -270,9 +275,9 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
     try:
         if os.path.exists(SAVE_PATH):
             os.remove(SAVE_PATH)
-        # zera tudo e deixa pausado
+        # zera tudo e deixa ATIVO por padrão
         st.session_state.clear()
-        st.session_state.pausado = True
+        st.session_state.pausado = False
         st.session_state.ultimo_estado_pausa = None
         st.session_state.ativos = []
         st.session_state.historico_alertas = []
@@ -282,6 +287,7 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.session_state.status = {}
         st.session_state.precos_historicos = {}
         st.session_state.disparos = {}
+        st.session_state.ultimo_update_tempo = {}
         # registra no novo log “limpo”
         now_tmp = datetime.datetime.now(TZ)
         st.session_state.log_monitoramento.append(
@@ -355,7 +361,10 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.em_contagem[ticker] = False
         st.session_state.status[ticker] = "🟢 Monitorando"
         st.session_state.precos_historicos[ticker] = []
+        st.session_state.ultimo_update_tempo[ticker] = None
         st.success(f"Ativo {ticker} adicionado com sucesso!")
+        salvar_estado()
+
 
 # -----------------------------
 # STATUS + GRÁFICO + LOG
@@ -370,7 +379,7 @@ if st.session_state.ativos:
         preco_atual = "-"
         try:
             preco_atual = obter_preco_atual(f"{t}.SA")
-        except:
+        except Exception:
             pass
         tempo = st.session_state.tempo_acumulado.get(t, 0)
         minutos = tempo / 60
@@ -401,10 +410,9 @@ log_container = st.empty()
 # -----------------------------
 sleep_segundos = 60  # padrão fora do pregão / pausado
 
-# apenas atualiza o estado, sem registrar no log
+# evita spam de log quando alterna pausa
 if st.session_state.pausado != st.session_state.ultimo_estado_pausa:
     st.session_state.ultimo_estado_pausa = st.session_state.pausado
-
 
 if st.session_state.pausado:
     pass  # não monitora; mantém a página viva
@@ -412,14 +420,12 @@ else:
     if dentro_pregao(now):
         # ---- Notificação única na abertura do pregão ----
         if not st.session_state.get("avisou_abertura_pregao", False):
-            # Marca o flag antes da tentativa para evitar reenvios em re-runs
             st.session_state["avisou_abertura_pregao"] = True
             try:
                 token = st.secrets.get("telegram_token", "").strip()
                 chat = st.secrets.get("telegram_chat_id", "").strip()
                 if not token or not chat:
                     raise ValueError("Token ou chat_id ausente em st.secrets")
-
                 bot = Bot(token=token)
                 asyncio.run(bot.send_message(chat_id=chat, text="🤖 Robô ativo — Pregão Aberto! 📈"))
                 st.session_state.log_monitoramento.append(
@@ -439,6 +445,7 @@ else:
             t = ativo["ticker"]
             st.session_state.em_contagem.setdefault(t, False)
             st.session_state.status.setdefault(t, "🟢 Monitorando")
+            st.session_state.ultimo_update_tempo.setdefault(t, None)
 
             preco_atual = "-"
             try:
@@ -469,47 +476,50 @@ else:
             preco_alvo = ativo["preco"]
             operacao_atv = ativo["operacao"]
             tk_full = f"{t}.SA"
-        
+
             try:
                 preco_atual = obter_preco_atual(tk_full)
             except Exception as e:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
                 continue
-        
+
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
-        
+
             condicao = (
                 (operacao_atv == "compra" and preco_atual >= preco_alvo) or
                 (operacao_atv == "venda"  and preco_atual <= preco_alvo)
             )
-        
+
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
-        
+
+                # Entrou na zona: inicia do zero se ainda não estava em contagem
                 if not st.session_state.em_contagem.get(t, False):
-                    # Inicia contagem do zero ao entrar na zona
                     st.session_state.em_contagem[t] = True
                     st.session_state.tempo_acumulado[t] = 0
+                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
                     st.session_state.log_monitoramento.append(
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando contagem..."
                     )
-        
-                # ===== Contagem de tempo real (precisa dentro do pregão) =====
-                agora_real = agora_lx()
-                ultimo_update_tempo = st.session_state.get("ultimo_update_tempo", {}).get(t)
-        
-                if ultimo_update_tempo:
-                    delta = (agora_real - datetime.datetime.fromisoformat(ultimo_update_tempo)).total_seconds()
                 else:
-                    delta = 0
-        
-                st.session_state.tempo_acumulado[t] += delta
-                st.session_state.setdefault("ultimo_update_tempo", {})[t] = agora_real.isoformat()
-        
-                st.session_state.log_monitoramento.append(
-                    f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
-                )
-        
+                    # já estava em contagem: acumula pelo delta real de tempo
+                    ultimo = st.session_state.ultimo_update_tempo.get(t)
+                    if ultimo:
+                        try:
+                            dt_ultimo = datetime.datetime.fromisoformat(ultimo)
+                        except Exception:
+                            dt_ultimo = now
+                    else:
+                        dt_ultimo = now
+                    delta = (now - dt_ultimo).total_seconds()
+                    if delta < 0:
+                        delta = 0
+                    st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
+                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
+                    st.session_state.log_monitoramento.append(
+                        f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
+                    )
+
                 # dispara alerta após tempo máximo acumulado
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
                     alerta_msg = notificar_preco_alvo_alcancado(tk_full, preco_alvo, preco_atual, operacao_atv)
@@ -521,33 +531,23 @@ else:
                         "preco_alvo": preco_alvo,
                         "preco_atual": preco_atual
                     })
-        
+
                     # ⭐ guarda o ponto do disparo p/ marcar no gráfico
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
-        
+
                     # marca para remover da busca após o loop
                     tickers_para_remover.append(t)
-        
+
             else:
                 # Se saiu da zona, zera a contagem
                 if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
                     st.session_state.status[t] = "🔴 Fora da zona"
+                    st.session_state.ultimo_update_tempo[t] = None
                     st.session_state.log_monitoramento.append(
                         f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
-        
-        # ===== Reset diário automático (fora do pregão) =====
-        if not dentro_pregao(now):
-            for t in list(st.session_state.tempo_acumulado.keys()):
-                st.session_state.tempo_acumulado[t] = 0
-                st.session_state.em_contagem[t] = False
-            st.session_state["ultimo_update_tempo"] = {}
-            st.session_state.log_monitoramento.append(
-                f"{now.strftime('%H:%M:%S')} | 🧭 Pregão encerrado — contadores resetados."
-            )
-
 
         # Remove da busca os tickers disparados
         if tickers_para_remover:
@@ -556,6 +556,7 @@ else:
                 st.session_state.tempo_acumulado.pop(t, None)
                 st.session_state.em_contagem.pop(t, None)
                 st.session_state.status[t] = "✅ Disparado (removido)"
+                st.session_state.ultimo_update_tempo.pop(t, None)
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após disparo: {', '.join(tickers_para_remover)}"
             )
@@ -643,7 +644,6 @@ else:
 
         # ---- MANTER O APP VIVO (keep-alive fora do pregão, com controle de tempo) ----
         try:
-            # Garante que só roda se realmente estiver fora do pregão
             if not dentro_pregao(now):
                 APP_URL = "https://robozinho.streamlit.app"  # substitua pela URL real do seu app
                 intervalo_ping = 15 * 60  # envia keep-alive a cada 15 minutos
@@ -684,7 +684,28 @@ if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, max_lines=250)
 
-# ==== ADIÇÃO: salvar estado antes de dormir ====
+# -----------------------------
+# 🧪 PAINEL DE DEBUG / BACKUP DO JSON
+# -----------------------------
+with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
+    st.caption(f"Arquivo: `{SAVE_PATH}`")
+    try:
+        if os.path.exists(SAVE_PATH):
+            with open(SAVE_PATH, "r", encoding="utf-8") as f:
+                state_preview = json.load(f)
+            st.json(state_preview)
+            st.download_button(
+                "⬇️ Baixar state_clube.json",
+                data=json.dumps(state_preview, ensure_ascii=False, indent=2),
+                file_name="state_clube.json",
+                mime="application/json",
+            )
+        else:
+            st.info("Ainda não existe arquivo salvo.")
+    except Exception as e:
+        st.error(f"Erro ao exibir JSON: {e}")
+
+# ==== Salva estado antes de dormir ====
 salvar_estado()
 
 # Dorme e reexecuta (server-side; não depende do navegador)
