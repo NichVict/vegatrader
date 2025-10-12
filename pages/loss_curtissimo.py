@@ -261,8 +261,8 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
 
 # Botão de teste do Telegram
 async def testar_telegram():
-    token = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id_losscurtissimo", "")
+    token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+    chat = st.secrets.get("telegram_chat_id_losscurtissimo", "-1002074291817")
     try:
         if not token or not chat:
             raise ValueError("Defina telegram_token e telegram_chat_id_losscurtissimo em st.secrets.")
@@ -397,10 +397,10 @@ def montar_mensagem_encerramento_curtissimo(ticker_symbol_full, preco_alvo, prec
 
 def notificar_preco_alvo_alcancado_STOP_CURTISSIMO(ticker_symbol, preco_alvo, preco_atual, operacao):
     remetente = st.secrets.get("email_sender", "avisoscanal1milhao@gmail.com")
-    senha_ou_token = st.secrets.get("gmail_app_password", "")
+    senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
     destinatario = st.secrets.get("email_recipient_losscurtissimo", "loss_curtissimo@googlegroups.com")
-    token_telegram = st.secrets.get("telegram_token", "")
-    chat_id = st.secrets.get("telegram_chat_id_losscurtissimo", "")
+    token_telegram = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
+    chat_id = st.secrets.get("telegram_chat_id_losscurtissimo", "-1002074291817")
 
     assunto, mensagem = montar_mensagem_encerramento_curtissimo(ticker_symbol, preco_alvo, preco_atual, operacao)
 
@@ -440,8 +440,8 @@ else:
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
             try:
-                token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id_losscurtissimo", "").strip()
+                token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY").strip()
+                chat = st.secrets.get("telegram_chat_id_losscurtissimo", "-1002074291817").strip()
                 if token and chat:
                     bot = Bot(token=token)
                     asyncio.run(bot.send_message(chat_id=chat, text="🛑 Robô LOSS CURTÍSSIMO ativo — Pregão Aberto! ⏱️"))
