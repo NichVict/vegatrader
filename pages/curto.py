@@ -134,8 +134,12 @@ def notificar_preco_alvo_alcancado_curto(ticker_symbol, preco_alvo, preco_atual,
     mensagem = (
         f"Operação de {msg_op} em {ticker_symbol_sem_ext} ativada na CARTEIRA CURTO PRAZO!\n"
         f"Preço alvo: {preco_alvo:.2f} | Preço atual: {preco_atual:.2f}\n\n"
-        "COMPLIANCE: Este aviso faz parte da estratégia da CARTEIRA CURTO PRAZO. "
-        "A decisão de compra/venda é de responsabilidade do destinatário."
+        "COMPLIANCE: Esta mensagem é uma sugestão de compra/venda baseada em nossa CARTEIRA CURTO PRAZO. "
+        "A compra ou venda é de total decisão e responsabilidade do Destinatário. Este e-mail contém informação "
+        "CONFIDENCIAL de propriedade do Canal 1milhao e de seu DESTINATÁRIO tão somente. Se você NÃO for "
+        "DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir ou "
+        "divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI. A Lista de Ações "
+        "do Canal 1milhao é devidamente REGISTRADA."
     )
     remetente = st.secrets.get("email_sender", "avisoscanal1milhao@gmail.com")
     senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
