@@ -420,8 +420,8 @@ else:
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
             try:
-                token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id", "").strip()
+                token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY").strip()
+                chat = st.secrets.get("telegram_chat_id", "-1002533284493").strip()
                 if not token or not chat:
                     raise ValueError("Token ou chat_id ausente em st.secrets")
                 bot = Bot(token=token)
