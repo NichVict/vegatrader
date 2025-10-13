@@ -759,9 +759,27 @@ for t in list(st.session_state.tempo_acumulado.keys()):
         st.session_state.ultimo_update_tempo[t] = now.isoformat()
 
 # salva estado completo (protegido)
+# ==== Salva estado e agenda o próximo ciclo sem travar ====
 salvar_estado()
-time.sleep(sleep_segundos)
-st.rerun()
+
+# Mostra o tempo até o próximo ciclo
+st.markdown(
+    f"<div style='color:#9ca3af;'>🔄 Próximo ciclo automático em <b>{sleep_segundos}s</b>...</div>",
+    unsafe_allow_html=True
+)
+
+# Recarrega automaticamente após o intervalo (sem bloquear o servidor)
+components.html(f"""
+<script>
+(function(){{
+  const delay = {sleep_segundos * 1000};
+  console.log("⏱️ Novo ciclo em", delay/1000, "segundos");
+  setTimeout(() => {{
+    window.parent.location.reload();
+  }}, delay);
+}})();
+</script>
+""", height=0)
 
 
 
