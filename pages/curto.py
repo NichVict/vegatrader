@@ -37,12 +37,19 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-# ==== PERSISTÊNCIA LOCAL ====
-SAVE_DIR = "session_data"
-os.makedirs(SAVE_DIR, exist_ok=True)
-SAVE_PATH = os.path.join(SAVE_DIR, "state_curto.json")
+# =============================
+# PERSISTÊNCIA (SUPABASE via REST API + LOCAL JSON)
+# =============================
+# Defina em st.secrets:
+# supabase_url = "https://....supabase.co"
+# supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+SUPABASE_URL = st.secrets["supabase_url"]
+SUPABASE_KEY = st.secrets["supabase_key"]
+TABLE = "kv_state_curto"
+STATE_KEY = "curto_przo_v1"
+LOCAL_STATE_FILE = "session_data/state_curto.json"  # fallback local
 
-def salvar_estado():
+def _estado_snapshot():
     estado = {
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
@@ -57,27 +64,173 @@ def salvar_estado():
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
         "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
     }
-    try:
-        with open(SAVE_PATH, "w", encoding="utf-8") as f:
-            json.dump(estado, f, ensure_ascii=False, default=str, indent=2)
-    except Exception as e:
-        st.sidebar.error(f"Erro ao salvar estado: {e}")
 
-def carregar_estado():
-    if os.path.exists(SAVE_PATH):
+    # Serializa campos com datetime (precos_historicos, disparos)
+    precos_historicos = {}
+    for t, dados in estado.get("precos_historicos", {}).items():
+        serial_dados = []
+        for item in dados:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                dt, p = item
+                if isinstance(dt, datetime.datetime):
+                    serial_dados.append((dt.isoformat(), p))
+                else:
+                    serial_dados.append((dt, p))
+        precos_historicos[t] = serial_dados
+    estado["precos_historicos"] = precos_historicos
+
+    disparos_serial = {}
+    for t, pontos in estado.get("disparos", {}).items():
+        serial_pontos = []
+        for item in pontos:
+            if isinstance(item, (list, tuple)) and len(item) == 2:
+                dt, p = item
+                if isinstance(dt, datetime.datetime):
+                    serial_pontos.append((dt.isoformat(), p))
+                else:
+                    serial_pontos.append((dt, p))
+        disparos_serial[t] = serial_pontos
+    estado["disparos"] = disparos_serial
+
+    return estado
+
+def salvar_estado_duravel():
+    snapshot = _estado_snapshot()
+
+    # --- Supabase ---
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates",
+    }
+    payload = {"k": STATE_KEY, "v": snapshot}
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}"
+    try:
+        r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+        if r.status_code not in (200, 201, 204):
+            st.sidebar.error(f"Erro ao salvar estado remoto: {r.text}")
+    except Exception as e:
+        st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
+
+    # --- Local ---
+    try:
+        os.makedirs("session_data", exist_ok=True)
+        with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ Erro ao salvar local: {e}")
+
+def carregar_estado_duravel():
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+    }
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v"
+    remoto_ok = False
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        if r.status_code == 200 and r.json():
+            estado = r.json()[0]["v"]
+            pausado_atual = st.session_state.get("pausado")
+            for k, v in estado.items():
+                if k == "pausado" and pausado_atual is not None:
+                    continue
+                if k == "precos_historicos":
+                    precos_reconv = {}
+                    for t, dados in v.items():
+                        reconv_dados = []
+                        for dt_str, p in dados:
+                            try:
+                                dt_val = datetime.datetime.fromisoformat(dt_str) if isinstance(dt_str, str) else dt_str
+                            except Exception:
+                                dt_val = datetime.datetime.now(TZ)
+                            reconv_dados.append((dt_val, p))
+                        precos_reconv[t] = reconv_dados
+                    st.session_state[k] = precos_reconv
+                elif k == "disparos":
+                    disparos_reconv = {}
+                    for t, pontos in v.items():
+                        reconv_pontos = []
+                        for dt_str, p in pontos:
+                            try:
+                                dt_val = datetime.datetime.fromisoformat(dt_str) if isinstance(dt_str, str) else dt_str
+                            except Exception:
+                                dt_val = datetime.datetime.now(TZ)
+                            reconv_pontos.append((dt_val, p))
+                        disparos_reconv[t] = reconv_pontos
+                    st.session_state[k] = disparos_reconv
+                else:
+                    st.session_state[k] = v
+            st.sidebar.info("💾 Estado (CURTO PRAZO) restaurado da nuvem!")
+            remoto_ok = True
+        else:
+            st.sidebar.info("ℹ️ Nenhum estado remoto ainda.")
+    except Exception as e:
+        st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
+
+    # Fallback local
+    if not remoto_ok and os.path.exists(LOCAL_STATE_FILE):
         try:
-            with open(SAVE_PATH, "r", encoding="utf-8") as f:
+            with open(LOCAL_STATE_FILE, "r", encoding="utf-8") as f:
                 estado = json.load(f)
             pausado_atual = st.session_state.get("pausado")
             for k, v in estado.items():
                 if k == "pausado" and pausado_atual is not None:
                     continue
-                st.session_state[k] = v
-            st.sidebar.info("💾 Estado (CURTO PRAZO) restaurado!")
+                if k == "precos_historicos":
+                    precos_reconv = {}
+                    for t, dados in v.items():
+                        reconv_dados = []
+                        for dt_str, p in dados:
+                            try:
+                                dt_val = datetime.datetime.fromisoformat(dt_str) if isinstance(dt_str, str) else dt_str
+                            except Exception:
+                                dt_val = datetime.datetime.now(TZ)
+                            reconv_dados.append((dt_val, p))
+                        precos_reconv[t] = reconv_dados
+                    st.session_state[k] = precos_reconv
+                elif k == "disparos":
+                    disparos_reconv = {}
+                    for t, pontos in v.items():
+                        reconv_pontos = []
+                        for dt_str, p in pontos:
+                            try:
+                                dt_val = datetime.datetime.fromisoformat(dt_str) if isinstance(dt_str, str) else dt_str
+                            except Exception:
+                                dt_val = datetime.datetime.now(TZ)
+                            reconv_pontos.append((dt_val, p))
+                        disparos_reconv[t] = reconv_pontos
+                    st.session_state[k] = disparos_reconv
+                else:
+                    st.session_state[k] = v
+            st.sidebar.info("💾 Estado carregado do local (fallback)!")
         except Exception as e:
-            st.sidebar.error(f"Erro ao carregar estado: {e}")
+            st.sidebar.error(f"Erro no fallback local: {e}")
 
-carregar_estado()
+def apagar_estado_remoto():
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+    }
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
+    try:
+        r = requests.delete(url, headers=headers, timeout=15)
+        if r.status_code not in (200, 204):
+            st.sidebar.error(f"Erro ao apagar estado remoto: {r.text}")
+    except Exception as e:
+        st.sidebar.error(f"Erro ao apagar estado remoto: {e}")
+
+    # Apaga também o local
+    if os.path.exists(LOCAL_STATE_FILE):
+        try:
+            os.remove(LOCAL_STATE_FILE)
+        except Exception as e:
+            st.sidebar.warning(f"⚠️ Erro ao apagar local: {e}")
+
+# Carrega estado remoto/local logo no início
+os.makedirs("session_data", exist_ok=True)
+carregar_estado_duravel()
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -265,8 +418,7 @@ st.sidebar.header("⚙️ Configurações")
 
 if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
     try:
-        if os.path.exists(SAVE_PATH):
-            os.remove(SAVE_PATH)
+        apagar_estado_remoto()
         st.session_state.clear()
         st.session_state.pausado = False
         st.session_state.ultimo_estado_pausa = None
@@ -281,7 +433,7 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.session_state.ultimo_update_tempo = {}
         now_tmp = agora_lx()
         st.session_state.log_monitoramento.append(f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual (CURTO PRAZO)")
-        salvar_estado()
+        salvar_estado_duravel()
         st.sidebar.success("✅ Estado (CURTO PRAZO) apagado e reiniciado.")
         st.rerun()
     except Exception as e:
@@ -349,7 +501,7 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.precos_historicos[ticker] = []
         st.session_state.ultimo_update_tempo[ticker] = None
         st.success(f"Ativo {ticker} adicionado com sucesso!")
-        salvar_estado()
+        salvar_estado_duravel()
 
 # -----------------------------
 # STATUS + GRÁFICO + LOG
@@ -645,14 +797,19 @@ with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, max_lines=250)
 
 # -----------------------------
-# 🧪 Debug / Backup JSON
+# 🧪 Debug / Backup do estado (JSON)
 # -----------------------------
 with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
-    st.caption(f"Arquivo: `{SAVE_PATH}`")
+    st.caption("Fonte: Supabase (tabela kv_state_curto)")
     try:
-        if os.path.exists(SAVE_PATH):
-            with open(SAVE_PATH, "r", encoding="utf-8") as f:
-                state_preview = json.load(f)
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+        }
+        url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v,updated_at"
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code == 200 and res.json():
+            state_preview = res.json()[0]["v"]
             st.json(state_preview)
             st.download_button(
                 "⬇️ Baixar state_curto.json",
@@ -661,15 +818,16 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
                 mime="application/json",
             )
         else:
-            st.info("Ainda não existe arquivo salvo.")
+            st.info("Ainda não existe estado salvo remotamente.")
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
 # Salva antes de dormir
-salvar_estado()
+salvar_estado_duravel()
 
 # Reexecução
 time.sleep(sleep_segundos)
 st.rerun()
+
 
 
