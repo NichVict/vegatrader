@@ -585,6 +585,8 @@ else:
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após disparo: {', '.join(tickers_para_remover)}"
             )
+            # 🚨 ADICIONE ESTA LINHA:
+            salvar_estado()
 
         # Gráfico: linhas por ticker (cor consistente) + marcadores de disparo ⭐
         fig = go.Figure()
