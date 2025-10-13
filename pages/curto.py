@@ -102,15 +102,26 @@ def salvar_estado_duravel():
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json"
     }
-    # 👇 WHERE da linha que será atualizada
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
+
+    # 👇 Substitua PATCH por POST com merge automático
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?on_conflict=k"
     try:
-        r = requests.patch(url, headers=headers, data=json.dumps({"v": snapshot}), timeout=15)
-        # Se a tabela estiver com RLS e sem policy de UPDATE, pode falhar — prefira o POST com on_conflict
-        if r.status_code not in (200, 204):
-            st.sidebar.error(f"Erro ao salvar estado remoto (PATCH): {r.text}")
+        r = requests.post(url, headers=headers, data=json.dumps({"k": STATE_KEY, "v": snapshot}), timeout=15)
+        st.sidebar.write("💾 Supabase status:", r.status_code)
+        st.sidebar.write("💾 Supabase resposta:", r.text)
+        if r.status_code not in (200, 201, 204):
+            st.sidebar.error(f"Erro ao salvar estado remoto: {r.text}")
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
+
+    # --- Local ---
+    try:
+        os.makedirs("session_data", exist_ok=True)
+        with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ Erro ao salvar local: {e}")
+
 
     # --- Local ---
     try:
