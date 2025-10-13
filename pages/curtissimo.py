@@ -51,34 +51,56 @@ STATE_KEY = "curtissimo_przo_v1"
 LOCAL_STATE_FILE = "session_data/state_curtissimo.json"  # Para compatibilidade com Painel Central
 
 def _estado_snapshot():
+    """
+    Cria um snapshot completo e serializável do estado atual da aplicação.
+    Inclui todos os dados essenciais para retomar a execução sem perda de contagem.
+    """
+
     snapshot = {
+        # --- Estrutura principal ---
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
         "log_monitoramento": st.session_state.get("log_monitoramento", []),
+
+        # --- Controle de tempo e status ---
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
+        "em_contagem": st.session_state.get("em_contagem", {}),                # 🔹 corrigido: persistir contagem ativa
         "status": st.session_state.get("status", {}),
+        "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
+
+        # --- Controle de execução e pausa ---
         "pausado": st.session_state.get("pausado", False),
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
-        "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
-        "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
+
+        # --- Infraestrutura / utilitários ---
+        "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
+
+        # --- Dados históricos ---
+        # serão serializados abaixo
     }
-    
-    # Serializa precos_historicos convertendo datetimes para ISO strings
-    precos_historicos = {}
-    for t, dados in st.session_state.get("precos_historicos", {}).items():
-        serial_dados = [(dt.isoformat() if isinstance(dt, datetime.datetime) else dt, p) for dt, p in dados]
-        precos_historicos[t] = serial_dados
-    snapshot["precos_historicos"] = precos_historicos
-    
-    # Serializa disparos (também tem datetimes)
+
+    # === Serialização de dados complexos ===
+    # Serializa precos_historicos convertendo datetimes -> ISO strings
+    precos_historicos_serial = {}
+    for ticker, dados in st.session_state.get("precos_historicos", {}).items():
+        precos_historicos_serial[ticker] = [
+            (dt.isoformat() if isinstance(dt, datetime.datetime) else dt, preco)
+            for dt, preco in dados
+        ]
+    snapshot["precos_historicos"] = precos_historicos_serial
+
+    # Serializa disparos (também contém datetimes)
     disparos_serial = {}
-    for t, pontos in st.session_state.get("disparos", {}).items():
-        serial_pontos = [(pt[0].isoformat() if isinstance(pt[0], datetime.datetime) else pt[0], pt[1]) for pt in pontos]
-        disparos_serial[t] = serial_pontos
+    for ticker, pontos in st.session_state.get("disparos", {}).items():
+        disparos_serial[ticker] = [
+            (dt.isoformat() if isinstance(dt, datetime.datetime) else dt, preco)
+            for dt, preco in pontos
+        ]
     snapshot["disparos"] = disparos_serial
-    
+
     return snapshot
+
 
 def salvar_estado_duravel():
     snapshot = _estado_snapshot()  # Já serializado
