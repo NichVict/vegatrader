@@ -41,7 +41,7 @@ PALETTE = [
 # ==== PERSISTÊNCIA LOCAL ====
 SAVE_DIR = "session_data"
 os.makedirs(SAVE_DIR, exist_ok=True)
-SAVE_PATH = os.path.join(SAVE_DIR, "state_clube.json")
+SAVE_PATH = os.path.join(SAVE_DIR, "state_clube_compra_venda.json")
 
 def salvar_estado():
     """Salva os dados essenciais do app em JSON."""
