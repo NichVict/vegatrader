@@ -442,23 +442,29 @@ else:
         
 
         # ---- Notificação única na abertura do pregão ----
+        # ---- Notificação única na abertura do pregão ----
         data_hoje = agora_lx().date()
-        if st.session_state.get("data_ultimo_aviso_abertura") != str(data_hoje):
-            st.session_state["data_ultimo_aviso_abertura"] = str(data_hoje)
+        data_registrada = st.session_state.get("data_ultimo_aviso_abertura")
+        
+        if data_registrada != str(data_hoje):
             try:
-                token = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id", "").strip()
+                token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY").strip()
+                chat = st.secrets.get("telegram_chat_id", "-1002533284493").strip()
                 if not token or not chat:
                     raise ValueError("Token ou chat_id ausente em st.secrets")
                 bot = Bot(token=token)
                 asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô ativo — Pregão Aberto!"))
                 st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto (enviado apenas uma vez hoje)"
+                    f"{now.strftime('%H:%M:%S')} | 📣 Mensagem Telegram enviada: Pregão Aberto"
                 )
+                # 🔒 salva data para evitar repetição no mesmo dia
+                st.session_state["data_ultimo_aviso_abertura"] = str(data_hoje)
+                salvar_estado()
             except Exception as e:
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | ⚠️ Erro ao enviar notificação de abertura: {e}"
                 )
+
     
         # Esconde o cartão de countdown quando entra no pregão
         countdown_container.empty()
