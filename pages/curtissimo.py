@@ -149,8 +149,11 @@ def carregar_estado_duravel():
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
     
-    # NOVO: Fallback para local se Supabase falhar ou não existir
-    if not remoto_ok:
+        # NOVO: Fallback para local se Supabase falhar ou não existir
+    origem = "❌ Nenhum"
+    if remoto_ok:
+        origem = "☁️ Supabase"
+    else:
         local_path = LOCAL_STATE_FILE
         if os.path.exists(local_path):
             try:
@@ -177,8 +180,11 @@ def carregar_estado_duravel():
                     else:
                         st.session_state[k] = v
                 st.sidebar.info("💾 Estado carregado do local (fallback)!")
+                origem = "📁 Local"
             except Exception as e:
                 st.sidebar.error(f"Erro no fallback local: {e}")
+
+    st.session_state["origem_estado"] = origem
 
 def apagar_estado_remoto():
     headers = {
@@ -448,6 +454,14 @@ selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_exis
 # -----------------------------
 now = agora_lx()
 st.title("📈 CURTISSIMO PRAZO - COMPRA E VENDA")
+origem = st.session_state.get("origem_estado", "❓ Desconhecida")
+if origem == "☁️ Supabase":
+    st.markdown("🟢 **Origem dos dados:** Nuvem (Supabase)")
+elif origem == "📁 Local":
+    st.markdown("🟠 **Origem dos dados:** Arquivo Local")
+else:
+    st.markdown("⚪ **Origem dos dados:** Desconhecida")
+
 st.caption(
     f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
     f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}"
