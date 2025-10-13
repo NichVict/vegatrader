@@ -43,8 +43,8 @@ PALETTE = [
 # Defina em st.secrets:
 # supabase_url = "https://....supabase.co"
 # supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
-SUPABASE_URL = st.secrets["supabase_url"]
-SUPABASE_KEY = st.secrets["supabase_key"]
+SUPABASE_URL = st.secrets["supabase_url_curto"]
+SUPABASE_KEY = st.secrets["supabase_key_curto"]
 TABLE = "kv_state_curto"
 STATE_KEY = "curto_przo_v1"
 LOCAL_STATE_FILE = "session_data/state_curto.json"  # fallback local
