@@ -34,6 +34,10 @@ st.markdown("""
     padding: 18px 20px;
     margin-bottom: 25px;
     box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    transition: box-shadow 0.2s ease-in-out;
+}
+.robot-card:hover {
+    box-shadow: 0 4px 12px rgba(16,185,129,0.3);
 }
 .status-dot {
     position: absolute;
@@ -44,9 +48,35 @@ st.markdown("""
     border-radius: 50%;
     box-shadow: 0 0 8px rgba(0,0,0,0.4);
 }
-.status-green { background-color: #22c55e; }  /* verde */
-.status-yellow { background-color: #facc15; } /* amarelo */
-.status-red { background-color: #ef4444; }    /* vermelho */
+.status-green { 
+    background-color: #22c55e;
+    animation: pulse-green 1.4s infinite;
+}
+.status-yellow { 
+    background-color: #facc15;
+    animation: pulse-yellow 2s infinite;
+}
+.status-red { 
+    background-color: #ef4444;
+    animation: pulse-red 3s infinite;
+}
+
+/* Animações suaves de pulsar */
+@keyframes pulse-green {
+  0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
+  70% { box-shadow: 0 0 0 10px rgba(34,197,94,0); }
+  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
+}
+@keyframes pulse-yellow {
+  0% { box-shadow: 0 0 0 0 rgba(250,204,21,0.6); }
+  70% { box-shadow: 0 0 0 10px rgba(250,204,21,0); }
+  100% { box-shadow: 0 0 0 0 rgba(250,204,21,0); }
+}
+@keyframes pulse-red {
+  0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
+  70% { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
+  100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+}
 </style>
 """, unsafe_allow_html=True)
 
