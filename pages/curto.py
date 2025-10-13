@@ -115,25 +115,7 @@ def salvar_estado_duravel():
         os.makedirs("session_data", exist_ok=True)
         with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(snapshot, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        st.sidebar.warning(f"⚠️ Erro ao salvar local: {e}")
-
-
-
-    # --- Local ---
-    try:
-        os.makedirs("session_data", exist_ok=True)
-        with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(snapshot, f, ensure_ascii=False, indent=2)
-    except Exception as e:
-        st.sidebar.warning(f"⚠️ Erro ao salvar local: {e}")
-
-
-    # --- Local ---
-    try:
-        os.makedirs("session_data", exist_ok=True)
-        with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
-            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+            st.sidebar.info("💾 Estado salvo localmente em session_data/state_curto.json")
     except Exception as e:
         st.sidebar.warning(f"⚠️ Erro ao salvar local: {e}")
 
