@@ -413,7 +413,7 @@ def montar_mensagem_stop_curto(ticker_symbol_full, preco_alvo, preco_atual, oper
 def notificar_stop_curto(ticker_symbol, preco_alvo, preco_atual, operacao):
     remetente = st.secrets.get("email_sender", "avisoscanal1milhao@gmail.com")
     senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
-    destinatario = st.secrets.get("email_recipient", "listasemanal@googlegroups.com")
+    destinatario = st.secrets.get("email_recipient_losscurto", "listasemanal@googlegroups.com")
     token_telegram = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
     chat_id = st.secrets.get("telegram_chat_id_losscurto", "-1002046197953")
 
