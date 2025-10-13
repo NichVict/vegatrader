@@ -435,29 +435,31 @@ else:
                         f"{agora_lx().strftime('%H:%M:%S')} | ⏳ {t}: +{int(delta)}s acumulados (entre ciclos)"
                     )
 
-    if dentro_pregao(now):        
+    if dentro_pregao(now):
+        
 
         # ---- Notificação única na abertura do pregão ----
-        if not st.session_state.get("avisou_abertura_pregao", False):
-            st.session_state["avisou_abertura_pregao"] = True
+        data_hoje = agora_lx().date()
+        if st.session_state.get("data_ultimo_aviso_abertura") != str(data_hoje):
+            st.session_state["data_ultimo_aviso_abertura"] = str(data_hoje)
             try:
-                token = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY").strip()
-                chat = st.secrets.get("telegram_chat_id", "-1002533284493").strip()
+                token = st.secrets.get("telegram_token", "").strip()
+                chat = st.secrets.get("telegram_chat_id", "").strip()
                 if not token or not chat:
                     raise ValueError("Token ou chat_id ausente em st.secrets")
                 bot = Bot(token=token)
-                asyncio.run(bot.send_message(chat_id=chat, text="🤖 Robô ativo — Pregão Aberto! 📈"))
+                asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô ativo — Pregão Aberto!"))
                 st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | 📣 Mensagem Telegram enviada: Pregão Aberto"
+                    f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto (enviado apenas uma vez hoje)"
                 )
             except Exception as e:
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | ⚠️ Erro ao enviar notificação de abertura: {e}"
                 )
-
+    
         # Esconde o cartão de countdown quando entra no pregão
         countdown_container.empty()
-
+    
         # 1) Atualiza tabela/gráfico e monitora
         data = []
         for ativo in st.session_state.ativos:
@@ -465,16 +467,16 @@ else:
             st.session_state.em_contagem.setdefault(t, False)
             st.session_state.status.setdefault(t, "🟢 Monitorando")
             st.session_state.ultimo_update_tempo.setdefault(t, None)
-
+    
             preco_atual = "-"
             try:
                 preco_atual = obter_preco_atual(f"{t}.SA")
             except Exception as e:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
-
+    
             if preco_atual != "-":
                 st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
-
+    
             tempo = st.session_state.tempo_acumulado.get(t, 0)
             minutos = tempo / 60
             data.append({
@@ -487,7 +489,7 @@ else:
             })
         if data:
             tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
-
+    
         # Lógica por ativo
         tickers_para_remover = []  # <- para tirar da busca após disparo
         for ativo in st.session_state.ativos:
@@ -495,23 +497,23 @@ else:
             preco_alvo = ativo["preco"]
             operacao_atv = ativo["operacao"]
             tk_full = f"{t}.SA"
-
+    
             try:
                 preco_atual = obter_preco_atual(tk_full)
             except Exception as e:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro ao buscar {t}: {e}")
                 continue
-
+    
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
-
+    
             condicao = (
                 (operacao_atv == "compra" and preco_atual >= preco_alvo) or
                 (operacao_atv == "venda"  and preco_atual <= preco_alvo)
             )
-
+    
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
-
+    
                 # Entrou na zona: inicia do zero se ainda não estava em contagem
                 if not st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = True
@@ -526,25 +528,23 @@ else:
                     if ultimo:
                         try:
                             dt_ultimo = datetime.datetime.fromisoformat(ultimo)
-                            # 👇 Aqui está a correção de timezone:
                             if dt_ultimo.tzinfo is None:
                                 dt_ultimo = dt_ultimo.replace(tzinfo=TZ)
                         except Exception:
                             dt_ultimo = now
                     else:
                         dt_ultimo = now
-                
+    
                     delta = (now - dt_ultimo).total_seconds()
                     if delta < 0:
                         delta = 0
-                
+    
                     st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
                     st.session_state.ultimo_update_tempo[t] = now.isoformat()
                     st.session_state.log_monitoramento.append(
                         f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                     )
-
-
+    
                 # dispara alerta após tempo máximo acumulado
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
                     alerta_msg = notificar_preco_alvo_alcancado(tk_full, preco_alvo, preco_atual, operacao_atv)
@@ -556,13 +556,13 @@ else:
                         "preco_alvo": preco_alvo,
                         "preco_atual": preco_atual
                     })
-
+    
                     # ⭐ guarda o ponto do disparo p/ marcar no gráfico
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
-
+    
                     # marca para remover da busca após o loop
                     tickers_para_remover.append(t)
-
+    
             else:
                 # Se saiu da zona, zera a contagem
                 if st.session_state.em_contagem.get(t, False):
@@ -573,7 +573,7 @@ else:
                     st.session_state.log_monitoramento.append(
                         f"❌ {t} saiu da zona de preço alvo. Contagem reiniciada."
                     )
-
+    
         # Remove da busca os tickers disparados
         if tickers_para_remover:
             st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
@@ -585,9 +585,8 @@ else:
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após disparo: {', '.join(tickers_para_remover)}"
             )
-            # 🚨 ADICIONE ESTA LINHA:
             salvar_estado()
-
+    
         # Gráfico: linhas por ticker (cor consistente) + marcadores de disparo ⭐
         fig = go.Figure()
         for t, dados in st.session_state.precos_historicos.items():
@@ -599,7 +598,7 @@ else:
                     name=t,
                     line=dict(color=color_for_ticker(t), width=2)
                 ))
-
+    
         # ⭐ marcadores de disparo
         for t, pontos in st.session_state.disparos.items():
             if not pontos:
@@ -621,7 +620,7 @@ else:
                     "<br>Preço: R$ %{y:.2f}<extra></extra>"
                 ),
             ))
-
+    
         fig.update_layout(
             title="📉 Evolução dos Preços (com disparos ⭐)",
             xaxis_title="Tempo", yaxis_title="Preço (R$)",
@@ -629,13 +628,14 @@ else:
             template="plotly_dark"
         )
         grafico.plotly_chart(fig, use_container_width=True)
+    
+        # intervalo de atualização dentro do pregão
+        sleep_segundos = INTERVALO_VERIFICACAO  # 5 minutos
 
-        sleep_segundos = INTERVALO_VERIFICACAO  # 5 min
 
     else:
         # ---- Reset do aviso de abertura ----
-        st.session_state["avisou_abertura_pregao"] = False
-
+        
         # ======= FORA DO PREGÃO: CARTÃO COM COUNTDOWN EM JS (sem rerun por segundo) =======
         faltam, prox_abertura = segundos_ate_abertura(now)
         # id único para não conflitar entre reruns
