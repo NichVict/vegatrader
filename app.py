@@ -278,6 +278,20 @@ def nice_dt(dt: Optional[datetime.datetime]) -> str:
     return dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
+def badge_status_tempo(last_dt: Optional[datetime.datetime]) -> str:
+    """Gera um badge visual de status com base no tempo desde o último update."""
+    if not last_dt:
+        return format_badge("Sem atualização", color="#991b1b", bg="#fee2e2")
+
+    delta_min = (agora_lx() - last_dt).total_seconds() / 60
+    if delta_min < 5:
+        return format_badge("🟢 Atualizado há poucos minutos", color="#065f46", bg="#d1fae5")
+    elif delta_min < 30:
+        return format_badge(f"🟡 Última atualização há {int(delta_min)} min", color="#78350f", bg="#fef3c7")
+    else:
+        return format_badge(f"🔴 Inativo há {int(delta_min)} min", color="#7f1d1d", bg="#fee2e2")
+
+
 # ============================
 # TÍTULO + AUTO-REFRESH
 # ============================
@@ -362,8 +376,15 @@ def render_robot_card(robo: Dict[str, Any], container):
             return  # sem st.markdown("---") aqui para manter altura constante
 
         now_dt = agora_lx()
-        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
+        last_dt = summarize_robot_state(state)["last_update"]
+        status_badge = badge_status_tempo(last_dt)
+        badges = (
+            f"{badge_pregao(now_dt)} &nbsp;&nbsp; "
+            f"{badge_pause(bool(state.get('pausado', False)))} &nbsp;&nbsp; "
+            f"{status_badge}"
+        )
         st.markdown(badges, unsafe_allow_html=True)
+
 
         summary = summarize_robot_state(state)
 
