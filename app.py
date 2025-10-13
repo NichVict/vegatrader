@@ -3,7 +3,7 @@
 app.py
 Painel Central 1Milhão — Monitor de Robôs (Streamlit)
 
-- Lê os arquivos JSON persistidos por cada robô (APENAS LOCAL)
+- Lê os arquivos JSON persistidos por cada robô
 - Mostra status consolidado + resumo por robô
 - Auto-refresh a cada 60s
 """
@@ -23,31 +23,21 @@ import plotly.graph_objects as go
 # ============================
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
 
-# Estilos globais (cards e bolinha flutuante)
 st.markdown("""
 <style>
-body {
-    background-color: #050915;
-    color: #e5e7eb;
-}
-
 .robot-card {
     position: relative;
-    background: linear-gradient(145deg, #0c1424 0%, #111827 100%);
+    background-color: #0b1220;
     border: 1px solid #1f2937;
-    border-radius: 16px;
-    padding: 18px 22px;
-    margin-bottom: 28px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
-    transition: all 0.25s ease-in-out;
+    border-radius: 14px;
+    padding: 18px 20px;
+    margin-bottom: 25px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+    transition: box-shadow 0.2s ease-in-out;
 }
-
 .robot-card:hover {
-    box-shadow: 0 0 15px rgba(16,185,129,0.3);
-    border-color: #10b981;
-    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(16,185,129,0.3);
 }
-
 .status-dot {
     position: absolute;
     top: 16px;
@@ -57,8 +47,6 @@ body {
     border-radius: 50%;
     box-shadow: 0 0 8px rgba(0,0,0,0.4);
 }
-
-/* cores e pulsar */
 .status-green { 
     background-color: #22c55e;
     animation: pulse-green 1.4s infinite;
@@ -72,30 +60,29 @@ body {
     animation: pulse-red 3s infinite;
 }
 
-/* Animações */
+/* Animações suaves de pulsar */
 @keyframes pulse-green {
   0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
-  70% { box-shadow: 0 0 0 12px rgba(34,197,94,0); }
+  70% { box-shadow: 0 0 0 10px rgba(34,197,94,0); }
   100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
 }
 @keyframes pulse-yellow {
   0% { box-shadow: 0 0 0 0 rgba(250,204,21,0.6); }
-  70% { box-shadow: 0 0 0 12px rgba(250,204,21,0); }
+  70% { box-shadow: 0 0 0 10px rgba(250,204,21,0); }
   100% { box-shadow: 0 0 0 0 rgba(250,204,21,0); }
 }
 @keyframes pulse-red {
   0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
-  70% { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
+  70% { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
   100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
-}
-
-/* Ajuste dos títulos e badges */
-h3 {
-    color: #f9fafb;
 }
 </style>
 """, unsafe_allow_html=True)
 
+
+# ============================
+# CABEÇALHO COM LOGO E TÍTULO
+# ============================
 
 # ============================
 # CABEÇALHO COM LOGO E TÍTULO (VERSÃO FUNCIONAL)
@@ -120,12 +107,13 @@ with header_col2:
         unsafe_allow_html=True,
     )
 
+
 TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)  # Lisboa
-HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)    # Lisboa
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)  # Lisboa
 
 REFRESH_SECONDS = 60
-LOG_PREVIEW_LINES = 5   # linhas de log por robô
+LOG_PREVIEW_LINES = 5  # linhas de log por robô
 SPARK_MAX_POINTS = 300  # limita pontos da sparkline por robô
 
 PALETTE = [
@@ -146,7 +134,7 @@ ROBOS = [
             "session_data/state_curto.json",
             "state_curto.json"
         ],
-        "app_url": None
+         "app_url": None
     },
     {
         "key": "loss_curto",
@@ -156,7 +144,7 @@ ROBOS = [
             "session_data/state_loss_curto.json",
             "state_loss_curto.json"
         ],
-        "app_url": None
+         "app_url": None
     },
 
     # LINHA 2
@@ -168,7 +156,7 @@ ROBOS = [
             "session_data/state_curtissimo.json",
             "state_curtissimo.json"
         ],
-        "app_url": None
+         "app_url": None
     },
     {
         "key": "loss_curtissimo",
@@ -179,7 +167,7 @@ ROBOS = [
             "session_state_losscurtissimo.json",
             "state_losscurtissimo.json"
         ],
-        "app_url": None
+         "app_url": None
     },
 
     # LINHA 3
@@ -211,9 +199,11 @@ ROBOS = [
 def agora_lx() -> datetime.datetime:
     return datetime.datetime.now(TZ)
 
+
 def dentro_pregao(dt: datetime.datetime) -> bool:
     t = dt.time()
     return HORARIO_INICIO_PREGAO <= t <= HORARIO_FIM_PREGAO
+
 
 def try_load_state(file_candidates: List[str]) -> Tuple[Optional[Dict[str, Any]], Optional[str], Optional[str]]:
     for path in file_candidates:
@@ -226,8 +216,10 @@ def try_load_state(file_candidates: List[str]) -> Tuple[Optional[Dict[str, Any]]
             return None, path, f"Erro ao ler {path}: {e}"
     return None, None, None
 
+
 def format_badge(text: str, color: str = "#1f2937", bg: str = "#e5e7eb"):
     return f"<span style='font-size:12px;padding:2px 8px;border-radius:999px;color:{color};background:{bg};display:inline-block'>{text}</span>"
+
 
 def get_last_log_lines(state: Dict[str, Any], n: int = 5) -> List[str]:
     lines = state.get("log_monitoramento") or []
@@ -235,6 +227,7 @@ def get_last_log_lines(state: Dict[str, Any], n: int = 5) -> List[str]:
     if not lines:
         return []
     return lines[-n:][::-1]
+
 
 def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
     precos = state.get("precos_historicos") or {}
@@ -291,6 +284,7 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
     fig.update_yaxes(title="")
     return fig
 
+
 def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
     ativos = state.get("ativos") or []
     status = state.get("status") or {}
@@ -318,17 +312,20 @@ def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
         "last_update": last_update_dt
     }
 
+
 def badge_pregao(now_dt: datetime.datetime) -> str:
     if dentro_pregao(now_dt):
         return format_badge("Pregão ABERTO", color="#065f46", bg="#d1fae5")
     else:
         return format_badge("Pregão FECHADO", color="#7c2d12", bg="#ffedd5")
 
+
 def badge_pause(pausado: bool) -> str:
     if pausado:
         return format_badge("PAUSADO", color="#7c2d12", bg="#fee2e2")
     else:
         return format_badge("ATIVO", color="#065f46", bg="#dcfce7")
+
 
 def nice_dt(dt: Optional[datetime.datetime]) -> str:
     if not dt:
@@ -337,31 +334,6 @@ def nice_dt(dt: Optional[datetime.datetime]) -> str:
         dt = dt.replace(tzinfo=TZ)
     return dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
 
-def badge_status_tempo(last_dt: Optional[datetime.datetime]) -> str:
-    """Gera um badge visual de status com base no tempo desde o último update."""
-    if not last_dt:
-        return format_badge("Sem atualização", color="#991b1b", bg="#fee2e2")
-    delta_min = (agora_lx() - last_dt).total_seconds() / 60
-    if delta_min < 5:
-        return format_badge("🟢 Atualizado há poucos minutos", color="#065f46", bg="#d1fae5")
-    elif delta_min < 30:
-        return format_badge(f"🟡 Última atualização há {int(delta_min)} min", color="#78350f", bg="#fef3c7")
-    else:
-        return format_badge(f"🔴 Inativo há {int(delta_min)} min", color="#7f1d1d", bg="#fee2e2")
-
-def status_dot_html(last_dt: Optional[datetime.datetime]) -> str:
-    """HTML da bolinha flutuante de status (verde, amarela ou vermelha)."""
-    if not last_dt:
-        cor = "status-red"
-    else:
-        delta_min = (agora_lx() - last_dt).total_seconds() / 60
-        if delta_min < 5:
-            cor = "status-green"
-        elif delta_min < 30:
-            cor = "status-yellow"
-        else:
-            cor = "status-red"
-    return f"<div class='status-dot {cor}'></div>"
 
 # ============================
 # TÍTULO + AUTO-REFRESH
@@ -376,6 +348,8 @@ with colh:
     )
 with colr:
     st.caption(f"🔄 Auto-refresh: a cada **{REFRESH_SECONDS}s**")
+
+#st.info("Dica: mantenha os apps individuais rodando (ou use keep-alive lá) para que os JSONs estejam sempre atualizados.")
 
 # ============================
 # CARDS RESUMO (TOPO)
@@ -416,43 +390,79 @@ st.markdown("---")
 
 left_col, right_col = st.columns(2)
 
+
+# ============================
+# GRID DE CARDS POR ROBÔ (ALINHADO)
+# ============================
 st.markdown("---")
 
+
 def render_robot_card(robo: Dict[str, Any], container):
+    """Renderiza um card individual de robô dentro do container fornecido."""
     key = robo["key"]
     title = robo["title"]
     emoji = robo.get("emoji", "")
     app_url = robo.get("app_url")
 
-    # Cria um container com uma classe HTML estilizada
-    with container.container():
-        st.markdown(f"<div class='robot-card'>", unsafe_allow_html=True)
+    with container:
+        st.markdown(f"### {emoji} {title}")
 
-        col_card = st.container()
-        with col_card:
-            # Título
-            st.markdown(f"### {emoji} {title}", unsafe_allow_html=True)
+        state = loaded_states.get(key)
+        if state is None:
+            err = errors.get(key)
+            if err:
+                st.error(err)
+            else:
+                st.warning("Arquivo de estado ainda não foi criado por este robô.")
+            if app_url:
+                st.link_button("Abrir app", app_url, type="primary")
+            return  # sem st.markdown("---") aqui para manter altura constante
 
-            # Bolinha flutuante de status
-            last_dt = summarize_robot_state(loaded_states.get(key, {})).get("last_update")
-            st.markdown(status_dot_html(last_dt), unsafe_allow_html=True)
+        now_dt = agora_lx()
+        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
+        st.markdown(badges, unsafe_allow_html=True)
 
-            state = loaded_states.get(key)
-            if state is None:
-                st.markdown(status_dot_html(None), unsafe_allow_html=True)
-                err = errors.get(key)
-                if err:
-                    st.error(err)
-                else:
-                    st.warning("Arquivo de estado ainda não foi criado por este robô.")
-                if app_url:
-                    st.link_button("Abrir app", app_url, type="primary")
-                st.markdown("</div>", unsafe_allow_html=True)
-                return
+        summary = summarize_robot_state(state)
 
-            # ... (restante do código do card continua igual)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Ativos monitorados", summary["ativos_monitorados"])
+        c2.metric("Disparos (sessão)", summary["total_disparos"])
+        c3.metric("Alertas (histórico)", summary["total_alertas"])
 
-        st.markdown("</div>", unsafe_allow_html=True)
+        tickers = summary["tickers"] or []
+        if tickers:
+            st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
+        else:
+            st.caption("Tickers: —")
+
+        fig = build_sparkline(state)
+        if fig:
+            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+        else:
+            st.caption("Sem histórico suficiente para gráfico.")
+
+        st.markdown("**Log recente:**")
+        lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
+        if lines:
+            for ln in lines:
+                st.code(ln, language="text")
+        else:
+            st.caption("Sem entradas de log ainda.")
+
+        p1, p2 = st.columns(2)
+        with p1:
+            st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
+        with p2:
+            path_used = resolved_paths.get(key, "—")
+            st.caption(f"Fonte de estado: `{path_used}`")
+
+        bt_col1, bt_col2 = st.columns([1, 3])
+        if app_url:
+            bt_col1.link_button("Abrir app", app_url, type="primary")
+        
+        if bt_col2.button("Forçar refresh", key=f"refresh_{key}"):
+            st.toast(f"🔄 Atualizando {title}…", icon="🔁")
+            st.rerun()
 
 
 # ============================
@@ -467,6 +477,7 @@ for i in range(0, len(ROBOS), 2):
     # divisória entre linhas
     st.markdown("---")
 
+
 # ============================
 # RODAPÉ
 # ============================
@@ -474,8 +485,6 @@ st.caption(
     "© Painel Central 1Milhão — consolidado dos robôs. "
     "Mantenha cada app em execução para dados atualizados."
 )
-
-
 
 
 
