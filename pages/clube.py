@@ -739,7 +739,7 @@ time.sleep(sleep_segundos)
 # ==== Atualiza timestamps e salva estado (mantém progresso real) ====
 now = agora_lx()
 
-# garante que nenhum ticker em contagem perca tempo entre refreshs
+# ✅ 1. Atualiza o tempo acumulado até o instante do refresh
 for t in list(st.session_state.tempo_acumulado.keys()):
     if st.session_state.em_contagem.get(t, False):
         ultimo = st.session_state.ultimo_update_tempo.get(t)
@@ -758,17 +758,16 @@ for t in list(st.session_state.tempo_acumulado.keys()):
                 )
         st.session_state.ultimo_update_tempo[t] = now.isoformat()
 
-# salva estado completo (protegido)
-# ==== Salva estado e agenda o próximo ciclo sem travar ====
+# ✅ 2. Salva o estado completo (já com o tempo atualizado)
 salvar_estado()
 
-# Mostra o tempo até o próximo ciclo
+# ✅ 3. Mostra mensagem do próximo ciclo
 st.markdown(
     f"<div style='color:#9ca3af;'>🔄 Próximo ciclo automático em <b>{sleep_segundos}s</b>...</div>",
     unsafe_allow_html=True
 )
 
-# Recarrega automaticamente após o intervalo (sem bloquear o servidor)
+# ✅ 4. Agenda o reload automático via JavaScript (sem travar o servidor)
 components.html(f"""
 <script>
 (function(){{
@@ -780,6 +779,7 @@ components.html(f"""
 }})();
 </script>
 """, height=0)
+
 
 
 
