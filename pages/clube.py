@@ -414,9 +414,29 @@ if st.session_state.pausado != st.session_state.ultimo_estado_pausa:
     st.session_state.ultimo_estado_pausa = st.session_state.pausado
 
 if st.session_state.pausado:
-    pass  # não monitora; mantém a página viva
+    pass
 else:
-    if dentro_pregao(now):
+    # ✅ FIX: acumula tempo entre re-runs (logo no início do loop)
+    for t in list(st.session_state.tempo_acumulado.keys()):
+        if st.session_state.em_contagem.get(t, False):
+            ultimo = st.session_state.ultimo_update_tempo.get(t)
+            if ultimo:
+                try:
+                    dt_ultimo = datetime.datetime.fromisoformat(ultimo)
+                    if dt_ultimo.tzinfo is None:
+                        dt_ultimo = dt_ultimo.replace(tzinfo=TZ)
+                except Exception:
+                    dt_ultimo = agora_lx()
+                delta = (agora_lx() - dt_ultimo).total_seconds()
+                if delta > 0:
+                    st.session_state.tempo_acumulado[t] += delta
+                    st.session_state.ultimo_update_tempo[t] = agora_lx().isoformat()
+                    st.session_state.log_monitoramento.append(
+                        f"{agora_lx().strftime('%H:%M:%S')} | ⏳ {t}: +{int(delta)}s acumulados (entre ciclos)"
+                    )
+
+    if dentro_pregao(now):        
+
         # ---- Notificação única na abertura do pregão ----
         if not st.session_state.get("avisou_abertura_pregao", False):
             st.session_state["avisou_abertura_pregao"] = True
