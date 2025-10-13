@@ -859,10 +859,27 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
-# ✅ grava com debounce controlado
+
+# ✅ grava com debounce controlado (sem travar o servidor)
 salvar_estado_duravel()
 
-# Reexecução periódica
-time.sleep(sleep_segundos)
-st.rerun()
+# Mostra informação de próximo ciclo e agenda reexecução sem bloquear
+st.markdown(
+    f"<div style='color:#9ca3af;'>🔄 Próximo ciclo automático em <b>{sleep_segundos}s</b>...</div>",
+    unsafe_allow_html=True
+)
+
+
+components.html(f"""
+<script>
+(function(){{
+  const delay = {sleep_segundos * 1000};
+  console.log("⏱️ Novo ciclo em", delay/1000, "segundos");
+  setTimeout(() => {{
+    window.parent.location.reload();
+  }}, delay);
+}})();
+</script>
+""", height=0)
+
 
