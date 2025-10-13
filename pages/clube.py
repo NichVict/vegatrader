@@ -506,18 +506,24 @@ else:
                     if ultimo:
                         try:
                             dt_ultimo = datetime.datetime.fromisoformat(ultimo)
+                            # 👇 Aqui está a correção de timezone:
+                            if dt_ultimo.tzinfo is None:
+                                dt_ultimo = dt_ultimo.replace(tzinfo=TZ)
                         except Exception:
                             dt_ultimo = now
                     else:
                         dt_ultimo = now
+                
                     delta = (now - dt_ultimo).total_seconds()
                     if delta < 0:
                         delta = 0
+                
                     st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
                     st.session_state.ultimo_update_tempo[t] = now.isoformat()
                     st.session_state.log_monitoramento.append(
                         f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                     )
+
 
                 # dispara alerta após tempo máximo acumulado
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
