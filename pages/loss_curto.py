@@ -2,11 +2,6 @@
 """
 loss_curto.py
 LOSS CURTO PRAZO (Streamlit) — Encerramento por STOP
-
-- Dispara ENCERRAMENTO após 1500s (25 min) na zona do preço-alvo
-- Mensagens: "CARTEIRA CURTO PRAZO" (encerramento/stop)
-- Credenciais: lidas de st.secrets
-- Keep-alive: https://losscurto.streamlit.app/
 """
 
 import streamlit as st
@@ -38,8 +33,8 @@ TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
 HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
 
-INTERVALO_VERIFICACAO = 300          # 5 min entre re-runs durante o pregão
-TEMPO_ACUMULADO_MAXIMO = 1500        # 25 min (em segundos)
+INTERVALO_VERIFICACAO = 300          # 5 min
+TEMPO_ACUMULADO_MAXIMO = 1500        # 25 min
 LOG_MAX_LINHAS = 1000
 
 PALETTE = [
@@ -48,13 +43,14 @@ PALETTE = [
 ]
 
 # -----------------------------
-# PERSISTÊNCIA DO ESTADO
+# PERSISTÊNCIA DO ESTADO (versão robusta)
 # -----------------------------
 SAVE_DIR = "session_data"
 os.makedirs(SAVE_DIR, exist_ok=True)
 SAVE_PATH = os.path.join(SAVE_DIR, "state_loss_curto.json")
 
-def salvar_estado():
+def _estado_snapshot():
+    """Cria uma cópia serializável completa do estado."""
     estado = {
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
@@ -69,149 +65,73 @@ def salvar_estado():
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
         "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
     }
+
+    precos_serial = {}
+    for t, dados in estado.get("precos_historicos", {}).items():
+        precos_serial[t] = [
+            ((dt.isoformat() if isinstance(dt, datetime.datetime) else dt), p)
+            for dt, p in dados if isinstance(dados, list)
+        ]
+    estado["precos_historicos"] = precos_serial
+
+    disparos_serial = {}
+    for t, pontos in estado.get("disparos", {}).items():
+        disparos_serial[t] = [
+            ((dt.isoformat() if isinstance(dt, datetime.datetime) else dt), p)
+            for dt, p in pontos if isinstance(pontos, list)
+        ]
+    estado["disparos"] = disparos_serial
+    return estado
+
+
+def salvar_estado(force=False):
+    """Salva o estado local com segurança (com debounce leve)."""
+    now = datetime.datetime.now(TZ)
+    ultimo = st.session_state.get("_ultimo_salvamento")
+    if not force and ultimo and (now - ultimo).total_seconds() < 30:
+        return
+
     try:
+        snapshot = _estado_snapshot()
         with open(SAVE_PATH, "w", encoding="utf-8") as f:
-            json.dump(estado, f, ensure_ascii=False, default=str, indent=2)
-
-        # feedback leve (opcional) no log
-        st.session_state.log_monitoramento.append(
-            f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | 💾 Estado salvo ({os.path.basename(SAVE_PATH)})"
-        )
-
+            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+        st.session_state["_ultimo_salvamento"] = now
     except Exception as e:
-        erro_msg = f"Erro ao salvar estado: {e}"
-        st.session_state.log_monitoramento.append(
-            f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | ⚠️ {erro_msg}"
-        )
-        st.sidebar.error(erro_msg)
+        st.sidebar.error(f"Erro ao salvar estado: {e}")
+
 
 def carregar_estado():
-    if os.path.exists(SAVE_PATH):
-        try:
-            with open(SAVE_PATH, "r", encoding="utf-8") as f:
-                estado = json.load(f)
-            pausado_atual = st.session_state.get("pausado")
-            for k, v in estado.items():
-                if k == "pausado" and pausado_atual is not None:
-                    continue
+    """Carrega estado salvo em disco, sem apagar session_state existente."""
+    if not os.path.exists(SAVE_PATH):
+        return
+    try:
+        with open(SAVE_PATH, "r", encoding="utf-8") as f:
+            estado = json.load(f)
+
+        pausado_atual = st.session_state.get("pausado")
+        for k, v in estado.items():
+            if k == "pausado" and pausado_atual is not None:
+                continue
+            if k in ["precos_historicos", "disparos"]:
+                rec = {}
+                for t, dados in v.items():
+                    conv = []
+                    for dt_str, p in dados:
+                        try:
+                            dt = datetime.datetime.fromisoformat(dt_str)
+                        except Exception:
+                            dt = datetime.datetime.now(TZ)
+                        conv.append((dt, p))
+                    rec[t] = conv
+                st.session_state[k] = rec
+            else:
                 st.session_state[k] = v
 
-            if not st.session_state.get("estado_restaurado", False):
-                st.session_state.estado_restaurado = True
-                st.sidebar.info("💾 Estado (LOSS_CURTO) restaurado com sucesso!")
-                st.session_state.log_monitoramento.append(
-                    f"{datetime.datetime.now(TZ).strftime('%H:%M:%S')} | 💾 Estado (LOSS_CURTO) restaurado"
-                )
-        except Exception as e:
-            st.sidebar.error(f"Erro ao carregar estado: {e}")
-
-# -----------------------------
-# FUNÇÕES AUXILIARES
-# -----------------------------
-def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
-    mensagem = MIMEMultipart()
-    mensagem["From"] = remetente
-    mensagem["To"] = destinatario
-    mensagem["Subject"] = assunto
-    mensagem.attach(MIMEText(corpo, "plain"))
-    with smtplib.SMTP("smtp.gmail.com", 587) as servidor:
-        servidor.starttls()
-        servidor.login(remetente, senha_ou_token)
-        servidor.send_message(mensagem)
-
-@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
-       retry=retry_if_exception_type(requests.exceptions.HTTPError))
-def obter_preco_atual(ticker_symbol):
-    tk = Ticker(ticker_symbol)
-    try:
-        p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
-        if p is not None:
-            return float(p)
-    except Exception:
-        pass
-    preco_atual = tk.history(period="3d")["close"].iloc[-1]
-    return float(preco_atual)
-
-def agora_lx():
-    return datetime.datetime.now(TZ)
-
-def dentro_pregao(dt_now):
-    t = dt_now.time()
-    return HORARIO_INICIO_PREGAO <= t <= HORARIO_FIM_PREGAO
-
-def segundos_ate_abertura(dt_now):
-    hoje_abre = dt_now.replace(hour=HORARIO_INICIO_PREGAO.hour, minute=0, second=0, microsecond=0)
-    hoje_fecha = dt_now.replace(hour=HORARIO_FIM_PREGAO.hour, minute=0, second=0, microsecond=0)
-    if dt_now < hoje_abre:
-        return int((hoje_abre - dt_now).total_seconds()), hoje_abre
-    elif dt_now > hoje_fecha:
-        amanha_abre = hoje_abre + datetime.timedelta(days=1)
-        return int((amanha_abre - dt_now).total_seconds()), amanha_abre
-    else:
-        return 0, hoje_abre
-
-# ---- Cores por ticker ----
-def ensure_color_map():
-    if "ticker_colors" not in st.session_state:
-        st.session_state.ticker_colors = {}
-
-def color_for_ticker(ticker):
-    ensure_color_map()
-    if ticker not in st.session_state.ticker_colors:
-        idx = len(st.session_state.ticker_colors) % len(PALETTE)
-        st.session_state.ticker_colors[ticker] = PALETTE[idx]
-    return st.session_state.ticker_colors[ticker]
-
-TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\.SA\b")
-PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")
-
-def extract_ticker(line):
-    m = TICKER_PAT.search(line)
-    if m:
-        return m.group(1)
-    m2 = PLAIN_TICKER_PAT.search(line)
-    return m2.group(1) if m2 else None
-
-# ---- Renderização do LOG ----
-def render_log_html(lines, selected_tickers=None, max_lines=200):
-    if not lines:
-        st.write("—")
-        return
-    subset = lines[-max_lines:][::-1]
-    if selected_tickers:
-        subset = [l for l in subset if (extract_ticker(l) in selected_tickers)]
-
-    css = """
-    <style>
-      .log-card {
-        background: #0b1220;
-        border: 1px solid #1f2937;
-        border-radius: 10px;
-        padding: 10px 12px;
-        max-height: 360px;
-        overflow-y: auto;
-      }
-      .log-line{
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-        font-size: 13px; line-height: 1.35; margin: 2px 0; color: #e5e7eb;
-        display: flex; align-items: baseline; gap: 8px;
-      }
-      .ts{ color:#9ca3af; min-width:64px; text-align:right; }
-      .badge{ display:inline-block; padding:1px 8px; font-size:12px; border-radius:9999px; color:white; }
-      .msg{ white-space: pre-wrap; }
-    </style>
-    """
-    html = [css, "<div class='log-card'>"]
-    for l in subset:
-        if " | " in l:
-            ts, rest = l.split(" | ", 1)
-        else:
-            ts, rest = "", l
-        tk = extract_ticker(l)
-        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
-        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
-    html.append("</div>")
-    st.markdown("\n".join(html), unsafe_allow_html=True)
+        if not st.session_state.get("_estado_restaurado", False):
+            st.session_state["_estado_restaurado"] = True
+            st.sidebar.info("💾 Estado (LOSS CURTO) restaurado com sucesso!")
+    except Exception as e:
+        st.sidebar.error(f"Erro ao carregar estado: {e}")
 
 # -----------------------------
 # ESTADOS GLOBAIS
@@ -268,7 +188,7 @@ if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
         st.session_state.log_monitoramento.append(
             f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado (LOSS CURTO)"
         )
-        salvar_estado()
+        salvar_estado(force=True)  # ✅ persistir imediatamente
         st.sidebar.success("✅ Estado (LOSS CURTO) apagado e reiniciado.")
         st.rerun()
     except Exception as e:
@@ -307,12 +227,15 @@ else:
 col_limp, col_limp2 = st.sidebar.columns(2)
 if col_limp.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
+    salvar_estado(force=True)  # ✅ persistir imediatamente
     st.sidebar.success("Histórico limpo!")
 if col_limp2.button("🧽 Limpar LOG"):
     st.session_state.log_monitoramento.clear()
+    salvar_estado(force=True)  # ✅ persistir imediatamente
     st.sidebar.success("Log limpo!")
 if st.sidebar.button("🧼 Limpar marcadores ⭐"):
     st.session_state.disparos = {}
+    salvar_estado(force=True)  # ✅ persistir imediatamente
     st.sidebar.success("Marcadores limpos!")
 
 tickers_existentes = sorted(set([a["ticker"] for a in st.session_state.ativos])) if st.session_state.ativos else []
@@ -349,7 +272,7 @@ if st.button("➕ Adicionar ativo"):
         st.session_state.precos_historicos[ticker] = []
         st.session_state.ultimo_update_tempo[ticker] = None
         st.success(f"Ativo {ticker} adicionado com sucesso!")
-
+        salvar_estado(force=True)  # ✅ persistir imediatamente para sobreviver ao refresh
 # -----------------------------
 # STATUS + GRÁFICO + LOG
 # -----------------------------
@@ -580,6 +503,7 @@ else:
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ENCERRAMENTO: {', '.join(tickers_para_remover)}"
             )
+            salvar_estado(force=True)  # ✅ persistir remoções imediatamente
 
         # Gráfico (linhas + marcadores ⭐)
         fig = go.Figure()
@@ -669,6 +593,7 @@ else:
                     st.session_state.log_monitoramento.append(
                         f"{now.strftime('%H:%M:%S')} | 🔄 Keep-alive ping enviado para {APP_URL}"
                     )
+                    salvar_estado(force=True)  # ✅ persistir timestamp do ping
         except Exception as e:
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | ⚠️ Erro no keep-alive: {e}"
@@ -689,43 +614,8 @@ if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, max_lines=250)
 
+# ✅ salvamento debounced (reduz IO, mas protege o estado)
 salvar_estado()
-
-# -----------------------------
-# 🧪 PAINEL DE DEBUG / BACKUP DO ESTADO
-# -----------------------------
-with st.expander("🧪 Debug / Backup do estado", expanded=False):
-    st.caption(f"Arquivo: `{SAVE_PATH}`")
-
-    # 1️⃣ EM MEMÓRIA (session_state filtrado)
-    chaves = [
-        "ativos", "tempo_acumulado", "em_contagem", "status",
-        "precos_historicos", "historico_alertas", "disparos",
-        "pausado", "ultimo_update_tempo", "avisou_abertura_pregao"
-    ]
-    em_memoria = {k: st.session_state.get(k) for k in chaves}
-    st.markdown("**Em memória (session_state):**")
-    st.json(em_memoria)
-
-    # 2️⃣ EM DISCO (arquivo salvo)
-    try:
-        if os.path.exists(SAVE_PATH):
-            with open(SAVE_PATH, "r", encoding="utf-8") as f:
-                state_file = json.load(f)
-
-            st.markdown("**No arquivo (JSON salvo):**")
-            st.json(state_file)
-
-            st.download_button(
-                "⬇️ Baixar JSON salvo",
-                data=json.dumps(state_file, ensure_ascii=False, indent=2),
-                file_name=os.path.basename(SAVE_PATH),
-                mime="application/json",
-            )
-        else:
-            st.info("Ainda não existe arquivo salvo.")
-    except Exception as e:
-        st.error(f"Erro ao exibir JSON: {e}")
 
 # Dorme e reexecuta (server-side; não depende do navegador)
 time.sleep(sleep_segundos)
