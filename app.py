@@ -127,7 +127,7 @@ ROBOS = [
     {
         "key": "loss_clube",
         "title": "LOSS CLUBE",
-        "emoji": "🛑",
+        "emoji": "🏛️🛑",
         "files": [
             "session_data/state_loss_clube.json",
             "state_loss_clube.json"
