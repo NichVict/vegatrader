@@ -97,18 +97,17 @@ def _estado_snapshot():
 def salvar_estado_duravel():
     snapshot = _estado_snapshot()
 
-    # --- Supabase ---
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates",
+        "Content-Type": "application/json"
     }
-    payload = {"k": STATE_KEY, "v": snapshot}
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}"
+    # 👇 WHERE da linha que será atualizada
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
     try:
-        r = requests.patch(url, headers=headers, data=json.dumps(payload), timeout=15)
-        if r.status_code not in (200, 201, 204):
+        r = requests.patch(url, headers=headers, data=json.dumps({"v": snapshot}), timeout=15)
+        # Se a tabela estiver com RLS e sem policy de UPDATE, pode falhar — prefira o POST com on_conflict
+        if r.status_code not in (200, 204):
             st.sidebar.error(f"Erro ao salvar estado remoto (PATCH): {r.text}")
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
@@ -120,6 +119,7 @@ def salvar_estado_duravel():
             json.dump(snapshot, f, ensure_ascii=False, indent=2)
     except Exception as e:
         st.sidebar.warning(f"⚠️ Erro ao salvar local: {e}")
+
 
 def carregar_estado_duravel():
     headers = {
