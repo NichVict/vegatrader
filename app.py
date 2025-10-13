@@ -26,19 +26,28 @@ st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_ico
 # Estilos globais (cards e bolinha flutuante)
 st.markdown("""
 <style>
+body {
+    background-color: #050915;
+    color: #e5e7eb;
+}
+
 .robot-card {
     position: relative;
-    background-color: #0b1220;
+    background: linear-gradient(145deg, #0c1424 0%, #111827 100%);
     border: 1px solid #1f2937;
-    border-radius: 14px;
-    padding: 18px 20px;
-    margin-bottom: 25px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-    transition: box-shadow 0.2s ease-in-out;
+    border-radius: 16px;
+    padding: 18px 22px;
+    margin-bottom: 28px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+    transition: all 0.25s ease-in-out;
 }
+
 .robot-card:hover {
-    box-shadow: 0 4px 12px rgba(16,185,129,0.3);
+    box-shadow: 0 0 15px rgba(16,185,129,0.3);
+    border-color: #10b981;
+    transform: translateY(-2px);
 }
+
 .status-dot {
     position: absolute;
     top: 16px;
@@ -48,6 +57,8 @@ st.markdown("""
     border-radius: 50%;
     box-shadow: 0 0 8px rgba(0,0,0,0.4);
 }
+
+/* cores e pulsar */
 .status-green { 
     background-color: #22c55e;
     animation: pulse-green 1.4s infinite;
@@ -61,24 +72,30 @@ st.markdown("""
     animation: pulse-red 3s infinite;
 }
 
-/* Animações suaves de pulsar */
+/* Animações */
 @keyframes pulse-green {
   0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
-  70% { box-shadow: 0 0 0 10px rgba(34,197,94,0); }
+  70% { box-shadow: 0 0 0 12px rgba(34,197,94,0); }
   100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
 }
 @keyframes pulse-yellow {
   0% { box-shadow: 0 0 0 0 rgba(250,204,21,0.6); }
-  70% { box-shadow: 0 0 0 10px rgba(250,204,21,0); }
+  70% { box-shadow: 0 0 0 12px rgba(250,204,21,0); }
   100% { box-shadow: 0 0 0 0 rgba(250,204,21,0); }
 }
 @keyframes pulse-red {
   0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
-  70% { box-shadow: 0 0 0 10px rgba(239,68,68,0); }
+  70% { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
   100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
+}
+
+/* Ajuste dos títulos e badges */
+h3 {
+    color: #f9fafb;
 }
 </style>
 """, unsafe_allow_html=True)
+
 
 # ============================
 # CABEÇALHO COM LOGO E TÍTULO (VERSÃO FUNCIONAL)
