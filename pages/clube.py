@@ -51,9 +51,10 @@ def salvar_estado():
         "log_monitoramento": st.session_state.get("log_monitoramento", []),
         "disparos": st.session_state.get("disparos", {}),
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
+        "em_contagem": st.session_state.get("em_contagem", {}),   # 👈 ADICIONADO
         "status": st.session_state.get("status", {}),
         "precos_historicos": st.session_state.get("precos_historicos", {}),
-        "pausado": st.session_state.get("pausado", False),  # começa ATIVO
+        "pausado": st.session_state.get("pausado", False),
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
@@ -703,11 +704,17 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
-# ==== Salva estado antes de dormir ====
-salvar_estado()
-
-# Dorme e reexecuta (server-side; não depende do navegador)
+# ==== Atualiza timestamp antes de salvar ====
+# garante que o próximo delta inclua o tempo dormido
 time.sleep(sleep_segundos)
+
+now = agora_lx()
+for t in st.session_state.em_contagem:
+    if st.session_state.em_contagem[t]:
+        st.session_state.ultimo_update_tempo[t] = now.isoformat()
+
+# salva depois do tempo dormido
+salvar_estado()
 st.rerun()
 
 
