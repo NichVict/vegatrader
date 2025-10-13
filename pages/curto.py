@@ -100,12 +100,13 @@ def salvar_estado_duravel():
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Prefer": "resolution=merge-duplicates"  # 👈 ESSENCIAL
     }
 
-    # 👇 Substitua PATCH por POST com merge automático
     url = f"{SUPABASE_URL}/rest/v1/{TABLE}?on_conflict=k"
     try:
+        # POST faz UPSERT quando há on_conflict + Prefer: merge-duplicates
         r = requests.post(url, headers=headers, data=json.dumps({"k": STATE_KEY, "v": snapshot}), timeout=15)
         st.sidebar.write("💾 Supabase status:", r.status_code)
         st.sidebar.write("💾 Supabase resposta:", r.text)
@@ -113,6 +114,15 @@ def salvar_estado_duravel():
             st.sidebar.error(f"Erro ao salvar estado remoto: {r.text}")
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
+
+    # --- Local fallback ---
+    try:
+        os.makedirs("session_data", exist_ok=True)
+        with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump(snapshot, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ Erro ao salvar local: {e}")
+
 
     # --- Local ---
     try:
