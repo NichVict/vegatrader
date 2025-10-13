@@ -23,33 +23,6 @@ import plotly.graph_objects as go
 # ============================
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
 
-st.markdown("""
-<style>
-.robot-card {
-    position: relative;
-    background-color: #0b1220;
-    border: 1px solid #1f2937;
-    border-radius: 14px;
-    padding: 18px 20px;
-    margin-bottom: 25px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.25);
-}
-.status-dot {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    box-shadow: 0 0 8px rgba(0,0,0,0.4);
-}
-.status-green { background-color: #22c55e; }
-.status-yellow { background-color: #facc15; }
-.status-red { background-color: #ef4444; }
-</style>
-""", unsafe_allow_html=True)
-
-
 # ============================
 # CABEÇALHO COM LOGO E TÍTULO
 # ============================
@@ -305,33 +278,6 @@ def nice_dt(dt: Optional[datetime.datetime]) -> str:
     return dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 
-def badge_status_tempo(last_dt: Optional[datetime.datetime]) -> str:
-    """Gera um badge visual de status com base no tempo desde o último update."""
-    if not last_dt:
-        return format_badge("Sem atualização", color="#991b1b", bg="#fee2e2")
-
-    delta_min = (agora_lx() - last_dt).total_seconds() / 60
-    if delta_min < 5:
-        return format_badge("🟢 Atualizado há poucos minutos", color="#065f46", bg="#d1fae5")
-    elif delta_min < 30:
-        return format_badge(f"🟡 Última atualização há {int(delta_min)} min", color="#78350f", bg="#fef3c7")
-    else:
-        return format_badge(f"🔴 Inativo há {int(delta_min)} min", color="#7f1d1d", bg="#fee2e2")
-
-def status_dot_html(last_dt: Optional[datetime.datetime]) -> str:
-    """Gera o HTML da bolinha de status (verde, amarela ou vermelha)."""
-    if not last_dt:
-        cor = "status-red"
-    else:
-        delta_min = (agora_lx() - last_dt).total_seconds() / 60
-        if delta_min < 5:
-            cor = "status-green"
-        elif delta_min < 30:
-            cor = "status-yellow"
-        else:
-            cor = "status-red"
-    return f"<div class='status-dot {cor}'></div>"
-
 # ============================
 # TÍTULO + AUTO-REFRESH
 # ============================
@@ -402,12 +348,7 @@ def render_robot_card(robo: Dict[str, Any], container):
     app_url = robo.get("app_url")
 
     with container:
-    st.markdown("<div class='robot-card'>", unsafe_allow_html=True)
-    st.markdown(f"### {emoji} {title}", unsafe_allow_html=True)
-
-    # bolinha flutuante de status
-    last_dt = summarize_robot_state(loaded_states.get(key, {})).get("last_update")
-    st.markdown(status_dot_html(last_dt), unsafe_allow_html=True)
+        st.markdown(f"### {emoji} {title}")
 
         state = loaded_states.get(key)
         if state is None:
@@ -417,19 +358,12 @@ def render_robot_card(robo: Dict[str, Any], container):
             else:
                 st.warning("Arquivo de estado ainda não foi criado por este robô.")
             if app_url:
-                st.link_button("Abrir app", app_url, type="primary")              
+                st.link_button("Abrir app", app_url, type="primary")
             return  # sem st.markdown("---") aqui para manter altura constante
 
         now_dt = agora_lx()
-        last_dt = summarize_robot_state(state)["last_update"]
-        status_badge = badge_status_tempo(last_dt)
-        badges = (
-            f"{badge_pregao(now_dt)} &nbsp;&nbsp; "
-            f"{badge_pause(bool(state.get('pausado', False)))} &nbsp;&nbsp; "
-            f"{status_badge}"
-        )
+        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))}"
         st.markdown(badges, unsafe_allow_html=True)
-
 
         summary = summarize_robot_state(state)
 
@@ -472,7 +406,6 @@ def render_robot_card(robo: Dict[str, Any], container):
         if bt_col2.button("Forçar refresh", key=f"refresh_{key}"):
             st.toast(f"🔄 Atualizando {title}…", icon="🔁")
             st.rerun()
-st.markdown("</div>", unsafe_allow_html=True)
 
 
 # ============================
@@ -495,7 +428,6 @@ st.caption(
     "© Painel Central 1Milhão — consolidado dos robôs. "
     "Mantenha cada app em execução para dados atualizados."
 )
-
 
 
 
