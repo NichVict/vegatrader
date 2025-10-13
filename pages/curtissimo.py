@@ -265,7 +265,7 @@ def notificar_preco_alvo_alcancado_curto(ticker_symbol, preco_alvo, preco_atual,
     )
     remetente = st.secrets.get("email_sender", "avisoscanal1milhao@gmail.com")
     senha_ou_token = st.secrets.get("gmail_app_password", "anoe gegm boqj ldzo")
-    destinatario = st.secrets.get("email_recipient_curto", "listacurtissimo@googlegroups.com")
+    destinatario = st.secrets.get("email_recipient_curtissimo", "listacurtissimo@googlegroups.com")
     assunto = f"ALERTA CURTISSIMO PRAZO: {msg_op} em {ticker_symbol_sem_ext}"
     token_telegram = st.secrets.get("telegram_token", "6357672250:AAFfn3fIDi-3DS3a4DuuD09Lf-ERyoMgGSY")
     chat_id = st.secrets.get("telegram_chat_id_curtissimo", "-1002074291817")
