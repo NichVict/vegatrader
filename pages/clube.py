@@ -44,14 +44,14 @@ os.makedirs(SAVE_DIR, exist_ok=True)
 SAVE_PATH = os.path.join(SAVE_DIR, "state_clube_compra_venda.json")
 
 def salvar_estado():
-    """Salva os dados essenciais do app em JSON."""
+    """Salva os dados essenciais do app em JSON (com persistência completa, incluindo data do aviso de abertura)."""
     estado = {
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
         "log_monitoramento": st.session_state.get("log_monitoramento", []),
         "disparos": st.session_state.get("disparos", {}),
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
-        "em_contagem": st.session_state.get("em_contagem", {}),   # 👈 ADICIONADO
+        "em_contagem": st.session_state.get("em_contagem", {}),
         "status": st.session_state.get("status", {}),
         "precos_historicos": st.session_state.get("precos_historicos", {}),
         "pausado": st.session_state.get("pausado", False),
@@ -59,12 +59,15 @@ def salvar_estado():
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
         "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
+        "data_ultimo_aviso_abertura": st.session_state.get("data_ultimo_aviso_abertura", None),  # ✅ NOVO CAMPO PERSISTENTE
     }
+
     try:
         with open(SAVE_PATH, "w", encoding="utf-8") as f:
             json.dump(estado, f, ensure_ascii=False, default=str, indent=2)
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado: {e}")
+
 
 def carregar_estado():
     """Restaura os dados do JSON (se existir), sem sobrescrever controles interativos."""
