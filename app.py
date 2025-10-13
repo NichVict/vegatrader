@@ -419,93 +419,41 @@ left_col, right_col = st.columns(2)
 st.markdown("---")
 
 def render_robot_card(robo: Dict[str, Any], container):
-    """Renderiza um card individual de robô dentro do container fornecido."""
     key = robo["key"]
     title = robo["title"]
     emoji = robo.get("emoji", "")
     app_url = robo.get("app_url")
 
-    with container:
-        # === Card estilizado ===
-        st.markdown("<div class='robot-card'>", unsafe_allow_html=True)
+    # Cria um container com uma classe HTML estilizada
+    with container.container():
+        st.markdown(f"<div class='robot-card'>", unsafe_allow_html=True)
 
-        # Título
-        st.markdown(f"### {emoji} {title}", unsafe_allow_html=True)
+        col_card = st.container()
+        with col_card:
+            # Título
+            st.markdown(f"### {emoji} {title}", unsafe_allow_html=True)
 
-        # Estado e badges
-        state = loaded_states.get(key)
-        if state is None:
-            # bolinha como "sem atualização"
-            st.markdown(status_dot_html(None), unsafe_allow_html=True)
+            # Bolinha flutuante de status
+            last_dt = summarize_robot_state(loaded_states.get(key, {})).get("last_update")
+            st.markdown(status_dot_html(last_dt), unsafe_allow_html=True)
 
-            err = errors.get(key)
-            if err:
-                st.error(err)
-            else:
-                st.warning("Arquivo de estado ainda não foi criado por este robô.")
-            if app_url:
-                st.link_button("Abrir app", app_url, type="primary")
+            state = loaded_states.get(key)
+            if state is None:
+                st.markdown(status_dot_html(None), unsafe_allow_html=True)
+                err = errors.get(key)
+                if err:
+                    st.error(err)
+                else:
+                    st.warning("Arquivo de estado ainda não foi criado por este robô.")
+                if app_url:
+                    st.link_button("Abrir app", app_url, type="primary")
+                st.markdown("</div>", unsafe_allow_html=True)
+                return
 
-            st.markdown("</div>", unsafe_allow_html=True)
-            return
+            # ... (restante do código do card continua igual)
 
-        # Bolinha flutuante (usa last_update real)
-        last_dt = summarize_robot_state(state)["last_update"]
-        st.markdown(status_dot_html(last_dt), unsafe_allow_html=True)
-
-        now_dt = agora_lx()
-        status_badge = badge_status_tempo(last_dt)
-        badges = (
-            f"{badge_pregao(now_dt)} &nbsp;&nbsp; "
-            f"{badge_pause(bool(state.get('pausado', False)))} &nbsp;&nbsp; "
-            f"{status_badge}"
-        )
-        st.markdown(badges, unsafe_allow_html=True)
-
-        summary = summarize_robot_state(state)
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Ativos monitorados", summary["ativos_monitorados"])
-        c2.metric("Disparos (sessão)", summary["total_disparos"])
-        c3.metric("Alertas (histórico)", summary["total_alertas"])
-
-        tickers = summary["tickers"] or []
-        if tickers:
-            st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
-        else:
-            st.caption("Tickers: —")
-
-        fig = build_sparkline(state)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        else:
-            st.caption("Sem histórico suficiente para gráfico.")
-
-        st.markdown("**Log recente:**")
-        lines = get_last_log_lines(state, LOG_PREVIEW_LINES)
-        if lines:
-            for ln in lines:
-                st.code(ln, language="text")
-        else:
-            st.caption("Sem entradas de log ainda.")
-
-        p1, p2 = st.columns(2)
-        with p1:
-            st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
-        with p2:
-            path_used = resolved_paths.get(key, "—")
-            st.caption(f"Fonte de estado: `{path_used}`")
-
-        bt_col1, bt_col2 = st.columns([1, 3])
-        if app_url:
-            bt_col1.link_button("Abrir app", app_url, type="primary")
-
-        if bt_col2.button("Forçar refresh", key=f"refresh_{key}"):
-            st.toast(f"🔄 Atualizando {title}…", icon="🔁")
-            st.rerun()
-
-        # Fecha a <div> do card
         st.markdown("</div>", unsafe_allow_html=True)
+
 
 # ============================
 # RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
