@@ -734,13 +734,32 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
 # garante que o próximo delta inclua o tempo dormido
 time.sleep(sleep_segundos)
 
+# ==== Atualiza timestamps e salva estado (mantém progresso real) ====
 now = agora_lx()
-for t in st.session_state.em_contagem:
-    if st.session_state.em_contagem[t]:
+
+# garante que nenhum ticker em contagem perca tempo entre refreshs
+for t in list(st.session_state.tempo_acumulado.keys()):
+    if st.session_state.em_contagem.get(t, False):
+        ultimo = st.session_state.ultimo_update_tempo.get(t)
+        if ultimo:
+            try:
+                dt_ultimo = datetime.datetime.fromisoformat(ultimo)
+                if dt_ultimo.tzinfo is None:
+                    dt_ultimo = dt_ultimo.replace(tzinfo=TZ)
+            except Exception:
+                dt_ultimo = now
+            delta = (now - dt_ultimo).total_seconds()
+            if delta > 0:
+                st.session_state.tempo_acumulado[t] += delta
+                st.session_state.log_monitoramento.append(
+                    f"{now.strftime('%H:%M:%S')} | 🕓 {t}: +{int(delta)}s persistidos no refresh"
+                )
         st.session_state.ultimo_update_tempo[t] = now.isoformat()
 
-# salva depois do tempo dormido
+# salva estado completo (protegido)
 salvar_estado()
+time.sleep(sleep_segundos)
 st.rerun()
+
 
 
