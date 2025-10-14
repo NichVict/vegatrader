@@ -799,7 +799,7 @@ else:
             if not ultimo_ping or (now - ultimo_ping).total_seconds() > 900:
                 requests.get(APP_URL, timeout=5)
                 st.session_state["ultimo_ping_keepalive"] = now.isoformat()
-                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | 🔄 Keep-alive enviado")
+                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | 🔄 Hibernado e aguardando próximo pregão")
                 salvar_estado_duravel()
         except Exception as e:
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Erro keep-alive: {e}")
