@@ -25,11 +25,11 @@ import os
 st.set_page_config(page_title="CLUBE - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")                    # Lisboa (DST automático)
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)   # 14:00 Lisboa
+HORARIO_INICIO_PREGAO = datetime.time(10, 0, 0)   # 14:00 Lisboa
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)   # 21:00 Lisboa
 
-INTERVALO_VERIFICACAO = 300                       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 1500                     # 25 min (1500s)
+INTERVALO_VERIFICACAO = 60                       # 5 min
+TEMPO_ACUMULADO_MAXIMO = 240                     # 25 min (1500s)
 LOG_MAX_LINHAS = 1000                             # limite de linhas do log
 
 # Paleta de cores (rotaciona entre tickers)
