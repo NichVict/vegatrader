@@ -630,23 +630,95 @@ grafico.plotly_chart(fig, use_container_width=True)
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
     salvar_estado_duravel()
+# ---------- LOG: cor por ticker + box rolável + ordem decrescente ----------
+
+PALETTE = [
+    "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
+    "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
+]
+
+def ensure_color_map():
+    if "ticker_colors" not in st.session_state:
+        st.session_state.ticker_colors = {}
+
+def color_for_ticker(ticker):
+    ensure_color_map()
+    if ticker not in st.session_state.ticker_colors:
+        idx = len(st.session_state.ticker_colors) % len(PALETTE)
+        st.session_state.ticker_colors[ticker] = PALETTE[idx]
+    return st.session_state.ticker_colors[ticker]
+
+TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\.SA\b")
+PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")
 
 def extract_ticker(line):
-    m = re.search(r"\b([A-Z0-9]{4,6})\b", line)
-    return m.group(1) if m else None
+    m = TICKER_PAT.search(line)
+    if m:
+        return m.group(1)
+    m2 = PLAIN_TICKER_PAT.search(line)
+    return m2.group(1) if m2 else None
 
 def render_log_html(lines, selected_tickers=None, max_lines=250):
+    """Renderiza o log no mesmo estilo visual do clube.py (cores, badges, rolagem)."""
     if not lines:
         st.write("—")
         return
     subset = lines[-max_lines:][::-1]
     if selected_tickers:
         subset = [l for l in subset if extract_ticker(l) in selected_tickers]
-    html = ["<div style='background:#0b1220;border-radius:8px;padding:10px;max-height:360px;overflow-y:auto;'>"]
+
+    css = """
+    <style>
+      .log-card {
+        background: #0b1220;
+        border: 1px solid #1f2937;
+        border-radius: 10px;
+        padding: 10px 12px;
+        max-height: 360px;
+        overflow-y: auto;
+      }
+      .log-line {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 1.35;
+        margin: 2px 0;
+        color: #e5e7eb;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .ts {
+        color: #9ca3af;
+        min-width: 64px;
+        text-align: right;
+      }
+      .badge {
+        display: inline-block;
+        padding: 1px 8px;
+        font-size: 12px;
+        border-radius: 9999px;
+        color: white;
+      }
+      .msg {
+        white-space: pre-wrap;
+      }
+    </style>
+    """
+
+    html = [css, "<div class='log-card'>"]
     for l in subset:
-        html.append(f"<div style='font-family:monospace;color:#e5e7eb;margin:2px 0;'>{l}</div>")
+        if " | " in l:
+            ts, rest = l.split(" | ", 1)
+        else:
+            ts, rest = "", l
+        tk = extract_ticker(l)
+        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
+        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
     html.append("</div>")
+
     st.markdown("\n".join(html), unsafe_allow_html=True)
+
+
 
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
