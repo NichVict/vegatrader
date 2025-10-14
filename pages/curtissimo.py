@@ -207,7 +207,7 @@ def inicializar_estado():
 
 inicializar_estado()
 carregar_estado_duravel()
-inicializar_estado()
+
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
