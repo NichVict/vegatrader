@@ -122,6 +122,8 @@ def carregar_estado_duravel():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v"
     remoto_ok = False
+    origem = "❌ Nenhum"
+
     try:
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200 and r.json():
@@ -143,6 +145,7 @@ def carregar_estado_duravel():
                     st.session_state[k] = v
             st.sidebar.info("💾 Estado restaurado da nuvem!")
             remoto_ok = True
+            origem = "☁️ Supabase"
         else:
             st.sidebar.info("ℹ️ Nenhum estado remoto ainda.")
     except Exception as e:
@@ -168,8 +171,18 @@ def carregar_estado_duravel():
                 else:
                     st.session_state[k] = v
             st.sidebar.info("💾 Estado carregado do local (fallback)!")
+            origem = "📁 Local"
         except Exception as e:
             st.sidebar.error(f"Erro no fallback local: {e}")
+
+    # 🔧 Consistência pós-carregamento (se havia tempo acumulado sem timestamp)
+    for t in st.session_state.get("tempo_acumulado", {}):
+        if st.session_state.tempo_acumulado.get(t, 0) > 0 and not st.session_state.ultimo_update_tempo.get(t):
+            st.session_state.ultimo_update_tempo[t] = agora_lx().isoformat()
+
+    st.session_state["origem_estado"] = origem
+    st.session_state["__carregado_ok__"] = (origem in ("☁️ Supabase", "📁 Local"))
+
 
 def apagar_estado_remoto():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
@@ -207,8 +220,6 @@ def inicializar_estado():
 
 inicializar_estado()
 carregar_estado_duravel()
-st.session_state["origem_estado"] = "☁️ Supabase" if "💾 Estado restaurado da nuvem!" in st.session_state.log_monitoramento else "📁 Local"
-
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
