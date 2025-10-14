@@ -344,8 +344,7 @@ A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
     <h2 style="color:#3b82f6;">💥 ALERTA DE {msg_op.upper()} ATIVADA!</h2>
     <p><b>Ticker:</b> {ticker_symbol_sem_ext}</p>
     <p><b>Preço alvo:</b> R$ {preco_alvo:.2f}</p>
-    <p><b>Preço atual:</b> R$ {preco_atual:.2f}</p>
-    <p style="margin-top:12px;">⏱ <i>Aguardar candle de 60 minutos para confirmação.</i></p>
+    <p><b>Preço atual:</b> R$ {preco_atual:.2f}</p>    
     <p>📊 <a href="https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}" style="color:#60a5fa;">Ver gráfico no TradingView</a></p>
     <hr style="border:1px solid #3b82f6; margin:20px 0;">
     <p style="font-size:11px; line-height:1.4; color:#9ca3af;">
