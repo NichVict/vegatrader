@@ -770,7 +770,7 @@ else:
         ⏸️ Pregão fechado. Reabre em <b>{datetime.timedelta(seconds=faltam)}</b> (às {prox_abertura.strftime('%H:%M')}).</div>""",
         height=70)
         try:
-            APP_URL = "https://curtoprazo.streamlit.app"
+            APP_URL = "https://curtissimo.streamlit.app"
             ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
             if isinstance(ultimo_ping, str):
                 ultimo_ping = datetime.datetime.fromisoformat(ultimo_ping)
