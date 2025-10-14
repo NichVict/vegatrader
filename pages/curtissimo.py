@@ -430,7 +430,7 @@ def notificar_abertura_pregao_uma_vez_por_dia():
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
-if st.sidebar.button("🧹 Apagar Tabela"):
+if st.sidebar.button("🧹 Limpar Tabela"):
     try:
         # 1) Apaga remoto (Supabase)
         apagar_estado_remoto()
@@ -494,11 +494,11 @@ if st.session_state.historico_alertas:
 else:
     st.sidebar.info("Nenhum alerta ainda.")
 
-if st.sidebar.button("🧼 Limpar histórico ⭐"):
+if st.sidebar.button("🧹 Limpar Histórico"):
     st.session_state.historico_alertas.clear()
     salvar_estado_duravel(force=True)
     st.sidebar.success("Histórico limpo!")
-if st.sidebar.button("🧼 Limpar monitoramento ⭐"):
+if st.sidebar.button("🧹 Limpar Monitoramento"):
     st.session_state.log_monitoramento.clear()
     salvar_estado_duravel(force=True)
     st.sidebar.success("Log limpo!")
