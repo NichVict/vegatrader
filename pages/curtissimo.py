@@ -833,6 +833,7 @@ else:
 
 
                 
+                
                 # 🚀 Proteção contra disparo duplicado
                 if (
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
@@ -843,9 +844,12 @@ else:
                     # Calcula tempo acumulado antes do log
                     tempo_total = st.session_state.tempo_acumulado.get(t, 0)
                 
+                    # Garante que o valor máximo está disponível no session_state
+                    tempo_max = st.session_state.get("tempo_acumulado_maximo", TEMPO_ACUMULADO_MAXIMO)
+                
                     # Log de debug arredondado
                     st.session_state.log_monitoramento.append(
-                        f"🧠 DEBUG: {t} com {round(tempo_total)}s acumulados (máx {TEMPO_ACUMULADO_MAXIMO})"
+                        f"🧠 DEBUG: {t} com {round(tempo_total)}s acumulados (máx {tempo_max})"
                     )
                 
                     # Envio da notificação
@@ -867,7 +871,9 @@ else:
                     st.session_state.tempo_acumulado[t] = 0
                     tickers_para_remover.append(t)
                 
+                    # Salva imediatamente para consistência
                     salvar_estado_duravel(force=True)
+
 
             else:
                 if st.session_state.em_contagem.get(t, False):
