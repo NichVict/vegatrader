@@ -27,7 +27,7 @@ st.set_page_config(page_title="CURTISSIMO PRAZO - COMPRA E VENDA", layout="wide"
 
 TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(10, 0, 0)
-HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)
+HORARIO_FIM_PREGAO    = datetime.time(23, 0, 0)
 
 INTERVALO_VERIFICACAO = 60
 TEMPO_ACUMULADO_MAXIMO = 180
