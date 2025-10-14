@@ -831,14 +831,27 @@ else:
                 st.session_state.log_monitoramento.append(f"🧠 DEBUG: {t} com {round(tempo_total)}s acumulados (máx {TEMPO_ACUMULADO_MAXIMO})")
 
 
+                
                 # 🚀 Proteção contra disparo duplicado
                 if (
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
                     and st.session_state.status.get(t) != "🚀 Disparado"
                 ):
                     st.session_state.status[t] = "🚀 Disparado"
+                
+                    # Calcula tempo acumulado antes do log
+                    tempo_total = st.session_state.tempo_acumulado.get(t, 0)
+                
+                    # Log de debug arredondado
+                    st.session_state.log_monitoramento.append(
+                        f"🧠 DEBUG: {t} com {round(tempo_total)}s acumulados (máx {TEMPO_ACUMULADO_MAXIMO})"
+                    )
+                
+                    # Envio da notificação
                     alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
                     st.warning(alerta_msg)
+                
+                    # Registro no histórico e gráfico
                     st.session_state.historico_alertas.append({
                         "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
                         "ticker": t,
@@ -847,11 +860,14 @@ else:
                         "preco_atual": preco_atual
                     })
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
+                
                     # 🔴 Parar contagem e preparar remoção
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
                     tickers_para_remover.append(t)
+                
                     salvar_estado_duravel(force=True)
+
             else:
                 if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
