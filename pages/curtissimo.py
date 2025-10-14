@@ -384,7 +384,7 @@ if st.sidebar.button("🧼 Limpar marcadores ⭐"):
     }
 
     # Salva e confirma visualmente
-    salvar_estado()
+    salvar_estado_duravel(force=True)
     st.sidebar.success("Marcadores e históricos antigos limpos!")
 
 
