@@ -894,7 +894,7 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
-refresh_ms = 1000 * (INTERVALO_VERIFICACAO if dentro_pregao(agora_lx()) else sleep_segundos)
+refresh_ms = 10_000 * (INTERVALO_VERIFICACAO if dentro_pregao(agora_lx()) else sleep_segundos)
 st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
 
 
