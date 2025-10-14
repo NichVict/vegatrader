@@ -219,6 +219,7 @@ def inicializar_estado():
     ensure_color_map()
 
 inicializar_estado()
+st.session_state["tempo_acumulado_maximo"] = TEMPO_ACUMULADO_MAXIMO
 carregar_estado_duravel()
 
 # -----------------------------
