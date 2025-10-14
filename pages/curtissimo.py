@@ -1,6 +1,4 @@
-HAJA COMO UM PROGRAMADOR PROFISSIONAL DE PYTHON E DOMINIO DO STREAMLIT.
 
-Segue script abaixo. precisa fazer algumas pequenas correçoes nele.
 
 # -*- coding: utf-8 -*-
 import streamlit as st
