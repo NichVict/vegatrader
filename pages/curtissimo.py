@@ -689,12 +689,20 @@ else:
                     else:
                         dt_ultimo = now
 
-                    # 🧮 Cálculo do delta
+                    
+                    # 🧮 Calcula delta (diferença entre agora e último update)
                     delta = (now - dt_ultimo).total_seconds()
+                    
+                    # Se passou tempo demais (ex: app pausado ou recarregado após horas), limita a 2x o intervalo normal
                     if delta < 0:
+                        st.session_state.log_monitoramento.append(f"🐞 DEBUG {t}: delta negativo ajustado ({delta:.2f}s)")
                         delta = 0
-                    if delta > INTERVALO_VERIFICACAO + 5:
-                        delta = INTERVALO_VERIFICACAO + 5
+                    elif delta > INTERVALO_VERIFICACAO * 2:
+                        st.session_state.log_monitoramento.append(
+                            f"🐞 DEBUG {t}: delta muito grande ({delta:.2f}s) → limitado a {INTERVALO_VERIFICACAO*2}s"
+                        )
+                        delta = INTERVALO_VERIFICACAO * 2
+
 
                     st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
                     st.session_state.ultimo_update_tempo[t] = now.isoformat()
