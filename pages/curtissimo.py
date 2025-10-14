@@ -549,13 +549,29 @@ else:
                     salvar_estado_duravel(force=True)
                 else:
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
-                    dt_ultimo = datetime.datetime.fromisoformat(ultimo) if ultimo else now
+                    if isinstance(ultimo, str):
+                        try:
+                            dt_ultimo = datetime.datetime.fromisoformat(ultimo)
+                        except Exception:
+                            dt_ultimo = now
+                    elif isinstance(ultimo, datetime.datetime):
+                        dt_ultimo = ultimo
+                    else:
+                        dt_ultimo = now
+                    
                     delta = max(0, min((now - dt_ultimo).total_seconds(), INTERVALO_VERIFICACAO + 5))
-                    st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
-                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
-                    st.session_state.log_monitoramento.append(
-                        f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
-                    )
+                    
+                    # se o delta for positivo, acumula normalmente
+                    if delta > 0:
+                        st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
+                        st.session_state.ultimo_update_tempo[t] = now.isoformat()
+                        st.session_state.log_monitoramento.append(
+                            f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
+                        )
+                    else:
+                        st.session_state.log_monitoramento.append(
+                            f"⏸ {t}: aguardando próximo ciclo válido (delta={int(delta)}s)"
+                        )
                     salvar_estado_duravel()
 
                 if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
