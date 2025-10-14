@@ -591,36 +591,56 @@ else:
     now = agora_lx()
     if dentro_pregao(now):
         notificar_abertura_pregao_uma_vez_por_dia()
-        tickers_para_remover = []  # cria a lista aqui
         data = []
+        for ativo in st.session_state.ativos:
+            t = ativo["ticker"]
+            preco_atual = "-"
+            try:
+                preco_atual = obter_preco_atual(f"{t}.SA")
+            except Exception as e:
+                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro {t}: {e}")
+            if preco_atual != "-":
+                st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
+
+            tempo = st.session_state.tempo_acumulado.get(t, 0)
+            minutos = tempo / 60
+            data.append({
+                "Ticker": t,
+                "Operação": ativo["operacao"].upper(),
+                "Preço Alvo": f"R$ {ativo['preco']:.2f}",
+                "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
+                "Status": st.session_state.status.get(t, "🟢 Monitorando"),
+                "Tempo Acumulado": f"{int(minutos)} min"
+            })
+        if data:
+            tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
+
+        tickers_para_remover = []
         for ativo in st.session_state.ativos:
             t = ativo["ticker"]
             preco_alvo = ativo["preco"]
             operacao_atv = ativo["operacao"]
             tk_full = f"{t}.SA"
-        
+
             try:
                 preco_atual = obter_preco_atual(tk_full)
             except Exception as e:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro {t}: {e}")
                 continue
-        
-            # 🔹 Atualiza log com o preço atual
+
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
-        
-            # 🔄 Atualiza o log visual imediatamente
-            log_container.empty()
-            with log_container:
-                render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
-        
+
             condicao = (
                 (operacao_atv == "compra" and preco_atual >= preco_alvo) or
                 (operacao_atv == "venda" and preco_atual <= preco_alvo)
             )
-        
+
+            # -----------------------------
+            # BLOCO PRINCIPAL DE CONTAGEM
+            # -----------------------------
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
-        
+
                 if not st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = True
                     if not st.session_state.ultimo_update_tempo.get(t) and st.session_state.tempo_acumulado.get(t, 0) == 0:
@@ -629,16 +649,11 @@ else:
                     st.session_state.log_monitoramento.append(
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando/retomando contagem..."
                     )
-        
-                    # 🔄 Atualiza log visual instantaneamente
-                    log_container.empty()
-                    with log_container:
-                        render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
-        
                     salvar_estado_duravel(force=True)
                 else:
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
-        
+
+                    # --- Função segura de conversão para datetime aware ---
                     def _to_aware_datetime(value):
                         if isinstance(value, datetime.datetime):
                             dt = value
@@ -646,36 +661,45 @@ else:
                             try:
                                 dt = datetime.datetime.fromisoformat(value)
                             except Exception:
-                                dt = None
+                                try:
+                                    base = value.replace("Z", "")
+                                    if "." in base:
+                                        left, right = base.split(".", 1)
+                                        tz_suffix = ""
+                                        if "+" in right:
+                                            tz_suffix = "+" + right.split("+", 1)[1]
+                                        elif "-" in right:
+                                            tz_suffix = "-" + right.split("-", 1)[1]
+                                        base = left + tz_suffix
+                                    dt = datetime.datetime.fromisoformat(base)
+                                except Exception:
+                                    dt = None
                         else:
                             dt = None
+
                         if dt is None:
                             return None
                         if dt.tzinfo is None:
                             dt = dt.replace(tzinfo=TZ)
                         return dt
-        
+                    # -----------------------------------------------------
+
                     dt_ultimo = _to_aware_datetime(ultimo) or now
                     delta = max(0, min((now - dt_ultimo).total_seconds(), INTERVALO_VERIFICACAO + 5))
-        
+
                     if delta > 0:
                         st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
                         st.session_state.ultimo_update_tempo[t] = now.isoformat()
                         st.session_state.log_monitoramento.append(
                             f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                         )
-        
-                        # 🔄 Atualiza log visual instantaneamente
-                        log_container.empty()
-                        with log_container:
-                            render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
-        
                     else:
                         st.session_state.log_monitoramento.append(
                             f"⏸ {t}: aguardando próximo ciclo válido (delta={int(delta)}s)"
                         )
                     salvar_estado_duravel()
-        
+
+                # 🚀 Proteção contra disparo duplicado
                 if (
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
                     and st.session_state.status.get(t) != "🚀 Disparado"
@@ -693,7 +717,6 @@ else:
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
                     tickers_para_remover.append(t)
                     salvar_estado_duravel(force=True)
-        
             else:
                 if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
@@ -702,7 +725,6 @@ else:
                     st.session_state.ultimo_update_tempo[t] = None
                     st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo.")
                     salvar_estado_duravel(force=True)
-
 
         if tickers_para_remover:
             st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
@@ -871,6 +893,7 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
             st.info("Nenhum estado salvo ainda.")
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
+
 
 refresh_ms = 10_000  # atualização visual a cada 10 segundos (não afeta lógica de tempo)
 st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
