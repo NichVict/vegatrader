@@ -628,6 +628,7 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
 
     css = """
     <style>
+      body { background-color: #0b1220; color: #e5e7eb; margin: 0; }
       .log-card {
         background: #0b1220;
         border: 1px solid #1f2937;
@@ -635,16 +636,15 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
         padding: 10px 12px;
         max-height: 360px;
         overflow-y: auto;
-      }
-      .log-line {
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
         font-size: 13px;
         line-height: 1.35;
-        margin: 2px 0;
-        color: #e5e7eb;
+      }
+      .log-line {
         display: flex;
         align-items: baseline;
         gap: 8px;
+        margin: 2px 0;
       }
       .ts { color: #9ca3af; min-width: 64px; text-align: right; }
       .badge {
@@ -658,6 +658,11 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
       .counter {
         color: #93c5fd;
         font-weight: bold;
+        animation: pulse 1s infinite alternate;
+      }
+      @keyframes pulse {
+        from { opacity: 0.7; }
+        to { opacity: 1; }
       }
     </style>
     """
@@ -670,7 +675,6 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
             ts, rest = "", l
         tk = extract_ticker(l)
         badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
-        # Marca o contador, se existir "s acumulados"
         rest_html = re.sub(
             r"(\d+)s acumulados",
             r"<span class='counter' data-seconds='\\1'>\\1s acumulados</span>",
@@ -679,7 +683,6 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
         html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest_html}</span></div>")
     html.append("</div>")
 
-    # JavaScript que atualiza os segundos em tempo real
     js = """
     <script>
     const counters = document.querySelectorAll('.counter');
@@ -690,14 +693,11 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
         el.textContent = secs + 's acumulados';
       }, 1000);
     });
-    // Mantém o log rolado no topo (mais recente primeiro)
-    const logCard = document.getElementById('logCard');
-    if (logCard) logCard.scrollTop = 0;
     </script>
     """
 
     html.append(js)
-    st.markdown("\n".join(html), unsafe_allow_html=True)
+    components.html("\n".join(html), height=420, scrolling=True)
 
 log_container = st.empty()
 
