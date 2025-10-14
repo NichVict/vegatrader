@@ -143,7 +143,7 @@ def carregar_estado_duravel():
                     st.session_state[k] = disparos_reconv
                 else:
                     st.session_state[k] = v
-            st.sidebar.info("💾 Estado restaurado da nuvem!")
+            st.sidebar.info("Conectado na nuvem!")
             remoto_ok = True
             origem = "☁️ Supabase"
         else:
@@ -430,7 +430,7 @@ def notificar_abertura_pregao_uma_vez_por_dia():
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
-if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
+if st.sidebar.button("🧹 Apagar Tabela"):
     try:
         # 1) Apaga remoto (Supabase)
         apagar_estado_remoto()
@@ -467,7 +467,7 @@ if st.sidebar.button("📤 Testar Envio Telegram"):
 # -----------------------------------------
 # TESTE COMPLETO DE ALERTA (com layout e compliance)
 # -----------------------------------------
-if st.sidebar.button("📩 Testar mensagem estilizada"):
+if st.sidebar.button("📩 Testar mensagem"):
     st.sidebar.info("Gerando alerta simulado...")
 
     ticker_teste = "PETR4.SA"
@@ -494,12 +494,11 @@ if st.session_state.historico_alertas:
 else:
     st.sidebar.info("Nenhum alerta ainda.")
 
-col1, col2 = st.sidebar.columns(2)
-if col1.button("🧹 Limpar histórico"):
+if st.sidebar.button("🧼 Limpar histórico ⭐"):
     st.session_state.historico_alertas.clear()
     salvar_estado_duravel(force=True)
     st.sidebar.success("Histórico limpo!")
-if col2.button("🧽 Limpar LOG"):
+if st.sidebar.button("🧼 Limpar log monitoramento ⭐"):
     st.session_state.log_monitoramento.clear()
     salvar_estado_duravel(force=True)
     st.sidebar.success("Log limpo!")
