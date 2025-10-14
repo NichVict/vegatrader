@@ -829,27 +829,23 @@ else:
                     salvar_estado_duravel()
 
                 # 🧠 Log de debug: mostra o valor acumulado atual
-                st.session_state.log_monitoramento.append(f"🧠 DEBUG: {t} com {tempo_total}s acumulados (máx {TEMPO_ACUMULADO_MAXIMO})")
-
-
-                
+                # 🧠 Log de debug: mostra o valor acumulado atual
+                tempo_total = st.session_state.tempo_acumulado.get(t, 0)
+                tempo_max = st.session_state.get("tempo_acumulado_maximo", 180)
+                st.session_state.log_monitoramento.append(
+                    f"🧠 DEBUG: {t} com {int(tempo_total)}s acumulados (máx {int(tempo_max)})"
+                )
                 
                 # 🚀 Proteção contra disparo duplicado
                 if (
-                    st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
+                    st.session_state.tempo_acumulado[t] >= tempo_max
                     and st.session_state.status.get(t) != "🚀 Disparado"
                 ):
                     st.session_state.status[t] = "🚀 Disparado"
                 
-                    # Calcula tempo acumulado antes do log
-                    tempo_total = st.session_state.tempo_acumulado.get(t, 0)
-                
-                    # Garante que o valor máximo está disponível no session_state
-                    tempo_max = st.session_state.get("tempo_acumulado_maximo", TEMPO_ACUMULADO_MAXIMO)
-                
-                    # Log de debug arredondado
+                    # Log de debug (confirma disparo)
                     st.session_state.log_monitoramento.append(
-                        f"🧠 DEBUG: {t} com {round(tempo_total)}s acumulados (máx {tempo_max})"
+                        f"🚀 {t} atingiu {int(tempo_total)}s (limite: {int(tempo_max)}s) — alerta disparado!"
                     )
                 
                     # Envio da notificação
@@ -873,19 +869,20 @@ else:
                 
                     # Salva imediatamente para consistência
                     salvar_estado_duravel(force=True)
+                
+                else:
+                    # Caso o ticker saia da zona de preço alvo
+                    if st.session_state.em_contagem.get(t, False):
+                        st.session_state.em_contagem[t] = False
+                        st.session_state.tempo_acumulado[t] = 0
+                        st.session_state.status[t] = "🔴 Fora da zona"
+                        st.session_state.ultimo_update_tempo[t] = None
+                        st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo.")
+                        log_container.empty()
+                        with log_container:
+                            render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
+                        salvar_estado_duravel(force=True)
 
-
-            else:
-                if st.session_state.em_contagem.get(t, False):
-                    st.session_state.em_contagem[t] = False
-                    st.session_state.tempo_acumulado[t] = 0
-                    st.session_state.status[t] = "🔴 Fora da zona"
-                    st.session_state.ultimo_update_tempo[t] = None
-                    st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo.")
-                    log_container.empty()
-                    with log_container:
-                        render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
-                    salvar_estado_duravel(force=True)
 
         if tickers_para_remover:
             st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
