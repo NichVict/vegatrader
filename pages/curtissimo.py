@@ -26,12 +26,12 @@ import time
 st.set_page_config(page_title="CURTISSIMO PRAZO - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
+HORARIO_INICIO_PREGAO = datetime.time(10, 0, 0)
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)
 
 # produção
-INTERVALO_VERIFICACAO = 300       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 1500     # 25 min
+INTERVALO_VERIFICACAO = 60       # 5 min
+TEMPO_ACUMULADO_MAXIMO = 180     # 25 min
 LOG_MAX_LINHAS = 1000
 
 # persistência (debounce)
