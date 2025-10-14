@@ -421,6 +421,8 @@ if st.button("➕ Adicionar ativo"):
 # -----------------------------
 # STATUS + GRÁFICO + LOG
 # -----------------------------
+# STATUS + GRÁFICO + LOG
+# -----------------------------
 st.subheader("📊 Status dos Ativos Monitorados")
 tabela_status = st.empty()
 grafico = st.empty()
@@ -481,6 +483,9 @@ else:
                 (operacao_atv == "venda" and preco_atual <= preco_alvo)
             )
 
+            # -----------------------------
+            # BLOCO PRINCIPAL DE CONTAGEM
+            # -----------------------------
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
 
@@ -495,17 +500,39 @@ else:
                     salvar_estado_duravel(force=True)
                 else:
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
-                    if isinstance(ultimo, str):
-                        try:
-                            clean_str = re.sub(r'(\+|\-)\d{2}:?\d{2}$', '', ultimo).replace('Z', '')
-                            dt_ultimo = datetime.datetime.fromisoformat(clean_str)
-                        except Exception:
-                            dt_ultimo = now
-                    elif isinstance(ultimo, datetime.datetime):
-                        dt_ultimo = ultimo
-                    else:
-                        dt_ultimo = now
 
+                    # --- Função segura de conversão para datetime aware ---
+                    def _to_aware_datetime(value):
+                        if isinstance(value, datetime.datetime):
+                            dt = value
+                        elif isinstance(value, str):
+                            try:
+                                dt = datetime.datetime.fromisoformat(value)
+                            except Exception:
+                                try:
+                                    base = value.replace("Z", "")
+                                    if "." in base:
+                                        left, right = base.split(".", 1)
+                                        tz_suffix = ""
+                                        if "+" in right:
+                                            tz_suffix = "+" + right.split("+", 1)[1]
+                                        elif "-" in right:
+                                            tz_suffix = "-" + right.split("-", 1)[1]
+                                        base = left + tz_suffix
+                                    dt = datetime.datetime.fromisoformat(base)
+                                except Exception:
+                                    dt = None
+                        else:
+                            dt = None
+
+                        if dt is None:
+                            return None
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=TZ)
+                        return dt
+                    # -----------------------------------------------------
+
+                    dt_ultimo = _to_aware_datetime(ultimo) or now
                     delta = max(0, min((now - dt_ultimo).total_seconds(), INTERVALO_VERIFICACAO + 5))
 
                     if delta > 0:
@@ -645,4 +672,5 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
 
 refresh_ms = 1000 * (INTERVALO_VERIFICACAO if dentro_pregao(agora_lx()) else sleep_segundos)
 st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
+
 
