@@ -325,34 +325,34 @@ def notificar_abertura_pregao_uma_vez_por_dia():
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
-if st.sidebar.button("🧹 Apagar dados da Tabela"):
+if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
     try:
-        if os.path.exists(SAVE_PATH):
-            os.remove(SAVE_PATH)
-        st.session_state.clear()
-        st.session_state.pausado = False
-        st.session_state.ultimo_estado_pausa = None
-        st.session_state.ativos = []
-        st.session_state.historico_alertas = []
-        st.session_state.log_monitoramento = []
-        st.session_state.tempo_acumulado = {}
-        st.session_state.em_contagem = {}
-        st.session_state.status = {}
-        st.session_state.precos_historicos = {}
-        st.session_state.disparos = {}
-        st.session_state.ultimo_update_tempo = {}
-        # ✅ evita que o Telegram envie "Pregão Aberto" após reset
-        st.session_state["data_ultimo_aviso_abertura"] = str(agora_lx().date())
+        # 1) Apaga remoto (Supabase)
+        apagar_estado_remoto()
 
-        now_tmp = agora_lx()
-        st.session_state.log_monitoramento.append(
-            f"{now_tmp.strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado"
-        )
+        # 2) Apaga local
+        try:
+            if os.path.exists(LOCAL_STATE_FILE):
+                os.remove(LOCAL_STATE_FILE)
+        except Exception as e_local:
+            st.sidebar.warning(f"⚠️ Erro ao apagar arquivo local: {e_local}")
+
+        # 3) Limpa session_state e re-inicializa
+        st.session_state.clear()
+        inicializar_estado()
+
+        # 4) 🔒 Bloqueia aviso de 'Pregão Aberto' neste dia (não enviar após reset)
+        st.session_state["ultima_data_abertura_enviada"] = str(agora_lx().date())
+
+        # 5) Log e persistência
+        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado")
         salvar_estado_duravel(force=True)
-        st.sidebar.success("✅ Estado salvo apagado e reiniciado.")
+
+        st.sidebar.success("✅ Estado apagado e reiniciado (sem alerta de pregão aberto).")
         st.rerun()
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado: {e}")
+
 
 
 if st.sidebar.button("📤 Testar Envio Telegram"):
