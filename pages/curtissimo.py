@@ -537,6 +537,7 @@ else:
 
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
+            
                 if not st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = True
                     # ✅ só zera tempo se nunca iniciou
@@ -547,21 +548,24 @@ else:
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando/retomando contagem..."
                     )
                     salvar_estado_duravel(force=True)
+            
                 else:
+                    # Reconversão robusta de timestamp ISO → datetime
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
                     if isinstance(ultimo, str):
                         try:
-                            dt_ultimo = datetime.datetime.fromisoformat(ultimo)
+                            clean_str = ultimo.replace("Z", "").split("+")[0]
+                            dt_ultimo = datetime.datetime.fromisoformat(clean_str)
                         except Exception:
                             dt_ultimo = now
                     elif isinstance(ultimo, datetime.datetime):
                         dt_ultimo = ultimo
                     else:
                         dt_ultimo = now
-                    
+            
+                    # Cálculo de tempo acumulado
                     delta = max(0, min((now - dt_ultimo).total_seconds(), INTERVALO_VERIFICACAO + 5))
-                    
-                    # se o delta for positivo, acumula normalmente
+            
                     if delta > 0:
                         st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
                         st.session_state.ultimo_update_tempo[t] = now.isoformat()
@@ -573,8 +577,13 @@ else:
                             f"⏸ {t}: aguardando próximo ciclo válido (delta={int(delta)}s)"
                         )
                     salvar_estado_duravel()
-
-                if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
+            
+                # 🚀 Disparo do alerta — com proteção contra duplicação
+                if (
+                    st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
+                    and st.session_state.status.get(t) != "🚀 Disparado"
+                ):
+                    st.session_state.status[t] = "🚀 Disparado"
                     alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
                     st.warning(alerta_msg)
                     st.session_state.historico_alertas.append({
@@ -587,6 +596,7 @@ else:
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
                     tickers_para_remover.append(t)
                     salvar_estado_duravel(force=True)
+            
             else:
                 if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
@@ -595,6 +605,7 @@ else:
                     st.session_state.ultimo_update_tempo[t] = None
                     st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo.")
                     salvar_estado_duravel(force=True)
+
 
         if tickers_para_remover:
             st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
