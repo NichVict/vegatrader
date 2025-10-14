@@ -690,29 +690,25 @@ else:
                         dt_ultimo = now
 
                     
-                    # 🧮 Calcula delta (diferença entre agora e último update)
+                   
+                    # 🧮 Calcula delta real entre o último update e agora
                     delta = (now - dt_ultimo).total_seconds()
                     
-                    # Se passou tempo demais (ex: app pausado ou recarregado após horas), limita a 2x o intervalo normal
+                    # Proteção mínima: se der delta negativo, zera (ex: relógio do servidor muda)
                     if delta < 0:
-                        st.session_state.log_monitoramento.append(f"🐞 DEBUG {t}: delta negativo ajustado ({delta:.2f}s)")
                         delta = 0
-                    elif delta > INTERVALO_VERIFICACAO * 2:
-                        st.session_state.log_monitoramento.append(
-                            f"🐞 DEBUG {t}: delta muito grande ({delta:.2f}s) → limitado a {INTERVALO_VERIFICACAO*2}s"
-                        )
-                        delta = INTERVALO_VERIFICACAO * 2
-
-
-                    st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
+                    
+                    # Atualiza acumulador e timestamp
+                    st.session_state.tempo_acumulado[t] = float(st.session_state.tempo_acumulado.get(t, 0)) + float(delta)
                     st.session_state.ultimo_update_tempo[t] = now.isoformat()
-
+                    
+                    # Loga o incremento real
                     st.session_state.log_monitoramento.append(
-                        f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s) | "
-                        f"🐞 DEBUG dt_ultimo={dt_ultimo.isoformat()} now={now.isoformat()}"
+                        f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                     )
-
-                    salvar_estado_duravel()
+                    
+                    # Salva imediatamente o estado
+                    salvar_estado_duravel(force=True)
 
                 # 🚀 Disparo de alerta quando atinge o tempo máximo
                 if (
