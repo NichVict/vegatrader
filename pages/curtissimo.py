@@ -826,6 +826,11 @@ else:
                             render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
                     salvar_estado_duravel()
 
+                # 🧠 Log de debug: mostra o valor acumulado atual
+                st.session_state.log_monitoramento.append(
+                    f"🧠 DEBUG: {t} com {st.session_state.tempo_acumulado[t]}s acumulados (máx {TEMPO_ACUMULADO_MAXIMO})"
+                )
+
                 # 🚀 Proteção contra disparo duplicado
                 if (
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
