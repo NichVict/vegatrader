@@ -299,9 +299,9 @@ def notificar_preco_alvo_alcancado_curto(ticker, preco_alvo, preco_atual, operac
     # --- Credenciais (st.secrets) ---
     remetente = st.secrets.get("email_sender", "")
     senha = st.secrets.get("gmail_app_password", "")
-    destinatario = st.secrets.get("email_recipient_curtissimo", "")
+    destinatario = st.secrets.get("email_recipient_curto", "")
     token_tg = st.secrets.get("telegram_token", "")
-    chat_id = st.secrets.get("telegram_chat_id_curtissimo", "")
+    chat_id = st.secrets.get("telegram_chat_id_curto", "")
 
     # --- Envio centralizado (função já existente no seu código) ---
     try:
@@ -896,7 +896,7 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
         st.error(f"Erro ao exibir JSON: {e}")
 
 refresh_ms = 10_000 * (INTERVALO_VERIFICACAO if dentro_pregao(agora_lx()) else sleep_segundos)
-st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
+st_autorefresh(interval=refresh_ms, limit=None, key="curto-refresh")
 
 
 
