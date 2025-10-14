@@ -1,5 +1,3 @@
-
-
 # -*- coding: utf-8 -*-
 import streamlit as st
 from yahooquery import Ticker
@@ -31,13 +29,10 @@ TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(10, 0, 0)
 HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)
 
-# produção
-INTERVALO_VERIFICACAO = 60       # 5 min
-TEMPO_ACUMULADO_MAXIMO = 180     # 25 min
+INTERVALO_VERIFICACAO = 60
+TEMPO_ACUMULADO_MAXIMO = 180
 LOG_MAX_LINHAS = 1000
-
-# persistência (debounce)
-PERSIST_DEBOUNCE_SECONDS = 60  # mantém baixo para Streamlit Cloud
+PERSIST_DEBOUNCE_SECONDS = 60
 
 PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
@@ -47,40 +42,30 @@ PALETTE = [
 # =============================
 # PERSISTÊNCIA (SUPABASE via REST API + LOCAL JSON)
 # =============================
-# Defina em st.secrets:
-# supabase_url = "https://....supabase.co"
-# supabase_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 SUPABASE_URL = st.secrets["supabase_url"]
 SUPABASE_KEY = st.secrets["supabase_key"]
 TABLE = "kv_state_curtissimo"
 STATE_KEY = "curtissimo_przo_v1"
-LOCAL_STATE_FILE = "session_data/state_curtissimo.json"  # Para compatibilidade com Painel Central
+LOCAL_STATE_FILE = "session_data/state_curtissimo.json"
 
 def agora_lx():
     return datetime.datetime.now(TZ)
 
 def _estado_snapshot():
-    """
-    Snapshot completo do estado — serializável (datetimes → ISO).
-    """
     snapshot = {
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
         "log_monitoramento": st.session_state.get("log_monitoramento", []),
-
         "tempo_acumulado": st.session_state.get("tempo_acumulado", {}),
         "em_contagem": st.session_state.get("em_contagem", {}),
         "status": st.session_state.get("status", {}),
         "ultimo_update_tempo": st.session_state.get("ultimo_update_tempo", {}),
-
         "pausado": st.session_state.get("pausado", False),
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
-        "avisou_abertura_pregao": st.session_state.get("avisou_abertura_pregao", False),
-
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
+        "ultima_data_abertura_enviada": st.session_state.get("ultima_data_abertura_enviada", None),
     }
 
-    # Serializa listas com datetimes
     precos_historicos_serial = {}
     for ticker, dados in st.session_state.get("precos_historicos", {}).items():
         precos_historicos_serial[ticker] = [
@@ -96,14 +81,10 @@ def _estado_snapshot():
             for dt, preco in pontos
         ]
     snapshot["disparos"] = disparos_serial
-
     return snapshot
 
 def _persist_now():
-    """Grava o estado imediatamente (remoto + local) e atualiza o timestamp de última gravação."""
     snapshot = _estado_snapshot()
-
-    # Supabase
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -119,7 +100,6 @@ def _persist_now():
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
 
-    # Local
     try:
         os.makedirs("session_data", exist_ok=True)
         with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
@@ -130,11 +110,6 @@ def _persist_now():
     st.session_state["__last_save_ts"] = agora_lx().timestamp()
 
 def salvar_estado_duravel(force: bool = False):
-    """
-    Debounce de persistência para reduzir gravações e evitar sobrescrita fora de ordem.
-    - force=True grava imediatamente (usar nas ações do usuário).
-    - caso contrário, grava apenas se passaram PERSIST_DEBOUNCE_SECONDS desde a última gravação.
-    """
     if force:
         _persist_now()
         return
@@ -144,89 +119,60 @@ def salvar_estado_duravel(force: bool = False):
         _persist_now()
 
 def carregar_estado_duravel():
-    """
-    Carrega do Supabase e, em fallback, do JSON local.
-    Define __carregado_ok__=True em caso de sucesso.
-    """
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-    }
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v"
     remoto_ok = False
     try:
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200 and r.json():
             estado = r.json()[0]["v"]
-            pausado_atual = st.session_state.get("pausado")
             for k, v in estado.items():
-                if k == "pausado" and pausado_atual is not None:
-                    continue
                 if k == "precos_historicos":
                     precos_reconv = {}
                     for t, dados in v.items():
-                        reconv_dados = [(datetime.datetime.fromisoformat(dt_str) if isinstance(dt_str, str) else dt_str, p) for dt_str, p in dados]
-                        precos_reconv[t] = reconv_dados
+                        reconv = [(datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p) for dt, p in dados]
+                        precos_reconv[t] = reconv
                     st.session_state[k] = precos_reconv
                 elif k == "disparos":
                     disparos_reconv = {}
                     for t, pontos in v.items():
-                        reconv_pontos = [(datetime.datetime.fromisoformat(pt_str) if isinstance(pt_str, str) else pt_str, p) for pt_str, p in pontos]
-                        disparos_reconv[t] = reconv_pontos
+                        reconv = [(datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p) for pt, p in pontos]
+                        disparos_reconv[t] = reconv
                     st.session_state[k] = disparos_reconv
                 else:
                     st.session_state[k] = v
-            st.sidebar.info("💾 Estado (CURTISSIMO PRAZO) restaurado da nuvem!")
+            st.sidebar.info("💾 Estado restaurado da nuvem!")
             remoto_ok = True
         else:
             st.sidebar.info("ℹ️ Nenhum estado remoto ainda.")
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
 
-    origem = "❌ Nenhum"
-    if remoto_ok:
-        origem = "☁️ Supabase"
-    else:
-        if os.path.exists(LOCAL_STATE_FILE):
-            try:
-                with open(LOCAL_STATE_FILE, "r", encoding="utf-8") as f:
-                    estado = json.load(f)
-                pausado_atual = st.session_state.get("pausado")
-                for k, v in estado.items():
-                    if k == "pausado" and pausado_atual is not None:
-                        continue
-                    if k == "precos_historicos":
-                        precos_reconv = {}
-                        for t, dados in v.items():
-                            reconv_dados = [(datetime.datetime.fromisoformat(dt_str) if isinstance(dt_str, str) else dt_str, p) for dt_str, p in dados]
-                            precos_reconv[t] = reconv_dados
-                        st.session_state[k] = precos_reconv
-                    elif k == "disparos":
-                        disparos_reconv = {}
-                        for t, pontos in v.items():
-                            reconv_pontos = [(datetime.datetime.fromisoformat(pt_str) if isinstance(pt_str, str) else pt_str, p) for pt_str, p in pontos]
-                            disparos_reconv[t] = reconv_pontos
-                        st.session_state[k] = disparos_reconv
-                    else:
-                        st.session_state[k] = v
-                st.sidebar.info("💾 Estado carregado do local (fallback)!")
-                origem = "📁 Local"
-            except Exception as e:
-                st.sidebar.error(f"Erro no fallback local: {e}")
-
-    # 🔧 CONSISTÊNCIA pós-carregamento
-    for t in st.session_state.get("tempo_acumulado", {}):
-        if st.session_state.tempo_acumulado.get(t, 0) > 0 and not st.session_state.ultimo_update_tempo.get(t):
-            st.session_state.ultimo_update_tempo[t] = agora_lx().isoformat()
-
-    st.session_state["origem_estado"] = origem
-    st.session_state["__carregado_ok__"] = (origem in ("☁️ Supabase", "📁 Local"))
+    if not remoto_ok and os.path.exists(LOCAL_STATE_FILE):
+        try:
+            with open(LOCAL_STATE_FILE, "r", encoding="utf-8") as f:
+                estado = json.load(f)
+            for k, v in estado.items():
+                if k == "precos_historicos":
+                    precos_reconv = {}
+                    for t, dados in v.items():
+                        reconv = [(datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p) for dt, p in dados]
+                        precos_reconv[t] = reconv
+                    st.session_state[k] = precos_reconv
+                elif k == "disparos":
+                    disparos_reconv = {}
+                    for t, pontos in v.items():
+                        reconv = [(datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p) for pt, p in pontos]
+                        disparos_reconv[t] = reconv
+                    st.session_state[k] = disparos_reconv
+                else:
+                    st.session_state[k] = v
+            st.sidebar.info("💾 Estado carregado do local (fallback)!")
+        except Exception as e:
+            st.sidebar.error(f"Erro no fallback local: {e}")
 
 def apagar_estado_remoto():
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-    }
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
     try:
         r = requests.delete(url, headers=headers, timeout=15)
@@ -241,41 +187,28 @@ def apagar_estado_remoto():
         except Exception as e:
             st.sidebar.warning(f"⚠️ Erro ao apagar local: {e}")
 
-# -----------------------------
-# INICIALIZAÇÃO SEGURA DO ESTADO
-# -----------------------------
 def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
 
 def inicializar_estado():
-    """Inicializa as chaves do session_state somente se ainda não existirem."""
     defaults = {
-        "ativos": [],
-        "historico_alertas": [],
-        "log_monitoramento": [],
-        "tempo_acumulado": {},
-        "em_contagem": {},
-        "status": {},
-        "precos_historicos": {},
-        "ultimo_update_tempo": {},
-        "pausado": False,
-        "ultimo_estado_pausa": None,
-        "disparos": {},
-        "__last_save_ts": None,
-        "__carregado_ok__": False,
+        "ativos": [], "historico_alertas": [], "log_monitoramento": [],
+        "tempo_acumulado": {}, "em_contagem": {}, "status": {},
+        "precos_historicos": {}, "ultimo_update_tempo": {},
+        "pausado": False, "ultimo_estado_pausa": None,
+        "disparos": {}, "__last_save_ts": None,
+        "__carregado_ok__": False, "ultima_data_abertura_enviada": None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
     ensure_color_map()
 
-# 1) Inicializa estrutura mínima
 inicializar_estado()
-# 2) Carrega estado persistente (sobrescreve o necessário)
 carregar_estado_duravel()
-# 3) Garante que o restante exista (se o carregamento não trouxe tudo)
 inicializar_estado()
+
 # -----------------------------
 # FUNÇÕES AUXILIARES
 # -----------------------------
@@ -297,7 +230,7 @@ def enviar_notificacao_curto(dest, assunto, corpo, rem, senha, tok_tg, chat_id):
             st.session_state.log_monitoramento.append(f"⚠️ Erro e-mail: {e}")
     else:
         st.session_state.log_monitoramento.append("⚠️ Email não configurado.")
-    # Telegram
+
     async def send_tg():
         try:
             if tok_tg and chat_id:
@@ -307,7 +240,7 @@ def enviar_notificacao_curto(dest, assunto, corpo, rem, senha, tok_tg, chat_id):
             st.session_state.log_monitoramento.append(f"⚠️ Erro Telegram: {e}")
     asyncio.run(send_tg())
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=5)
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
@@ -363,6 +296,30 @@ def segundos_ate_abertura(dt):
     else:
         return 0, abre
 
+def notificar_abertura_pregao_uma_vez_por_dia():
+    """Envia notificação de pregão aberto no máximo uma vez por dia."""
+    now = agora_lx()
+    data_atual = now.date()
+    ultima_data_envio = st.session_state.get("ultima_data_abertura_enviada")
+
+    if ultima_data_envio == str(data_atual):
+        return
+
+    try:
+        tok = st.secrets.get("telegram_token", "").strip()
+        chat = st.secrets.get("telegram_chat_id_curtissimo", "").strip()
+        if tok and chat:
+            bot = Bot(token=tok)
+            asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô CURTISSIMO PRAZO ativo — Pregão Aberto!"))
+            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto")
+        else:
+            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Telegram não configurado.")
+    except Exception as e:
+        st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Erro Telegram: {e}")
+
+    st.session_state["ultima_data_abertura_enviada"] = str(data_atual)
+    salvar_estado_duravel(force=True)
+
 # -----------------------------
 # INTERFACE E SIDEBAR
 # -----------------------------
@@ -385,7 +342,7 @@ if st.sidebar.button("📤 Testar Envio Telegram"):
     st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
 
 st.sidebar.checkbox("⏸️ Pausar monitoramento", key="pausado")
-salvar_estado_duravel()  # debounce OK
+salvar_estado_duravel()
 
 st.sidebar.header("📜 Histórico de Alertas")
 if st.session_state.historico_alertas:
@@ -394,6 +351,7 @@ if st.session_state.historico_alertas:
         st.sidebar.caption(f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}")
 else:
     st.sidebar.info("Nenhum alerta ainda.")
+
 col1, col2 = st.sidebar.columns(2)
 if col1.button("🧹 Limpar histórico"):
     st.session_state.historico_alertas.clear()
@@ -478,22 +436,7 @@ if st.session_state.pausado:
 else:
     now = agora_lx()
     if dentro_pregao(now):
-        # Notificação na abertura do pregão
-        if not st.session_state.get("avisou_abertura_pregao", False):
-            st.session_state["avisou_abertura_pregao"] = True
-            try:
-                tok = st.secrets.get("telegram_token", "").strip()
-                chat = st.secrets.get("telegram_chat_id_curtissimo", "").strip()
-                if tok and chat:
-                    bot = Bot(token=tok)
-                    asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô CURTISSIMO PRAZO ativo — Pregão Aberto!"))
-                    st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto")
-                else:
-                    st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Telegram não configurado.")
-            except Exception as e:
-                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Erro Telegram: {e}")
-            salvar_estado_duravel(force=True)
-
+        notificar_abertura_pregao_uma_vez_por_dia()
         data = []
         for ativo in st.session_state.ativos:
             t = ativo["ticker"]
@@ -518,13 +461,13 @@ else:
         if data:
             tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
 
-        # Lógica de monitoramento
         tickers_para_remover = []
         for ativo in st.session_state.ativos:
             t = ativo["ticker"]
             preco_alvo = ativo["preco"]
             operacao_atv = ativo["operacao"]
             tk_full = f"{t}.SA"
+
             try:
                 preco_atual = obter_preco_atual(tk_full)
             except Exception as e:
@@ -532,16 +475,17 @@ else:
                 continue
 
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
+
             condicao = (
                 (operacao_atv == "compra" and preco_atual >= preco_alvo) or
-                (operacao_atv == "venda"  and preco_atual <= preco_alvo)
+                (operacao_atv == "venda" and preco_atual <= preco_alvo)
             )
 
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
+
                 if not st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = True
-                    # ✅ só zera tempo se nunca iniciou
                     if not st.session_state.ultimo_update_tempo.get(t) and st.session_state.tempo_acumulado.get(t, 0) == 0:
                         st.session_state.tempo_acumulado[t] = 0
                     st.session_state.ultimo_update_tempo[t] = now.isoformat()
@@ -551,16 +495,37 @@ else:
                     salvar_estado_duravel(force=True)
                 else:
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
-                    dt_ultimo = datetime.datetime.fromisoformat(ultimo) if ultimo else now
+                    if isinstance(ultimo, str):
+                        try:
+                            clean_str = re.sub(r'(\+|\-)\d{2}:?\d{2}$', '', ultimo).replace('Z', '')
+                            dt_ultimo = datetime.datetime.fromisoformat(clean_str)
+                        except Exception:
+                            dt_ultimo = now
+                    elif isinstance(ultimo, datetime.datetime):
+                        dt_ultimo = ultimo
+                    else:
+                        dt_ultimo = now
+
                     delta = max(0, min((now - dt_ultimo).total_seconds(), INTERVALO_VERIFICACAO + 5))
-                    st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
-                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
-                    st.session_state.log_monitoramento.append(
-                        f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
-                    )
+
+                    if delta > 0:
+                        st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
+                        st.session_state.ultimo_update_tempo[t] = now.isoformat()
+                        st.session_state.log_monitoramento.append(
+                            f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
+                        )
+                    else:
+                        st.session_state.log_monitoramento.append(
+                            f"⏸ {t}: aguardando próximo ciclo válido (delta={int(delta)}s)"
+                        )
                     salvar_estado_duravel()
 
-                if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
+                # 🚀 Proteção contra disparo duplicado
+                if (
+                    st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
+                    and st.session_state.status.get(t) != "🚀 Disparado"
+                ):
+                    st.session_state.status[t] = "🚀 Disparado"
                     alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
                     st.warning(alerta_msg)
                     st.session_state.historico_alertas.append({
@@ -594,15 +559,13 @@ else:
             )
             salvar_estado_duravel(force=True)
         sleep_segundos = INTERVALO_VERIFICACAO
-
     else:
-        # Fora do pregão — mantém sessão viva
         st.session_state["avisou_abertura_pregao"] = False
         faltam, prox_abertura = segundos_ate_abertura(now)
         components.html(f"""
         <div style="background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:12px;">
-        ⏸️ Pregão fechado. Reabre em <b>{datetime.timedelta(seconds=faltam)}</b> (às {prox_abertura.strftime('%H:%M')}).
-        </div>""", height=70)
+        ⏸️ Pregão fechado. Reabre em <b>{datetime.timedelta(seconds=faltam)}</b> (às {prox_abertura.strftime('%H:%M')}).</div>""",
+        height=70)
         try:
             APP_URL = "https://curtoprazo.streamlit.app"
             ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
@@ -634,12 +597,13 @@ for t, pontos in st.session_state.disparos.items():
 fig.update_layout(title="📉 Evolução dos Preços", template="plotly_dark")
 grafico.plotly_chart(fig, use_container_width=True)
 
-# Limita crescimento do log
+# -----------------------------
+# LOG E AUTOREFRESH
+# -----------------------------
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
     salvar_estado_duravel()
 
-# Exibe log
 def extract_ticker(line):
     m = re.search(r"\b([A-Z0-9]{4,6})\b", line)
     return m.group(1) if m else None
@@ -681,3 +645,4 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
 
 refresh_ms = 1000 * (INTERVALO_VERIFICACAO if dentro_pregao(agora_lx()) else sleep_segundos)
 st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
+
