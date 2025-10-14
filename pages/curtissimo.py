@@ -325,11 +325,12 @@ def notificar_abertura_pregao_uma_vez_por_dia():
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
-if st.sidebar.button("🧹 Apagar estado salvo (reset total)"):
+if st.sidebar.button("🧹 Apagar Tabela de Dados"):
     try:
         apagar_estado_remoto()
         st.session_state.clear()
         inicializar_estado()
+        st.session_state["avisou_abertura_pregao"] = True  # ✅ evita disparar mensagem de pregão aberto após reset
         st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | 🧹 Reset manual")
         salvar_estado_duravel(force=True)
         st.sidebar.success("✅ Estado apagado e reiniciado.")
