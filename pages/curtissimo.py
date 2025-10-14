@@ -539,7 +539,7 @@ else:
                         st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
                         st.session_state.ultimo_update_tempo[t] = now.isoformat()
                         st.session_state.log_monitoramento.append(
-                            f"⏱ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
+                            f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                         )
                     else:
                         st.session_state.log_monitoramento.append(
