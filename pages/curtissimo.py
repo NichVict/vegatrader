@@ -305,7 +305,7 @@ def enviar_notificacao_curto(dest, assunto, corpo, rem, senha, tok_tg, chat_id):
             st.session_state.log_monitoramento.append(f"⚠️ Erro Telegram: {e}")
     asyncio.run(send_tg())
 
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=INTERVALO_VERIFICACAO / 2)
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
 def obter_preco_atual(ticker_symbol):
