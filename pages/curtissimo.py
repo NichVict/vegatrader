@@ -258,7 +258,7 @@ def enviar_notificacao_curto(dest, assunto, corpo_email_html, rem, senha, tok_tg
                 texto_final = corpo_telegram if corpo_telegram else corpo_email_html
                 await bot.send_message(
                     chat_id=chat_id,
-                    text=f"{texto_final}\n\n🤖 Robot 1milhão Invest (CURTÍSSIMO PRAZO)",
+                    text=f"{texto_final}\n\n🤖 Robot 1milhão Invest",
                     parse_mode="HTML",
                     disable_web_page_preview=True
                 )
@@ -326,15 +326,14 @@ def formatar_mensagem_alerta(ticker_symbol, preco_alvo, preco_atual, operacao):
 <b>Ticker:</b> {ticker_symbol_sem_ext}\n
 <b>Preço alvo:</b> R$ {preco_alvo:.2f}\n
 <b>Preço atual:</b> R$ {preco_atual:.2f}\n\n
-⏱ <i>Aguardar candle de 60 minutos para confirmação.</i>\n
 📊 <a href='https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}'>Abrir gráfico no TradingView</a>\n\n
 <em>
 COMPLIANCE: Esta mensagem é uma sugestão de compra/venda baseada em nossa CARTEIRA.
 A compra ou venda é de total decisão e responsabilidade do Destinatário.
-Esta informação é CONFIDENCIAL, de propriedade do Canal 1milhao e de seu DESTINATÁRIO tão somente.
+Esta informação é CONFIDENCIAL, de propriedade de 1milhao Invest e de seu DESTINATÁRIO tão somente.
 Se você NÃO for DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir
 ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI.
-A Lista de Ações do Canal 1milhao é devidamente REGISTRADA.
+A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
 </em>
 """.strip()
 
