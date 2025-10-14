@@ -783,9 +783,14 @@ else:
         st.session_state["avisou_abertura_pregao"] = False
         faltam, prox_abertura = segundos_ate_abertura(now)
         components.html(f"""
-        <div style="background:#0b1220;border:1px solid #1f2937;border-radius:10px;padding:12px;">
-        ⏸️ Pregão fechado. Reabre em <b>{datetime.timedelta(seconds=faltam)}</b> (às {prox_abertura.strftime('%H:%M')}).</div>""",
-        height=70)
+        <div style="background:#0b1220;border:1px solid #1f2937;
+             border-radius:10px;padding:12px;margin-top:10px;
+             color:white;">
+            ⏸️ Pregão fechado. Reabre em 
+            <b style="color:#60a5fa;">{datetime.timedelta(seconds=faltam)}</b>
+            (às <span style="color:#60a5fa;">{prox_abertura.strftime('%H:%M')}</span>).
+        </div>""", height=70)
+
         try:
             APP_URL = "https://curtissimo.streamlit.app"
             ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
