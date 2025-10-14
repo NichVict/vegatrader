@@ -601,6 +601,35 @@ if st.session_state.pausado:
     st.info("⏸️ Monitoramento pausado.")
 else:
     now = agora_lx()
+    # 🧩 Exibe a tabela mesmo fora do pregão (mantém última atualização)
+    if st.session_state.ativos:
+        data = []
+        now = agora_lx()
+        for ativo in st.session_state.ativos:
+            t = ativo["ticker"]
+            preco_alvo = ativo["preco"]
+            operacao = ativo["operacao"].upper()
+            tempo = st.session_state.tempo_acumulado.get(t, 0)
+            minutos = tempo / 60
+            preco_atual = "-"
+            try:
+                preco_atual = obter_preco_atual(f"{t}.SA")
+            except Exception:
+                pass
+    
+            data.append({
+                "Ticker": t,
+                "Operação": operacao,
+                "Preço Alvo": f"R$ {preco_alvo:.2f}",
+                "Preço Atual": f"R$ {preco_atual:.2f}" if preco_atual != "-" else "-",
+                "Status": st.session_state.status.get(t, "🟢 Monitorando"),
+                "Tempo Acumulado": f"{int(minutos)} min"
+            })
+    
+        tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
+    else:
+        tabela_status.info("Nenhum ativo monitorado no momento.")
+
     if dentro_pregao(now):
         notificar_abertura_pregao_uma_vez_por_dia()
         data = []
