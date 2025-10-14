@@ -594,7 +594,8 @@ st.subheader("🕒 Log de Monitoramento")
 log_container = st.empty()
 
 # -----------------------------
-# LOOP DE MONITORAMENTO
+# -----------------------------
+# LOOP DE MONITORAMENTO (VERSÃO CORRIGIDA + DEBUG)
 # -----------------------------
 sleep_segundos = 60
 if st.session_state.pausado:
@@ -648,12 +649,13 @@ else:
             )
 
             # -----------------------------
-            # BLOCO PRINCIPAL DE CONTAGEM
+            # BLOCO PRINCIPAL DE CONTAGEM (CORRIGIDO + DEBUG)
             # -----------------------------
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
 
                 if not st.session_state.em_contagem.get(t, False):
+                    # Inicia contagem
                     st.session_state.em_contagem[t] = True
                     if not st.session_state.ultimo_update_tempo.get(t) and st.session_state.tempo_acumulado.get(t, 0) == 0:
                         st.session_state.tempo_acumulado[t] = 0
@@ -662,56 +664,49 @@ else:
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando/retomando contagem..."
                     )
                     salvar_estado_duravel(force=True)
+
                 else:
+                    # Continua contagem
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
+                    st.session_state.log_monitoramento.append(
+                        f"🐞 DEBUG {t}: ultimo_update_tempo bruto = {ultimo}"
+                    )
 
-                    # --- Função segura de conversão para datetime aware ---
-                    def _to_aware_datetime(value):
-                        if isinstance(value, datetime.datetime):
-                            dt = value
-                        elif isinstance(value, str):
-                            try:
-                                dt = datetime.datetime.fromisoformat(value)
-                            except Exception:
-                                try:
-                                    base = value.replace("Z", "")
-                                    if "." in base:
-                                        left, right = base.split(".", 1)
-                                        tz_suffix = ""
-                                        if "+" in right:
-                                            tz_suffix = "+" + right.split("+", 1)[1]
-                                        elif "-" in right:
-                                            tz_suffix = "-" + right.split("-", 1)[1]
-                                        base = left + tz_suffix
-                                    dt = datetime.datetime.fromisoformat(base)
-                                except Exception:
-                                    dt = None
-                        else:
-                            dt = None
-
-                        if dt is None:
-                            return None
-                        if dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=TZ)
-                        return dt
-                    # -----------------------------------------------------
-
-                    dt_ultimo = _to_aware_datetime(ultimo) or now
-                    delta = max(0, min((now - dt_ultimo).total_seconds(), INTERVALO_VERIFICACAO + 5))
-
-                    if delta > 0:
-                        st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
-                        st.session_state.ultimo_update_tempo[t] = now.isoformat()
-                        st.session_state.log_monitoramento.append(
-                            f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
-                        )
+                    # 🕒 Conversão robusta
+                    if ultimo:
+                        try:
+                            if isinstance(ultimo, str):
+                                dt_ultimo = datetime.datetime.fromisoformat(ultimo)
+                                if dt_ultimo.tzinfo is None:
+                                    dt_ultimo = dt_ultimo.replace(tzinfo=TZ)
+                            else:
+                                dt_ultimo = ultimo
+                        except Exception as e:
+                            st.session_state.log_monitoramento.append(
+                                f"🐞 DEBUG {t}: erro convertendo ultimo_update_tempo → {e}"
+                            )
+                            dt_ultimo = now
                     else:
-                        st.session_state.log_monitoramento.append(
-                            f"⏸ {t}: aguardando próximo ciclo válido (delta={int(delta)}s)"
-                        )
+                        dt_ultimo = now
+
+                    # 🧮 Cálculo do delta
+                    delta = (now - dt_ultimo).total_seconds()
+                    if delta < 0:
+                        delta = 0
+                    if delta > INTERVALO_VERIFICACAO + 5:
+                        delta = INTERVALO_VERIFICACAO + 5
+
+                    st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
+                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
+
+                    st.session_state.log_monitoramento.append(
+                        f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s) | "
+                        f"🐞 DEBUG dt_ultimo={dt_ultimo.isoformat()} now={now.isoformat()}"
+                    )
+
                     salvar_estado_duravel()
 
-                # 🚀 Proteção contra disparo duplicado
+                # 🚀 Disparo de alerta quando atinge o tempo máximo
                 if (
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
                     and st.session_state.status.get(t) != "🚀 Disparado"
@@ -729,7 +724,9 @@ else:
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
                     tickers_para_remover.append(t)
                     salvar_estado_duravel(force=True)
+
             else:
+                # Saiu da zona de preço
                 if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
