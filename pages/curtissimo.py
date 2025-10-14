@@ -415,7 +415,7 @@ def notificar_abertura_pregao_uma_vez_por_dia():
         chat = st.secrets.get("telegram_chat_id_curtissimo", "").strip()
         if tok and chat:
             bot = Bot(token=tok)
-            asyncio.run(bot.send_message(chat_id=chat, text="📈 Robô CURTISSIMO PRAZO ativo — Pregão Aberto!"))
+            asyncio.run(bot.send_message(chat_id=chat, text="🤖 Robô iniciando monitoramento — Pregão Aberto!"))
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto")
         else:
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Telegram não configurado.")
