@@ -828,9 +828,8 @@ else:
                     salvar_estado_duravel()
 
                 # 🧠 Log de debug: mostra o valor acumulado atual
-                st.session_state.log_monitoramento.append(
-                    f"🧠 DEBUG: {t} com {st.session_state.tempo_acumulado[t]}s acumulados (máx {TEMPO_ACUMULADO_MAXIMO})"
-                )
+                st.session_state.log_monitoramento.append(f"🧠 DEBUG: {t} com {round(tempo_total)}s acumulados (máx {TEMPO_ACUMULADO_MAXIMO})")
+
 
                 # 🚀 Proteção contra disparo duplicado
                 if (
@@ -848,6 +847,9 @@ else:
                         "preco_atual": preco_atual
                     })
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
+                    # 🔴 Parar contagem e preparar remoção
+                    st.session_state.em_contagem[t] = False
+                    st.session_state.tempo_acumulado[t] = 0
                     tickers_para_remover.append(t)
                     salvar_estado_duravel(force=True)
             else:
