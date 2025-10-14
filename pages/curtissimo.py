@@ -806,7 +806,8 @@ else:
                     # -----------------------------------------------------
 
                     dt_ultimo = _to_aware_datetime(ultimo) or now
-                    delta = max(0, min((now - dt_ultimo).total_seconds(), INTERVALO_VERIFICACAO + 5))
+                    delta = max(0, (now - dt_ultimo).total_seconds())
+
 
                     if delta > 0:
                         st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
