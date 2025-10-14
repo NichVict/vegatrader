@@ -221,24 +221,52 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
         s.login(remetente, senha_ou_token)
         s.send_message(msg)
 
-def enviar_notificacao_curto(dest, assunto, corpo, rem, senha, tok_tg, chat_id):
-    # Email
+def enviar_notificacao_curto(dest, assunto, corpo_email_html, rem, senha, tok_tg, chat_id, corpo_telegram=None):
+    """
+    Envia e-mail em HTML e mensagem Telegram (HTML), com compatibilidade retroativa.
+    """
+    # --- E-mail (em HTML) ---
     if senha and dest:
         try:
-            enviar_email(dest, assunto, corpo, rem, senha)
+            # Se o corpo não for HTML, envia como texto simples (compatibilidade)
+            mensagem = MIMEMultipart()
+            mensagem["From"] = rem
+            mensagem["To"] = dest
+            mensagem["Subject"] = assunto
+
+            if "<html" in corpo_email_html.lower():
+                mensagem.attach(MIMEText(corpo_email_html, "html"))
+            else:
+                mensagem.attach(MIMEText(corpo_email_html, "plain"))
+
+            with smtplib.SMTP("smtp.gmail.com", 587) as servidor:
+                servidor.starttls()
+                servidor.login(rem, senha)
+                servidor.send_message(mensagem)
+
+            st.session_state.log_monitoramento.append("📧 E-mail enviado com sucesso.")
         except Exception as e:
             st.session_state.log_monitoramento.append(f"⚠️ Erro e-mail: {e}")
     else:
         st.session_state.log_monitoramento.append("⚠️ Email não configurado.")
 
+    # --- Telegram (HTML ou texto simples) ---
     async def send_tg():
         try:
             if tok_tg and chat_id:
                 bot = Bot(token=tok_tg)
-                await bot.send_message(chat_id=chat_id, text=f"{corpo}\n\nRobot 1milhão Invest (CURTISSIMO PRAZO).")
+                texto_final = corpo_telegram if corpo_telegram else corpo_email_html
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"{texto_final}\n\n🤖 Robot 1milhão Invest (CURTÍSSIMO PRAZO)",
+                    parse_mode="HTML",
+                    disable_web_page_preview=True
+                )
         except Exception as e:
             st.session_state.log_monitoramento.append(f"⚠️ Erro Telegram: {e}")
+
     asyncio.run(send_tg())
+
 
 @st.cache_data(ttl=5)
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
@@ -255,19 +283,86 @@ def obter_preco_atual(ticker_symbol):
     return float(preco_atual)
 
 def notificar_preco_alvo_alcancado_curto(ticker, preco_alvo, preco_atual, operacao):
+    """
+    Gera e envia alertas (Telegram + e-mail) com template visual e compliance.
+    Compatível com enviar_notificacao_curto().
+    """
+    # --- Formata mensagens com visual e compliance ---
+    msg_telegram, msg_email_html = formatar_mensagem_alerta(ticker, preco_alvo, preco_atual, operacao)
+
+    # --- Ajusta campos e parâmetros ---
     tk_sem_ext = ticker.replace(".SA", "")
     msg_op = "VENDA A DESCOBERTO" if operacao == "venda" else operacao.upper()
-    msg = (f"Operação de {msg_op} em {tk_sem_ext} ativada!\n"
-           f"Preço alvo: {preco_alvo:.2f} | Preço atual: {preco_atual:.2f}\n\n"
-           "COMPLIANCE: decisão de compra/venda é do destinatário.")
-    rem = st.secrets.get("email_sender", "")
+    assunto = f"ALERTA CURTÍSSIMO PRAZO: {msg_op} em {tk_sem_ext}"
+
+    # --- Credenciais (st.secrets) ---
+    remetente = st.secrets.get("email_sender", "")
     senha = st.secrets.get("gmail_app_password", "")
-    dest = st.secrets.get("email_recipient_curtissimo", "")
-    tok_tg = st.secrets.get("telegram_token", "")
+    destinatario = st.secrets.get("email_recipient_curtissimo", "")
+    token_tg = st.secrets.get("telegram_token", "")
     chat_id = st.secrets.get("telegram_chat_id_curtissimo", "")
-    enviar_notificacao_curto(dest, f"ALERTA CURTISSIMO PRAZO: {msg_op} em {tk_sem_ext}",
-                             msg, rem, senha, tok_tg, chat_id)
-    return msg
+
+    # --- Envio centralizado (função já existente no seu código) ---
+    try:
+        enviar_notificacao_curto(destinatario, assunto, msg_email_html, remetente, senha, token_tg, chat_id, msg_telegram)
+        st.session_state.log_monitoramento.append(f"📤 Alerta enviado: {tk_sem_ext} ({msg_op})")
+    except Exception as e:
+        st.session_state.log_monitoramento.append(f"⚠️ Erro no envio de alerta: {e}")
+
+    return f"💥 ALERTA de {msg_op} em {tk_sem_ext} enviado com sucesso!"
+
+
+def formatar_mensagem_alerta(ticker_symbol, preco_alvo, preco_atual, operacao):
+    """
+    Gera o texto formatado de alerta para envio por Telegram e E-mail.
+    Inclui mensagem principal + compliance em tamanho reduzido (visual).
+    """
+    ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
+    msg_op = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
+
+    # --- Texto para Telegram (HTML) ---
+    mensagem_telegram = f"""
+💥 <b>ALERTA DE {msg_op.upper()} ATIVADA!</b>\n\n
+<b>Ticker:</b> {ticker_symbol_sem_ext}\n
+<b>Preço alvo:</b> R$ {preco_alvo:.2f}\n
+<b>Preço atual:</b> R$ {preco_atual:.2f}\n\n
+⏱ <i>Aguardar candle de 60 minutos para confirmação.</i>\n
+📊 <a href='https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}'>Abrir gráfico no TradingView</a>\n\n
+<em>
+COMPLIANCE: Esta mensagem é uma sugestão de compra/venda baseada em nossa CARTEIRA.
+A compra ou venda é de total decisão e responsabilidade do Destinatário.
+Esta informação é CONFIDENCIAL, de propriedade do Canal 1milhao e de seu DESTINATÁRIO tão somente.
+Se você NÃO for DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir
+ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI.
+A Lista de Ações do Canal 1milhao é devidamente REGISTRADA.
+</em>
+""".strip()
+
+    # --- Corpo HTML do e-mail (dark, título azul, compliance pequeno/cinza) ---
+    corpo_email_html = f"""
+<html>
+  <body style="font-family:Arial,sans-serif; background-color:#0b1220; color:#e5e7eb; padding:20px;">
+    <h2 style="color:#3b82f6;">💥 ALERTA DE {msg_op.upper()} ATIVADA!</h2>
+    <p><b>Ticker:</b> {ticker_symbol_sem_ext}</p>
+    <p><b>Preço alvo:</b> R$ {preco_alvo:.2f}</p>
+    <p><b>Preço atual:</b> R$ {preco_atual:.2f}</p>
+    <p style="margin-top:12px;">⏱ <i>Aguardar candle de 60 minutos para confirmação.</i></p>
+    <p>📊 <a href="https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}" style="color:#60a5fa;">Ver gráfico no TradingView</a></p>
+    <hr style="border:1px solid #3b82f6; margin:20px 0;">
+    <p style="font-size:11px; line-height:1.4; color:#9ca3af;">
+      <b>COMPLIANCE:</b> Esta mensagem é uma sugestão de compra/venda baseada em nossa CARTEIRA.<br>
+      A compra ou venda é de total decisão e responsabilidade do Destinatário.<br>
+      Esta informação é <b>CONFIDENCIAL</b>, de propriedade do Canal 1milhao e de seu DESTINATÁRIO tão somente.<br>
+      Se você <b>NÃO</b> for DESTINATÁRIO ou pessoa autorizada a recebê-lo, <b>NÃO PODE</b> usar, copiar, transmitir, retransmitir
+      ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI.<br>
+      A Lista de Ações do Canal 1milhao é devidamente <b>REGISTRADA.</b>
+    </p>
+  </body>
+</html>
+""".strip()
+
+    return mensagem_telegram, corpo_email_html
+
 
 async def testar_telegram():
     tok = st.secrets.get("telegram_token", "")
@@ -359,6 +454,24 @@ if st.sidebar.button("📤 Testar Envio Telegram"):
     st.sidebar.info("Enviando mensagem de teste...")
     ok, erro = asyncio.run(testar_telegram())
     st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
+# -----------------------------------------
+# TESTE COMPLETO DE ALERTA (com layout e compliance)
+# -----------------------------------------
+if st.sidebar.button("📩 Testar mensagem estilizada"):
+    st.sidebar.info("Gerando alerta simulado...")
+
+    ticker_teste = "PETR4.SA"
+    preco_alvo = 37.50
+    preco_atual = 37.52
+    operacao = "compra"
+
+    try:
+        msg = notificar_preco_alvo_alcancado_curto(ticker_teste, preco_alvo, preco_atual, operacao)
+        st.sidebar.success("✅ Mensagem de teste enviada (verifique Telegram e e-mail).")
+        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | 🧪 Teste estilizado executado com sucesso.")
+    except Exception as e:
+        st.sidebar.error(f"❌ Erro no teste: {e}")
+        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | ⚠️ Erro teste estilizado: {e}")
 
 st.sidebar.checkbox("⏸️ Pausar monitoramento", key="pausado")
 salvar_estado_duravel()
