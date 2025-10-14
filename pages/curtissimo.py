@@ -591,6 +591,7 @@ else:
     now = agora_lx()
     if dentro_pregao(now):
         notificar_abertura_pregao_uma_vez_por_dia()
+        tickers_para_remover = []  # cria a lista aqui
         data = []
         for ativo in st.session_state.ativos:
             t = ativo["ticker"]
@@ -871,7 +872,7 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
-refresh_ms = 10_000 * (INTERVALO_VERIFICACAO if dentro_pregao(agora_lx()) else sleep_segundos)
+refresh_ms = 10_000  # atualização visual a cada 10 segundos (não afeta lógica de tempo)
 st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
 
 
