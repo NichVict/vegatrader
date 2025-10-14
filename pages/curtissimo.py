@@ -219,7 +219,6 @@ def inicializar_estado():
     ensure_color_map()
 
 inicializar_estado()
-st.session_state["tempo_acumulado_maximo"] = TEMPO_ACUMULADO_MAXIMO
 carregar_estado_duravel()
 
 # -----------------------------
@@ -591,122 +590,9 @@ if st.button("➕ Adicionar ativo"):
 st.subheader("📊 Status dos Ativos Monitorados")
 tabela_status = st.empty()
 grafico = st.empty()
-# ---------- LOG: cor por ticker + box rolável + ordem decrescente ----------
-PALETTE = [
-    "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
-    "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
-]
-
-def ensure_color_map():
-    if "ticker_colors" not in st.session_state:
-        st.session_state.ticker_colors = {}
-
-def color_for_ticker(ticker):
-    ensure_color_map()
-    if ticker not in st.session_state.ticker_colors:
-        idx = len(st.session_state.ticker_colors) % len(PALETTE)
-        st.session_state.ticker_colors[ticker] = PALETTE[idx]
-    return st.session_state.ticker_colors[ticker]
-
-TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\.SA\b")
-PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")
-
-def extract_ticker(line):
-    m = TICKER_PAT.search(line)
-    if m:
-        return m.group(1)
-    m2 = PLAIN_TICKER_PAT.search(line)
-    return m2.group(1) if m2 else None
-
-def render_log_html(lines, selected_tickers=None, max_lines=250):
-    """Renderiza o log com badges coloridas por ticker e contador vivo de segundos."""
-    if not lines:
-        st.write("—")
-        return
-    subset = lines[-max_lines:][::-1]
-    if selected_tickers:
-        subset = [l for l in subset if extract_ticker(l) in selected_tickers]
-
-    css = """
-    <style>
-      body { background-color: #0b1220; color: #e5e7eb; margin: 0; }
-      .log-card {
-        background: #0b1220;
-        border: 1px solid #1f2937;
-        border-radius: 10px;
-        padding: 10px 12px;
-        max-height: 360px;
-        overflow-y: auto;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-        font-size: 13px;
-        line-height: 1.35;
-      }
-      .log-line {
-        display: flex;
-        align-items: baseline;
-        gap: 8px;
-        margin: 2px 0;
-      }
-      .ts { color: #9ca3af; min-width: 64px; text-align: right; }
-      .badge {
-        display: inline-block;
-        padding: 1px 8px;
-        font-size: 12px;
-        border-radius: 9999px;
-        color: white;
-      }
-      .msg { white-space: pre-wrap; }
-      .counter {
-        color: #93c5fd;
-        font-weight: bold;
-        animation: pulse 1s infinite alternate;
-      }
-      @keyframes pulse {
-        from { opacity: 0.7; }
-        to { opacity: 1; }
-      }
-    </style>
-    """
-
-    html = [css, "<div class='log-card' id='logCard'>"]
-    for l in subset:
-        if " | " in l:
-            ts, rest = l.split(" | ", 1)
-        else:
-            ts, rest = "", l
-        tk = extract_ticker(l)
-        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""        
-        rest_html = re.sub(
-            r": (\d+)s acumulados",
-            r": <span class='counter' data-seconds='\\1'>\\1s acumulados</span>",
-            rest
-        )
-
-        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest_html}</span></div>")
-    html.append("</div>")
-
-    js = """
-    <script>
-    const counters = document.querySelectorAll('.counter');
-    counters.forEach(el => {
-      let secs = parseInt(el.dataset.seconds);
-      if (isNaN(secs)) secs = 0;
-      setInterval(() => {
-        secs += 1;
-        el.textContent = secs + 's acumulados';
-      }, 1000);
-    });
-
-    </script>
-    """
-
-    html.append(js)
-    components.html("\n".join(html), height=420, scrolling=True)
-
+st.subheader("🕒 Log de Monitoramento")
 log_container = st.empty()
 
-# -----------------------------
-# LOOP DE MONITORAMENTO
 # -----------------------------
 # LOOP DE MONITORAMENTO
 # -----------------------------
@@ -754,11 +640,7 @@ else:
                 st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro {t}: {e}")
                 continue
 
-            # 🔵 Log de preço atual
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
-            log_container.empty()
-            with log_container:
-                render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
 
             condicao = (
                 (operacao_atv == "compra" and preco_atual >= preco_alvo) or
@@ -776,19 +658,14 @@ else:
                     if not st.session_state.ultimo_update_tempo.get(t) and st.session_state.tempo_acumulado.get(t, 0) == 0:
                         st.session_state.tempo_acumulado[t] = 0
                     st.session_state.ultimo_update_tempo[t] = now.isoformat()
-
                     st.session_state.log_monitoramento.append(
                         f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando/retomando contagem..."
                     )
-                    log_container.empty()
-                    with log_container:
-                        render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
                     salvar_estado_duravel(force=True)
-
                 else:
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
 
-                    # --- Conversão segura para datetime aware ---
+                    # --- Função segura de conversão para datetime aware ---
                     def _to_aware_datetime(value):
                         if isinstance(value, datetime.datetime):
                             dt = value
@@ -796,9 +673,22 @@ else:
                             try:
                                 dt = datetime.datetime.fromisoformat(value)
                             except Exception:
-                                dt = None
+                                try:
+                                    base = value.replace("Z", "")
+                                    if "." in base:
+                                        left, right = base.split(".", 1)
+                                        tz_suffix = ""
+                                        if "+" in right:
+                                            tz_suffix = "+" + right.split("+", 1)[1]
+                                        elif "-" in right:
+                                            tz_suffix = "-" + right.split("-", 1)[1]
+                                        base = left + tz_suffix
+                                    dt = datetime.datetime.fromisoformat(base)
+                                except Exception:
+                                    dt = None
                         else:
                             dt = None
+
                         if dt is None:
                             return None
                         if dt.tzinfo is None:
@@ -807,52 +697,28 @@ else:
                     # -----------------------------------------------------
 
                     dt_ultimo = _to_aware_datetime(ultimo) or now
-                    delta = max(0, (now - dt_ultimo).total_seconds())
-
+                    delta = max(0, min((now - dt_ultimo).total_seconds(), INTERVALO_VERIFICACAO + 5))
 
                     if delta > 0:
                         st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + delta
                         st.session_state.ultimo_update_tempo[t] = now.isoformat()
                         st.session_state.log_monitoramento.append(
-                            f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados"
+                            f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                         )
-                        log_container.empty()
-                        with log_container:
-                            render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
                     else:
                         st.session_state.log_monitoramento.append(
                             f"⏸ {t}: aguardando próximo ciclo válido (delta={int(delta)}s)"
                         )
-                        log_container.empty()
-                        with log_container:
-                            render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
                     salvar_estado_duravel()
 
-                # 🧠 Log de debug: mostra o valor acumulado atual
-                # 🧠 Log de debug: mostra o valor acumulado atual
-                tempo_total = st.session_state.tempo_acumulado.get(t, 0)
-                tempo_max = st.session_state.get("tempo_acumulado_maximo", 180)
-                st.session_state.log_monitoramento.append(
-                    f"🧠 DEBUG: {t} com {int(tempo_total)}s acumulados (máx {int(tempo_max)})"
-                )
-                
                 # 🚀 Proteção contra disparo duplicado
                 if (
-                    st.session_state.tempo_acumulado[t] >= tempo_max
+                    st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
                     and st.session_state.status.get(t) != "🚀 Disparado"
                 ):
                     st.session_state.status[t] = "🚀 Disparado"
-                
-                    # Log de debug (confirma disparo)
-                    st.session_state.log_monitoramento.append(
-                        f"🚀 {t} atingiu {int(tempo_total)}s (limite: {int(tempo_max)}s) — alerta disparado!"
-                    )
-                
-                    # Envio da notificação
                     alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
                     st.warning(alerta_msg)
-                
-                    # Registro no histórico e gráfico
                     st.session_state.historico_alertas.append({
                         "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
                         "ticker": t,
@@ -861,28 +727,16 @@ else:
                         "preco_atual": preco_atual
                     })
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
-                
-                    # 🔴 Parar contagem e preparar remoção
+                    tickers_para_remover.append(t)
+                    salvar_estado_duravel(force=True)
+            else:
+                if st.session_state.em_contagem.get(t, False):
                     st.session_state.em_contagem[t] = False
                     st.session_state.tempo_acumulado[t] = 0
-                    tickers_para_remover.append(t)
-                
-                    # Salva imediatamente para consistência
+                    st.session_state.status[t] = "🔴 Fora da zona"
+                    st.session_state.ultimo_update_tempo[t] = None
+                    st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo.")
                     salvar_estado_duravel(force=True)
-                
-                else:
-                    # Caso o ticker saia da zona de preço alvo
-                    if st.session_state.em_contagem.get(t, False):
-                        st.session_state.em_contagem[t] = False
-                        st.session_state.tempo_acumulado[t] = 0
-                        st.session_state.status[t] = "🔴 Fora da zona"
-                        st.session_state.ultimo_update_tempo[t] = None
-                        st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo.")
-                        log_container.empty()
-                        with log_container:
-                            render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
-                        salvar_estado_duravel(force=True)
-
 
         if tickers_para_remover:
             st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
@@ -894,13 +748,8 @@ else:
             st.session_state.log_monitoramento.append(
                 f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ativação: {', '.join(tickers_para_remover)}"
             )
-            log_container.empty()
-            with log_container:
-                render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
             salvar_estado_duravel(force=True)
-
         sleep_segundos = INTERVALO_VERIFICACAO
-
     else:
         st.session_state["avisou_abertura_pregao"] = False
         faltam, prox_abertura = segundos_ate_abertura(now)
@@ -909,7 +758,7 @@ else:
         ⏸️ Pregão fechado. Reabre em <b>{datetime.timedelta(seconds=faltam)}</b> (às {prox_abertura.strftime('%H:%M')}).</div>""",
         height=70)
         try:
-            APP_URL = "https://curtissimo.streamlit.app"
+            APP_URL = "https://curtoprazo.streamlit.app"
             ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
             if isinstance(ultimo_ping, str):
                 ultimo_ping = datetime.datetime.fromisoformat(ultimo_ping)
@@ -922,38 +771,21 @@ else:
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Erro keep-alive: {e}")
         sleep_segundos = 300
 
-
-# -----------------------------
-# GRÁFICO FINAL
-# -----------------------------
 # -----------------------------
 # GRÁFICO FINAL
 # -----------------------------
 fig = go.Figure()
-
-# 🟩 Linhas principais (histórico dos preços dos tickers ativos)
 for t, dados in st.session_state.precos_historicos.items():
     if len(dados) > 0:
         xs, ys = zip(*dados)
-        fig.add_trace(go.Scatter(
-            x=xs, y=ys, mode="lines+markers", name=t,
-            line=dict(color=st.session_state.ticker_colors.get(t, "#3b82f6"), width=2)
-        ))
-
-# ⭐ Marcadores de disparos
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines+markers", name=t,
+                                 line=dict(color=st.session_state.ticker_colors.get(t, "#3b82f6"), width=2)))
 for t, pontos in st.session_state.disparos.items():
     if pontos:
         xs, ys = zip(*pontos)
-        fig.add_trace(go.Scatter(
-            x=xs, y=ys, mode="markers", name=f"Ativação {t}",
-            marker=dict(symbol="star", size=12, line=dict(width=2, color="white"))
-        ))
-
-fig.update_layout(
-    title="📉 Evolução dos Preços",
-    template="plotly_dark",
-    margin=dict(l=30, r=30, t=50, b=30)
-)
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="markers", name=f"Ativação {t}",
+                                 marker=dict(symbol="star", size=12, line=dict(width=2, color="white"))))
+fig.update_layout(title="📉 Evolução dos Preços", template="plotly_dark")
 grafico.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
@@ -962,8 +794,8 @@ grafico.plotly_chart(fig, use_container_width=True)
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
     salvar_estado_duravel()
-
 # ---------- LOG: cor por ticker + box rolável + ordem decrescente ----------
+
 PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
@@ -990,9 +822,67 @@ def extract_ticker(line):
     m2 = PLAIN_TICKER_PAT.search(line)
     return m2.group(1) if m2 else None
 
+def render_log_html(lines, selected_tickers=None, max_lines=250):
+    """Renderiza o log no mesmo estilo visual do clube.py (cores, badges, rolagem)."""
+    if not lines:
+        st.write("—")
+        return
+    subset = lines[-max_lines:][::-1]
+    if selected_tickers:
+        subset = [l for l in subset if extract_ticker(l) in selected_tickers]
 
+    css = """
+    <style>
+      .log-card {
+        background: #0b1220;
+        border: 1px solid #1f2937;
+        border-radius: 10px;
+        padding: 10px 12px;
+        max-height: 360px;
+        overflow-y: auto;
+      }
+      .log-line {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 1.35;
+        margin: 2px 0;
+        color: #e5e7eb;
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .ts {
+        color: #9ca3af;
+        min-width: 64px;
+        text-align: right;
+      }
+      .badge {
+        display: inline-block;
+        padding: 1px 8px;
+        font-size: 12px;
+        border-radius: 9999px;
+        color: white;
+      }
+      .msg {
+        white-space: pre-wrap;
+      }
+    </style>
+    """
+
+    html = [css, "<div class='log-card'>"]
+    for l in subset:
+        if " | " in l:
+            ts, rest = l.split(" | ", 1)
+        else:
+            ts, rest = "", l
+        tk = extract_ticker(l)
+        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
+        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
+    html.append("</div>")
 
     st.markdown("\n".join(html), unsafe_allow_html=True)
+
+
 
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
@@ -1008,20 +898,16 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
         if res.status_code == 200 and res.json():
             state_preview = res.json()[0]["v"]
             st.json(state_preview)
-            st.download_button(
-                "⬇️ Baixar state_curto.json",
-                data=json.dumps(state_preview, indent=2),
-                file_name="state_curto.json",
-                mime="application/json"
-            )
+            st.download_button("⬇️ Baixar state_curto.json",
+                               data=json.dumps(state_preview, indent=2),
+                               file_name="state_curto.json", mime="application/json")
         else:
             st.info("Nenhum estado salvo ainda.")
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
-# 🔄 Atualização visual a cada 10 segundos
-# (não interfere na contagem interna, apenas na interface)
-refresh_ms = 60_000
+
+refresh_ms = 50_000  # atualização visual a cada 50 segundos (não afeta lógica de tempo)
 st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
 
 
