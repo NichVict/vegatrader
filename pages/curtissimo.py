@@ -688,12 +688,14 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
     <script>
     const counters = document.querySelectorAll('.counter');
     counters.forEach(el => {
-      let secs = parseInt(el.dataset.seconds || '0');
+      let secs = parseInt(el.dataset.seconds);
+      if (isNaN(secs)) secs = 0;
       setInterval(() => {
         secs += 1;
         el.textContent = secs + 's acumulados';
       }, 1000);
     });
+
     </script>
     """
 
