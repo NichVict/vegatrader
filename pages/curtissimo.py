@@ -620,7 +620,7 @@ else:
                 "Ticker": t,
                 "Operação": ativo["operacao"].upper(),
                 "Preço Alvo": f"R$ {ativo['preco']:.2f}",
-                "Preço Atual": f"R$ {preco_atual}" if preco_atual != "-" else "-",
+                "Preço Atual": f"R$ {preco_atual:.2f}" if preco_atual != "-" else "-",
                 "Status": st.session_state.status.get(t, "🟢 Monitorando"),
                 "Tempo Acumulado": f"{int(minutos)} min"
             })
