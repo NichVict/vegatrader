@@ -618,7 +618,7 @@ def extract_ticker(line):
     return m2.group(1) if m2 else None
 
 def render_log_html(lines, selected_tickers=None, max_lines=250):
-    """Renderiza o log com badges coloridas por ticker e rolagem automática."""
+    """Renderiza o log com badges coloridas por ticker e contador vivo de segundos."""
     if not lines:
         st.write("—")
         return
@@ -655,10 +655,14 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
         color: white;
       }
       .msg { white-space: pre-wrap; }
+      .counter {
+        color: #93c5fd;
+        font-weight: bold;
+      }
     </style>
     """
 
-    html = [css, "<div class='log-card'>"]
+    html = [css, "<div class='log-card' id='logCard'>"]
     for l in subset:
         if " | " in l:
             ts, rest = l.split(" | ", 1)
@@ -666,13 +670,35 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
             ts, rest = "", l
         tk = extract_ticker(l)
         badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
-        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
+        # Marca o contador, se existir "s acumulados"
+        rest_html = re.sub(
+            r"(\d+)s acumulados",
+            r"<span class='counter' data-seconds='\\1'>\\1s acumulados</span>",
+            rest
+        )
+        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest_html}</span></div>")
     html.append("</div>")
-    html.append("<script>document.querySelector('.log-card').scrollTop = 0;</script>")
 
+    # JavaScript que atualiza os segundos em tempo real
+    js = """
+    <script>
+    const counters = document.querySelectorAll('.counter');
+    counters.forEach(el => {
+      let secs = parseInt(el.dataset.seconds || '0');
+      setInterval(() => {
+        secs += 1;
+        el.textContent = secs + 's acumulados';
+      }, 1000);
+    });
+    // Mantém o log rolado no topo (mais recente primeiro)
+    const logCard = document.getElementById('logCard');
+    if (logCard) logCard.scrollTop = 0;
+    </script>
+    """
+
+    html.append(js)
     st.markdown("\n".join(html), unsafe_allow_html=True)
 
-st.subheader("🕒 Log de Monitoramento")
 log_container = st.empty()
 
 # -----------------------------
