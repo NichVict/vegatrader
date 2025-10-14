@@ -498,7 +498,7 @@ if st.sidebar.button("🧼 Limpar histórico ⭐"):
     st.session_state.historico_alertas.clear()
     salvar_estado_duravel(force=True)
     st.sidebar.success("Histórico limpo!")
-if st.sidebar.button("🧼 Limpar log monitoramento ⭐"):
+if st.sidebar.button("🧼 Limpar monitoramento ⭐"):
     st.session_state.log_monitoramento.clear()
     salvar_estado_duravel(force=True)
     st.sidebar.success("Log limpo!")
@@ -589,7 +589,7 @@ if st.button("➕ Adicionar ativo"):
 st.subheader("📊 Status dos Ativos Monitorados")
 tabela_status = st.empty()
 grafico = st.empty()
-st.subheader("🕒 Log de Monitoramento")
+st.subheader("🕒 Monitoramento")
 log_container = st.empty()
 
 # -----------------------------
