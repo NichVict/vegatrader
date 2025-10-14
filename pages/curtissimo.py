@@ -361,10 +361,32 @@ if col2.button("🧽 Limpar LOG"):
     st.session_state.log_monitoramento.clear()
     salvar_estado_duravel(force=True)
     st.sidebar.success("Log limpo!")
+    
 if st.sidebar.button("🧼 Limpar marcadores ⭐"):
+    # Limpa estrelas de disparo
     st.session_state.disparos = {}
-    salvar_estado_duravel(force=True)
-    st.sidebar.success("Marcadores limpos!")
+
+    # Mantém apenas os históricos dos tickers ainda ativos na tabela
+    ativos_atuais = {a["ticker"] for a in st.session_state.ativos}
+    st.session_state.precos_historicos = {
+        t: dados for t, dados in st.session_state.precos_historicos.items() if t in ativos_atuais
+    }
+
+    # Também limpa status e acumuladores de quem já saiu
+    st.session_state.tempo_acumulado = {
+        t: v for t, v in st.session_state.tempo_acumulado.items() if t in ativos_atuais
+    }
+    st.session_state.em_contagem = {
+        t: v for t, v in st.session_state.em_contagem.items() if t in ativos_atuais
+    }
+    st.session_state.status = {
+        t: v for t, v in st.session_state.status.items() if t in ativos_atuais
+    }
+
+    # Salva e confirma visualmente
+    salvar_estado()
+    st.sidebar.success("Marcadores e históricos antigos limpos!")
+
 
 tickers_existentes = sorted(set(a["ticker"] for a in st.session_state.ativos)) if st.session_state.ativos else []
 selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_existentes, default=[])
