@@ -207,6 +207,7 @@ def inicializar_estado():
 
 inicializar_estado()
 carregar_estado_duravel()
+st.session_state["origem_estado"] = "☁️ Supabase" if "💾 Estado restaurado da nuvem!" in st.session_state.log_monitoramento else "📁 Local"
 
 
 # -----------------------------
