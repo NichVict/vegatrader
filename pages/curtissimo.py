@@ -503,7 +503,7 @@ if st.sidebar.button("🧹 Limpar Monitoramento"):
     salvar_estado_duravel(force=True)
     st.sidebar.success("Log limpo!")
     
-if st.sidebar.button("🧼 Limpar marcadores ⭐"):
+if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
     # Limpa estrelas de disparo
     st.session_state.disparos = {}
 
