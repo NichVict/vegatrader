@@ -1021,7 +1021,7 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
 
 # 🔄 Atualização visual a cada 10 segundos
 # (não interfere na contagem interna, apenas na interface)
-refresh_ms = 10_000
+refresh_ms = 60_000
 st_autorefresh(interval=refresh_ms, limit=None, key="curtissimo-refresh")
 
 
