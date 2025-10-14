@@ -674,12 +674,13 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
         else:
             ts, rest = "", l
         tk = extract_ticker(l)
-        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
+        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""        
         rest_html = re.sub(
-            r"(\d+)s acumulados",
-            r"<span class='counter' data-seconds='\\1'>\\1s acumulados</span>",
+            r": (\d+)s acumulados",
+            r": <span class='counter' data-seconds='\\1'>\\1s acumulados</span>",
             rest
         )
+
         html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest_html}</span></div>")
     html.append("</div>")
 
