@@ -829,7 +829,7 @@ else:
                     salvar_estado_duravel()
 
                 # 🧠 Log de debug: mostra o valor acumulado atual
-                st.session_state.log_monitoramento.append(f"🧠 DEBUG: {t} com {round(tempo_total)}s acumulados (máx {TEMPO_ACUMULADO_MAXIMO})")
+                st.session_state.log_monitoramento.append(f"🧠 DEBUG: {t} com {tempo_total}s acumulados (máx {TEMPO_ACUMULADO_MAXIMO})")
 
 
                 
