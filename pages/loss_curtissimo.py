@@ -326,15 +326,17 @@ def formatar_mensagem_encerramento(ticker_symbol, preco_alvo, preco_atual, opera
         if (preco_atual is not None and preco_alvo is not None) else ""
     )
 
-    # --- Texto para Telegram (HTML) ---
-    mensagem_telegram = f"""
-🛑 <b>ENCERRAMENTO (STOP) ATIVADO!\n\n
-<b>Ticker:</b> {ticker_symbol_sem_ext}\n
-<b>Operação anterior:</b> {msg_operacao_anterior}\n
-<b>Operação para encerrar:</b> {msg_operacao_encerrar}\n
-<b>STOP (alvo):</b> R$ {preco_alvo:.2f}\n
-<b>Preço atual:</b> R$ {preco_atual:.2f}\n
-📊 <a href='https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}'>Abrir gráfico no TradingView</a>\n\n
+# --- Texto para Telegram (HTML) ---
+mensagem_telegram = f"""🛑 <b>ENCERRAMENTO (STOP) ATIVADO!</b>
+
+<b>Ticker:</b> {ticker_symbol_sem_ext}
+<b>Operação anterior:</b> {msg_operacao_anterior}
+<b>Operação para encerrar:</b> {msg_operacao_encerrar}
+<b>STOP (alvo):</b> R$ {preco_alvo:.2f}
+<b>Preço atual:</b> R$ {preco_atual:.2f}
+
+📊 <a href="https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}">Abrir gráfico no TradingView</a>
+
 <em>
 COMPLIANCE: Esta mensagem é uma sugestão de ENCERRAMENTO baseada na CARTEIRA CURTÍSSIMO PRAZO.
 A execução é de total decisão e responsabilidade do Destinatário.
@@ -342,8 +344,8 @@ Esta informação é CONFIDENCIAL, de propriedade de 1milhao Invest e de seu DES
 Se você NÃO for DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir
 ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI.
 A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
-</em>
-""".strip()
+</em>""".strip()
+
 
     # --- Corpo HTML do e-mail (dark, título vermelho, compliance menor/cinza) ---
     corpo_email_html = f"""
