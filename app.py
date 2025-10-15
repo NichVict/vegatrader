@@ -17,6 +17,7 @@ from typing import Dict, Any, List, Optional, Tuple
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+from streamlit_autorefresh import st_autorefresh
 
 # ============================
 # CONFIGURAÇÕES GERAIS
@@ -59,15 +60,15 @@ body {
 }
 
 /* cores e pulsar */
-.status-green { 
+.status-green {
     background-color: #22c55e;
     animation: pulse-green 1.4s infinite;
 }
-.status-yellow { 
+.status-yellow {
     background-color: #facc15;
     animation: pulse-yellow 2s infinite;
 }
-.status-red { 
+.status-red {
     background-color: #ef4444;
     animation: pulse-red 3s infinite;
 }
@@ -153,8 +154,8 @@ ROBOS = [
         "title": "LOSS CURTO",
         "emoji": "🛑",
         "files": [
-            "session_data/state_loss_curto.json",
-            "state_loss_curto.json"
+            "session_data/state_losscurto.json",
+            "state_losscurto.json"
         ],
         "app_url": None
     },
@@ -175,8 +176,7 @@ ROBOS = [
         "title": "LOSS CURTÍSSIMO",
         "emoji": "🛑",
         "files": [
-            "session_data/state_loss_curtissimo.json",
-            "session_state_losscurtissimo.json",
+            "session_data/state_losscurtissimo.json",
             "state_losscurtissimo.json"
         ],
         "app_url": None
@@ -188,8 +188,8 @@ ROBOS = [
         "title": "CLUBE",
         "emoji": "🏛️",
         "files": [
-            "session_data/state_clube_compra_venda.json",
-            "state_clube_compra_venda.json"
+            "session_data/state_clube.json",
+            "state_clube.json"
         ],
         "app_url": None
     },
@@ -198,8 +198,8 @@ ROBOS = [
         "title": "LOSS CLUBE",
         "emoji": "🏛️🛑",
         "files": [
-            "session_data/state_loss_clube.json",
-            "state_loss_clube.json"
+            "session_data/state_lossclube.json",
+            "state_lossclube.json"
         ],
         "app_url": None
     },
@@ -377,6 +377,9 @@ with colh:
 with colr:
     st.caption(f"🔄 Auto-refresh: a cada **{REFRESH_SECONDS}s**")
 
+# 🔁 Auto-refresh real
+st_autorefresh(interval=REFRESH_SECONDS * 1000, key="painel-central-refresh")
+
 # ============================
 # CARDS RESUMO (TOPO)
 # ============================
@@ -526,6 +529,7 @@ st.caption(
     "© Painel Central 1Milhão — consolidado dos robôs. "
     "Mantenha cada app em execução para dados atualizados."
 )
+
 
 
 
