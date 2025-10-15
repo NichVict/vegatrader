@@ -46,8 +46,6 @@ PALETTE = [
 SUPABASE_URL = st.secrets["supabase_url_losscurto"]
 SUPABASE_KEY = st.secrets["supabase_key_losscurto"]
 
-# Criar cliente Supabase
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 TABLE = "kv_state_losscurto"
 STATE_KEY = "losscurto_przo_v1"
