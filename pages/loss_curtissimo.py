@@ -221,7 +221,9 @@ def inicializar_estado():
 
 inicializar_estado()
 carregar_estado_duravel()
-
+# Passo 1: garantir que exista
+if "eventos_enviados" not in st.session_state:
+    st.session_state["eventos_enviados"] = {}
 # -----------------------------
 # FUNÇÕES AUXILIARES
 # -----------------------------
@@ -737,18 +739,21 @@ else:
                     # id simples por dia (ticker + ação + alvo + data)
                     event_id = f"{t}|{operacao_atv}|{preco_alvo:.2f}|{now.date()}"
                 
-                    # já enviou? sai
-                    if st.session_state.eventos_enviados.get(event_id):
-                        st.session_state.log_monitoramento.append(f"🔁 {t}: envio ignorado (já enviado).")
+                    # já enviou? evita duplicidade
+                    if st.session_state.get("eventos_enviados", {}).get(event_id):
+                        st.session_state.log_monitoramento.append(
+                            f"🔁 {t}: envio ignorado (já enviado)."
+                        )
                     else:
-                        # marque e salve ANTES de enviar (corta duplicado por re-run)
+                        # marque como encerrado e PERSISTA antes de enviar (corta duplicado por re-run)
                         st.session_state.status[t] = "🚀 Encerrado"
-                        st.session_state.eventos_enviados[event_id] = True
+                        st.session_state.setdefault("eventos_enviados", {})[event_id] = True
                         salvar_estado_duravel(force=True)
                 
                         try:
                             alerta_msg = notificar_preco_alvo_alcancado_loss(tk_full, preco_alvo, preco_atual, operacao_atv)
                             st.warning(alerta_msg)
+                
                             st.session_state.historico_alertas.append({
                                 "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
                                 "ticker": t,
@@ -763,6 +768,7 @@ else:
                             salvar_estado_duravel(force=True)
                 
                     tickers_para_remover.append(t)
+
 
             else:
                 if st.session_state.em_contagem.get(t, False):
