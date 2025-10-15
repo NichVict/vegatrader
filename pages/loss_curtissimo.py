@@ -327,24 +327,23 @@ def formatar_mensagem_encerramento(ticker_symbol, preco_alvo, preco_atual, opera
     )
 
 # --- Texto para Telegram (HTML) ---
-mensagem_telegram = f"""🛑 <b>ENCERRAMENTO (STOP) ATIVADO!</b>
+# --- Texto para Telegram (HTML) ---
+mensagem_telegram = (
+    f"🛑 <b>ENCERRAMENTO (STOP) ATIVADO!</b>\n\n"
+    f"<b>Ticker:</b> {ticker_symbol_sem_ext}\n"
+    f"<b>Operação anterior:</b> {msg_operacao_anterior}\n"
+    f"<b>Operação para encerrar:</b> {msg_operacao_encerrar}\n"
+    f"<b>STOP (alvo):</b> R$ {preco_alvo:.2f}\n"
+    f"<b>Preço atual:</b> R$ {preco_atual:.2f}\n\n"
+    f"📊 <a href=\"https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}\">Abrir gráfico no TradingView</a>\n\n"
+    f"<em>COMPLIANCE: Esta mensagem é uma sugestão de ENCERRAMENTO baseada na CARTEIRA CURTÍSSIMO PRAZO. "
+    f"A execução é de total decisão e responsabilidade do Destinatário. "
+    f"Esta informação é CONFIDENCIAL, de propriedade de 1milhao Invest e de seu DESTINATÁRIO tão somente. "
+    f"Se você NÃO for DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir "
+    f"ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI. "
+    f"A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.</em>"
+).strip()
 
-<b>Ticker:</b> {ticker_symbol_sem_ext}
-<b>Operação anterior:</b> {msg_operacao_anterior}
-<b>Operação para encerrar:</b> {msg_operacao_encerrar}
-<b>STOP (alvo):</b> R$ {preco_alvo:.2f}
-<b>Preço atual:</b> R$ {preco_atual:.2f}
-
-📊 <a href="https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}">Abrir gráfico no TradingView</a>
-
-<em>
-COMPLIANCE: Esta mensagem é uma sugestão de ENCERRAMENTO baseada na CARTEIRA CURTÍSSIMO PRAZO.
-A execução é de total decisão e responsabilidade do Destinatário.
-Esta informação é CONFIDENCIAL, de propriedade de 1milhao Invest e de seu DESTINATÁRIO tão somente.
-Se você NÃO for DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir
-ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI.
-A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
-</em>""".strip()
 
 
     # --- Corpo HTML do e-mail (dark, título vermelho, compliance menor/cinza) ---
