@@ -102,7 +102,7 @@ h3 {
 # CABEÇALHO COM LOGO E TÍTULO (VERSÃO FUNCIONAL)
 # ============================
 
-logo_path = "logo_vega_gpt_transp.png"  # certifique-se de que o arquivo está na mesma pasta que o app.py
+logo_path = "Logo-canal-1milhao.png"  # certifique-se de que o arquivo está na mesma pasta que o app.py
 
 header_col1, header_col2 = st.columns([1, 6])
 
