@@ -464,6 +464,8 @@ if st.sidebar.button("🧹 Limpar Tabela"):
 
         st.session_state.clear()
         inicializar_estado()
+        if "eventos_enviados" not in st.session_state:
+            st.session_state.eventos_enviados = {}
         st.session_state["ultima_data_abertura_enviada"] = str(agora_lx().date())
         st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | 🧹 Reset manual do estado (LOSS)")
         salvar_estado_duravel(force=True)
@@ -732,19 +734,35 @@ else:
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
                     and st.session_state.status.get(t) != "🚀 Encerrado"
                 ):
-                    st.session_state.status[t] = "🚀 Encerrado"
-                    alerta_msg = notificar_preco_alvo_alcancado_loss(tk_full, preco_alvo, preco_atual, operacao_atv)
-                    st.warning(alerta_msg)
-                    st.session_state.historico_alertas.append({
-                        "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
-                        "ticker": t,
-                        "operacao": operacao_atv,
-                        "preco_alvo": preco_alvo,
-                        "preco_atual": preco_atual
-                    })
-                    st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
+                    # id simples por dia (ticker + ação + alvo + data)
+                    event_id = f"{t}|{operacao_atv}|{preco_alvo:.2f}|{now.date()}"
+                
+                    # já enviou? sai
+                    if st.session_state.eventos_enviados.get(event_id):
+                        st.session_state.log_monitoramento.append(f"🔁 {t}: envio ignorado (já enviado).")
+                    else:
+                        # marque e salve ANTES de enviar (corta duplicado por re-run)
+                        st.session_state.status[t] = "🚀 Encerrado"
+                        st.session_state.eventos_enviados[event_id] = True
+                        salvar_estado_duravel(force=True)
+                
+                        try:
+                            alerta_msg = notificar_preco_alvo_alcancado_loss(tk_full, preco_alvo, preco_atual, operacao_atv)
+                            st.warning(alerta_msg)
+                            st.session_state.historico_alertas.append({
+                                "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
+                                "ticker": t,
+                                "operacao": operacao_atv,
+                                "preco_alvo": preco_alvo,
+                                "preco_atual": preco_atual
+                            })
+                            st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
+                        except Exception as e:
+                            st.session_state.log_monitoramento.append(f"⚠️ Erro no envio de encerramento: {e}")
+                        finally:
+                            salvar_estado_duravel(force=True)
+                
                     tickers_para_remover.append(t)
-                    salvar_estado_duravel(force=True)
 
             else:
                 if st.session_state.em_contagem.get(t, False):
