@@ -328,13 +328,12 @@ def formatar_mensagem_encerramento(ticker_symbol, preco_alvo, preco_atual, opera
 
     # --- Texto para Telegram (HTML) ---
     mensagem_telegram = f"""
-🛑 <b>ENCERRAMENTO (STOP) ATIVADO!</b> — {direcao}\n\n
+🛑 <b>ENCERRAMENTO (STOP) ATIVADO!\n\n
 <b>Ticker:</b> {ticker_symbol_sem_ext}\n
 <b>Operação anterior:</b> {msg_operacao_anterior}\n
-<b>Ação para encerrar:</b> {msg_operacao_encerrar}\n
+<b>Operação para encerrar:</b> {msg_operacao_encerrar}\n
 <b>STOP (alvo):</b> R$ {preco_alvo:.2f}\n
-<b>Preço atual:</b> R$ {preco_atual:.2f} {detalhe_num}\n
-<b>Gatilho:</b> {condicao_txt}\n\n
+<b>Preço atual:</b> R$ {preco_atual:.2f}\n
 📊 <a href='https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}'>Abrir gráfico no TradingView</a>\n\n
 <em>
 COMPLIANCE: Esta mensagem é uma sugestão de ENCERRAMENTO baseada na CARTEIRA CURTÍSSIMO PRAZO.
@@ -350,13 +349,12 @@ A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
     corpo_email_html = f"""
 <html>
   <body style="font-family:Arial,sans-serif; background-color:#0b1220; color:#e5e7eb; padding:20px;">
-    <h2 style="color:#ef4444;">🛑 ALERTA STOP CARTEIRA CURTISSIMO PRAZO - ENCERRAMENTO {direcao}</h2>
+    <h2 style="color:#ef4444;">ALERTA STOP CARTEIRA CURTISSIMO PRAZO</h2>
     <p><b>Ticker:</b> {ticker_symbol_sem_ext}</p>
     <p><b>Operação anterior:</b> {msg_operacao_anterior}</p>
-    <p><b>Ação para encerrar:</b> {msg_operacao_encerrar}</p>
+    <p><b>Operação para encerrar:</b> {msg_operacao_encerrar}</p>
     <p><b>STOP (alvo):</b> R$ {preco_alvo:.2f}</p>
-    <p><b>Preço atual:</b> R$ {preco_atual:.2f} {detalhe_num}</p>
-    <p><b>Gatilho:</b> {condicao_txt}</p>
+    <p><b>Preço atual:</b> R$ {preco_atual:.2f}</p>    
     <p>📊 <a href="https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}" style="color:#60a5fa;">Ver gráfico no TradingView</a></p>
     <hr style="border:1px solid #ef4444; margin:20px 0;">
     <p style="font-size:11px; line-height:1.4; color:#9ca3af;">
