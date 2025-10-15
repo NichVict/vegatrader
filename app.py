@@ -499,13 +499,9 @@ def render_robot_card(robo: Dict[str, Any], container):
             path_used = resolved_paths.get(key, "—")
             st.caption(f"Fonte de estado: `{path_used}`")
 
-        bt_col1, bt_col2 = st.columns([1, 3])
         if app_url:
-            bt_col1.link_button("Abrir app", app_url, type="primary")
+            st.link_button("Abrir app", app_url, type="primary")
 
-        if bt_col2.button("Forçar refresh", key=f"refresh_{key}"):
-            st.toast(f"🔄 Atualizando {title}…", icon="🔁")
-            st.rerun()
 
         # Fecha a <div> do card
         st.markdown("</div>", unsafe_allow_html=True)
