@@ -332,10 +332,10 @@ def formatar_mensagem_encerramento(ticker_symbol, preco_alvo, preco_atual, opera
     # --- Texto para Telegram (HTML) — formato seguro (sem triple-quote)
     mensagem_telegram = (
         f"🛑 <b>ENCERRAMENTO (STOP) ATIVADO!</b>\n\n"
-        f"<b>Ticker:</b> {ticker_symbol_sem_ext}\n"
-        f"<b>Operação anterior:</b> {msg_operacao_anterior}\n"
-        f"<b>Operação para encerrar:</b> {msg_operacao_encerrar}\n"
-        f"<b>STOP (alvo):</b> R$ {preco_alvo:.2f}\n"
+        f"<b>Ticker:</b> {ticker_symbol_sem_ext}\n\n"
+        f"<b>Operação anterior:</b> {msg_operacao_anterior}\n\n"
+        f"<b>Operação para encerrar:</b> {msg_operacao_encerrar}\n\n"
+        f"<b>STOP (alvo):</b> R$ {preco_alvo:.2f}\n\n"
         f"<b>Preço atual:</b> R$ {preco_atual:.2f}\n\n"
         f"📊 <a href=\"https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}\">Abrir gráfico no TradingView</a>\n\n"
         f"<em>"
