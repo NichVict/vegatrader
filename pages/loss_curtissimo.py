@@ -272,7 +272,7 @@ def enviar_notificacao_curto(dest, assunto, corpo_email_html, rem, senha, tok_tg
                 texto_final = corpo_telegram if corpo_telegram else corpo_email_html
                 await bot.send_message(
                     chat_id=chat_id,
-                    text=f"{texto_final}\n\n🤖 Robot 1milhão Invest",
+                    text=f"{texto_final}\n\n🤖 Robô 1milhão Invest",
                     parse_mode="HTML",
                     disable_web_page_preview=True
                 )
