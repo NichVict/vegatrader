@@ -122,7 +122,7 @@ with header_col2:
     )
 
 TZ = ZoneInfo("Europe/Lisbon")
-HORARIO_INICIO_PREGAO = datetime.time(10, 0, 0)  # Lisboa
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)  # Lisboa
 HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)    # Lisboa
 
 REFRESH_SECONDS = 60
