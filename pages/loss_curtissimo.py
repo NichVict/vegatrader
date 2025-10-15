@@ -299,6 +299,9 @@ def obter_preco_atual(ticker_symbol):
 # -----------------------------
 # MENSAGENS DE ENCERRAMENTO (LOSS CURTÍSSIMO)
 # -----------------------------
+# -----------------------------
+# MENSAGENS DE ENCERRAMENTO (LOSS CURTÍSSIMO)
+# -----------------------------
 def formatar_mensagem_encerramento(ticker_symbol, preco_alvo, preco_atual, operacao):
     """
     Gera o texto formatado de ENCERRAMENTO (STOP) para Telegram e E-mail
@@ -326,29 +329,24 @@ def formatar_mensagem_encerramento(ticker_symbol, preco_alvo, preco_atual, opera
         if (preco_atual is not None and preco_alvo is not None) else ""
     )
 
-# --- Texto para Telegram (HTML) ---
-# --- Texto para Telegram (HTML) ---
-# --- Texto para Telegram (HTML) — versão original (conteúdo) em formato seguro ---
-mensagem_telegram = (
-    f"🛑 <b>ENCERRAMENTO (STOP) ATIVADO!</b>\n\n"
-    f"<b>Ticker:</b> {ticker_symbol_sem_ext}\n"
-    f"<b>Operação anterior:</b> {msg_operacao_anterior}\n"
-    f"<b>Ação para encerrar:</b> {msg_operacao_encerrar}\n"
-    f"<b>STOP (alvo):</b> R$ {preco_alvo:.2f}\n"
-    f"<b>Preço atual:</b> R$ {preco_atual:.2f}\n\n"
-    f"📊 <a href=\"https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}\">Abrir gráfico no TradingView</a>\n\n"
-    f"<em>"
-    f"COMPLIANCE: Esta mensagem é uma sugestão de ENCERRAMENTO baseada na CARTEIRA CURTÍSSIMO PRAZO. "
-    f"A execução é de total decisão e responsabilidade do Destinatário. "
-    f"Esta informação é CONFIDENCIAL, de propriedade de 1milhao Invest e de seu DESTINATÁRIO tão somente. "
-    f"Se você NÃO for DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir "
-    f"ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI. "
-    f"A Lista de Ações do 1milhao Invest é devidamente REGISTRADA."
-    f"</em>"
-).strip()
-
-
-
+    # --- Texto para Telegram (HTML) — formato seguro (sem triple-quote)
+    mensagem_telegram = (
+        f"🛑 <b>ENCERRAMENTO (STOP) ATIVADO!</b>\n\n"
+        f"<b>Ticker:</b> {ticker_symbol_sem_ext}\n"
+        f"<b>Operação anterior:</b> {msg_operacao_anterior}\n"
+        f"<b>Operação para encerrar:</b> {msg_operacao_encerrar}\n"
+        f"<b>STOP (alvo):</b> R$ {preco_alvo:.2f}\n"
+        f"<b>Preço atual:</b> R$ {preco_atual:.2f}\n\n"
+        f"📊 <a href=\"https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}\">Abrir gráfico no TradingView</a>\n\n"
+        f"<em>"
+        f"COMPLIANCE: Esta mensagem é uma sugestão de ENCERRAMENTO baseada na CARTEIRA CURTÍSSIMO PRAZO. "
+        f"A execução é de total decisão e responsabilidade do Destinatário. "
+        f"Esta informação é CONFIDENCIAL, de propriedade de 1milhao Invest e de seu DESTINATÁRIO tão somente. "
+        f"Se você NÃO for DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir "
+        f"ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI. "
+        f"A Lista de Ações do 1milhao Invest é devidamente REGISTRADA."
+        f"</em>"
+    ).strip()
 
     # --- Corpo HTML do e-mail (dark, título vermelho, compliance menor/cinza) ---
     corpo_email_html = f"""
@@ -375,6 +373,7 @@ mensagem_telegram = (
 """.strip()
 
     return mensagem_telegram, corpo_email_html
+
 
 
 def notificar_preco_alvo_alcancado_loss(ticker, preco_alvo, preco_atual, operacao):
