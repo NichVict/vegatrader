@@ -73,6 +73,7 @@ def _estado_snapshot():
         "ultimo_estado_pausa": st.session_state.get("ultimo_estado_pausa", None),
         "ultimo_ping_keepalive": st.session_state.get("ultimo_ping_keepalive", None),
         "ultima_data_abertura_enviada": st.session_state.get("ultima_data_abertura_enviada", None),
+        "eventos_enviados": st.session_state.get("eventos_enviados", {}),
     }
 
     precos_historicos_serial = {}
@@ -137,21 +138,34 @@ def carregar_estado_duravel():
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200 and r.json():
             estado = r.json()[0]["v"]
+
             for k, v in estado.items():
                 if k == "precos_historicos":
                     precos_reconv = {}
                     for t, dados in v.items():
-                        reconv = [(datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p) for dt, p in dados]
+                        reconv = [
+                            (datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p)
+                            for dt, p in dados
+                        ]
                         precos_reconv[t] = reconv
                     st.session_state[k] = precos_reconv
+
                 elif k == "disparos":
                     disparos_reconv = {}
                     for t, pontos in v.items():
-                        reconv = [(datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p) for pt, p in pontos]
+                        reconv = [
+                            (datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p)
+                            for pt, p in pontos
+                        ]
                         disparos_reconv[t] = reconv
                     st.session_state[k] = disparos_reconv
+
                 else:
                     st.session_state[k] = v
+
+            # ✅ garante a chave mesmo se o estado antigo não tiver
+            st.session_state["eventos_enviados"] = estado.get("eventos_enviados", {})
+
             st.sidebar.info("Conectado na nuvem!")
             remoto_ok = True
             origem = "☁️ Supabase"
@@ -164,25 +178,42 @@ def carregar_estado_duravel():
         try:
             with open(LOCAL_STATE_FILE, "r", encoding="utf-8") as f:
                 estado = json.load(f)
+
             for k, v in estado.items():
                 if k == "precos_historicos":
                     precos_reconv = {}
                     for t, dados in v.items():
-                        reconv = [(datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p) for dt, p in dados]
+                        reconv = [
+                            (datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p)
+                            for dt, p in dados
+                        ]
                         precos_reconv[t] = reconv
                     st.session_state[k] = precos_reconv
+
                 elif k == "disparos":
                     disparos_reconv = {}
                     for t, pontos in v.items():
-                        reconv = [(datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p) for pt, p in pontos]
+                        reconv = [
+                            (datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p)
+                            for pt, p in pontos
+                        ]
                         disparos_reconv[t] = reconv
                     st.session_state[k] = disparos_reconv
+
                 else:
                     st.session_state[k] = v
+
+            # ✅ garante a chave também no fallback local
+            st.session_state["eventos_enviados"] = estado.get("eventos_enviados", {})
+
             st.sidebar.info("💾 Estado carregado do local (fallback)!")
             origem = "📁 Local"
         except Exception as e:
             st.sidebar.error(f"Erro no fallback local: {e}")
+
+    # ✅ se ainda não existir (ex.: nenhum estado remoto/local), cria vazia
+    if "eventos_enviados" not in st.session_state:
+        st.session_state["eventos_enviados"] = {}
 
     # 🔧 Consistência pós-carregamento (se havia tempo acumulado sem timestamp)
     for t in st.session_state.get("tempo_acumulado", {}):
@@ -221,6 +252,7 @@ def inicializar_estado():
         "pausado": False, "ultimo_estado_pausa": None,
         "disparos": {}, "__last_save_ts": None,
         "__carregado_ok__": False, "ultima_data_abertura_enviada": None,
+        "eventos_enviados": {},
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -232,6 +264,8 @@ carregar_estado_duravel()
 # Passo 1: garantir que exista
 if "eventos_enviados" not in st.session_state:
     st.session_state["eventos_enviados"] = {}
+salvar_estado_duravel(force=True)
+
 # -----------------------------
 # FUNÇÕES AUXILIARES
 # -----------------------------
