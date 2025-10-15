@@ -348,7 +348,7 @@ A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
     corpo_email_html = f"""
 <html>
   <body style="font-family:Arial,sans-serif; background-color:#0b1220; color:#e5e7eb; padding:20px;">
-    <h2 style="color:#ef4444;">🛑 ENCERRAMENTO (STOP) ATIVADO! — {direcao}</h2>
+    <h2 style="color:#ef4444;">🛑 ALERTA STOP CARTEIRA CURTISSIMO PRAZO - ENCERRAMENTO {direcao}</h2>
     <p><b>Ticker:</b> {ticker_symbol_sem_ext}</p>
     <p><b>Operação anterior:</b> {msg_operacao_anterior}</p>
     <p><b>Ação para encerrar:</b> {msg_operacao_encerrar}</p>
