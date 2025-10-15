@@ -26,11 +26,11 @@ import time
 st.set_page_config(page_title="🛑 LOSS CURTO - ENCERRAMENTO POR STOP", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")
-HORARIO_INICIO_PREGAO = datetime.time(5, 0, 0)
-HORARIO_FIM_PREGAO    = datetime.time(23, 0, 0)
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
+HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)
 
-INTERVALO_VERIFICACAO = 60
-TEMPO_ACUMULADO_MAXIMO = 180  # 15 minutos na zona para encerrar
+INTERVALO_VERIFICACAO = 300
+TEMPO_ACUMULADO_MAXIMO = 1500
 LOG_MAX_LINHAS = 1000
 PERSIST_DEBOUNCE_SECONDS = 60
 
