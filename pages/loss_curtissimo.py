@@ -42,11 +42,12 @@ PALETTE = [
 # =============================
 # PERSISTÊNCIA (SUPABASE via REST API + LOCAL JSON)
 # =============================
-SUPABASE_URL = st.secrets["supabase_url"]
-SUPABASE_KEY = st.secrets["supabase_key"]
-TABLE = "kv_state_loss_curtissimo"
-STATE_KEY = "loss_curtissimo_v1"
-LOCAL_STATE_FILE = "session_data/state_loss_curtissimo.json"
+SUPABASE_URL = st.secrets["supabase_url_lc"]
+SUPABASE_KEY = st.secrets["supabase_key_lc"]
+TABLE = "kv_state_losscurtissimo"
+STATE_KEY = "losscurtissimo_przo_v1"
+LOCAL_STATE_FILE = "session_data/state_losscurtissimo.json"
+
 
 def agora_lx():
     return datetime.datetime.now(TZ)
