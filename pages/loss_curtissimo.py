@@ -30,7 +30,7 @@ HORARIO_INICIO_PREGAO = datetime.time(5, 0, 0)
 HORARIO_FIM_PREGAO    = datetime.time(23, 0, 0)
 
 INTERVALO_VERIFICACAO = 60
-TEMPO_ACUMULADO_MAXIMO = 900  # 15 minutos na zona para encerrar
+TEMPO_ACUMULADO_MAXIMO = 180  # 15 minutos na zona para encerrar
 LOG_MAX_LINHAS = 1000
 PERSIST_DEBOUNCE_SECONDS = 60
 
