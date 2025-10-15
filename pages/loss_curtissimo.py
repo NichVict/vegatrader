@@ -299,21 +299,40 @@ def obter_preco_atual(ticker_symbol):
 # -----------------------------
 def formatar_mensagem_encerramento(ticker_symbol, preco_alvo, preco_atual, operacao):
     """
-    Gera o texto formatado de ENCERRAMENTO (STOP) para Telegram e E-mail (mesmo visual do curtíssimo).
+    Gera o texto formatado de ENCERRAMENTO (STOP) para Telegram e E-mail
+    com racional de STOP (oposto ao de entrada): 
+      - se operacao == "venda"  → posição anterior era COMPRA, gatilho: preço ≤ STOP
+      - se operacao == "compra" → posição anterior era VENDA A DESCOBERTO, gatilho: preço ≥ STOP
     """
     ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
-    # operação inversa para zerar a posição
-    msg_operacao_anterior = "COMPRA" if operacao == "venda" else "VENDA A DESCOBERTO"
+
+    # operação anterior (a que está sendo encerrada) e condição de stop
+    if operacao == "venda":
+        msg_operacao_anterior = "COMPRA"
+        condicao_txt = "preço ≤ STOP"
+        direcao = "⬇️ Queda"
+        detalhe_val = "≤" if (preco_atual is not None and preco_alvo is not None and preco_atual <= preco_alvo) else ">"
+    else:
+        msg_operacao_anterior = "VENDA A DESCOBERTO"
+        condicao_txt = "preço ≥ STOP"
+        direcao = "⬆️ Alta"
+        detalhe_val = "≥" if (preco_atual is not None and preco_alvo is not None and preco_atual >= preco_alvo) else "<"
+
     msg_operacao_encerrar = operacao.upper()
+    detalhe_num = (
+        f"(atual R$ {preco_atual:.2f} {detalhe_val} STOP R$ {preco_alvo:.2f})"
+        if (preco_atual is not None and preco_alvo is not None) else ""
+    )
 
     # --- Texto para Telegram (HTML) ---
     mensagem_telegram = f"""
-🛑 <b>ENCERRAMENTO (STOP) ATIVADO!</b>\n\n
+🛑 <b>ENCERRAMENTO (STOP) ATIVADO!</b> — {direcao}\n\n
 <b>Ticker:</b> {ticker_symbol_sem_ext}\n
 <b>Operação anterior:</b> {msg_operacao_anterior}\n
 <b>Ação para encerrar:</b> {msg_operacao_encerrar}\n
 <b>STOP (alvo):</b> R$ {preco_alvo:.2f}\n
-<b>Preço atual:</b> R$ {preco_atual:.2f}\n\n
+<b>Preço atual:</b> R$ {preco_atual:.2f} {detalhe_num}\n
+<b>Gatilho:</b> {condicao_txt}\n\n
 📊 <a href='https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}'>Abrir gráfico no TradingView</a>\n\n
 <em>
 COMPLIANCE: Esta mensagem é uma sugestão de ENCERRAMENTO baseada na CARTEIRA CURTÍSSIMO PRAZO.
@@ -329,12 +348,13 @@ A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
     corpo_email_html = f"""
 <html>
   <body style="font-family:Arial,sans-serif; background-color:#0b1220; color:#e5e7eb; padding:20px;">
-    <h2 style="color:#ef4444;">🛑 ENCERRAMENTO (STOP) ATIVADO!</h2>
+    <h2 style="color:#ef4444;">🛑 ENCERRAMENTO (STOP) ATIVADO! — {direcao}</h2>
     <p><b>Ticker:</b> {ticker_symbol_sem_ext}</p>
     <p><b>Operação anterior:</b> {msg_operacao_anterior}</p>
     <p><b>Ação para encerrar:</b> {msg_operacao_encerrar}</p>
     <p><b>STOP (alvo):</b> R$ {preco_alvo:.2f}</p>
-    <p><b>Preço atual:</b> R$ {preco_atual:.2f}</p>
+    <p><b>Preço atual:</b> R$ {preco_atual:.2f} {detalhe_num}</p>
+    <p><b>Gatilho:</b> {condicao_txt}</p>
     <p>📊 <a href="https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}" style="color:#60a5fa;">Ver gráfico no TradingView</a></p>
     <hr style="border:1px solid #ef4444; margin:20px 0;">
     <p style="font-size:11px; line-height:1.4; color:#9ca3af;">
@@ -350,6 +370,7 @@ A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
 """.strip()
 
     return mensagem_telegram, corpo_email_html
+
 
 def notificar_preco_alvo_alcancado_loss(ticker, preco_alvo, preco_atual, operacao):
     """
