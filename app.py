@@ -30,13 +30,23 @@ except Exception:
 
 # Aceita ?ping, ?ping=1, ?ping=true, etc.
 # Aceita ?ping, ?ping=1, ?ping=true, etc. → roda ticks + grava heartbeat
-if "ping" in q and (q["ping"] in ([], None) or str(q["ping"]).lower() in ("1", "true", "ok")):
+# Roteamento do ping:
+#   /?ping=1       → roda todos (run_all_ticks)
+#   /?ping=curto   → roda só o robô 'curto'
+if "ping" in q:
+    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
     try:
-        run_all_ticks()     # (leve; se ainda não existir run_tick() nas páginas, não tem problema)
-        _write_heartbeat()  # grava prova de vida no Supabase
-        st.write("ok")
+        if val in ("", "1", "true", "ok", "all", "tudo"):
+            run_all_ticks()
+            st.write("ok")
+        elif val == "curto":
+            _run_one_tick("curto")
+            st.write("ok:curto")
+        else:
+            st.write("ok")
     finally:
         st.stop()
+
 
 
 # --- Tick leve chamado pelo ?ping=1 ---
@@ -70,6 +80,21 @@ def run_all_ticks():
         except Exception as e:
             # não quebrar o ping se algum módulo não tiver tick ainda
             st.session_state.setdefault("_tick_errors", []).append(f"{mod}.{fn}: {e}")
+# --- Ping por robô (começando só com 'curto') ---
+PING_MAP = {
+    "curto": ("bots.curto", "run_tick"),
+}
+
+def _run_one_tick(key: str):
+    """Roda o tick de um robô específico, se a função existir."""
+    mod, fn = PING_MAP[key]
+    try:
+        m = __import__(mod, fromlist=[fn])
+        if hasattr(m, fn):
+            return getattr(m, fn)()
+    except Exception as e:
+        st.session_state.setdefault("_tick_errors", []).append(f"{key}: {e}")
+    return None
 
 def _write_heartbeat():
     """Grava um timestamp global de heartbeat em uma linha da tabela KV no Supabase."""
