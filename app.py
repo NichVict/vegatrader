@@ -115,6 +115,43 @@ def _read_heartbeat():
     except Exception:
         return None
     return None
+
+# --- Heartbeat individual por robô ---
+def _write_heartbeat_for(key: str):
+    """Grava heartbeat do robô específico em kv_state_clube (k = heartbeat_<key>)."""
+    try:
+        now = _dt.datetime.utcnow().isoformat() + "Z"
+        url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
+        headers = {
+            "apikey": st.secrets["supabase_key_clube"],
+            "Authorization": f"Bearer {st.secrets['supabase_key_clube']}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+        }
+        payload = {"k": f"heartbeat_{key}", "v": {"ts": now}}
+        requests.post(url, headers=headers, json=payload, timeout=10)
+    except Exception:
+        pass
+
+def _read_heartbeats(keys):
+    """Lê os heartbeats individuais e devolve dict {key: datetime_or_None}."""
+    out = {}
+    try:
+        base = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
+        headers = {
+            "apikey": st.secrets["supabase_key_clube"],
+            "Authorization": f"Bearer {st.secrets['supabase_key_clube']}",
+        }
+        for k in keys:
+            r = requests.get(f"{base}?k=eq.heartbeat_{k}&select=v", headers=headers, timeout=10)
+            if r.status_code == 200 and r.json():
+                ts = r.json()[0]["v"].get("ts")
+                if ts:
+                    out[k] = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(_TZ)
+    except Exception:
+        pass
+    return out
+
 # Roteamento do ping (depois das definições)
 if "ping" in q:
     val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
@@ -123,18 +160,36 @@ if "ping" in q:
             run_all_ticks()
             st.write("ok")
         elif val in PING_MAP:
-            _run_one_tick(val)
-            st.write(f"ok:{val}")
-        else:
-            st.write("ok")
-    finally:
-        st.stop()
+    _run_one_tick(val)
+    _write_heartbeat_for(val)   # <- novo
+    st.write(f"ok:{val}")
+
 
 
 # ============================
 # CONFIGURAÇÕES GERAIS
 # ============================
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
+
+# --- Barra de pings por robô (chips) ---
+_robot_keys = list(PING_MAP.keys())
+hb_map = _read_heartbeats(_robot_keys)
+
+def _chip(label, when):
+    if not when:
+        return f"<span style='margin-right:8px;padding:2px 8px;border-radius:12px;background:#fee2e2;color:#7f1d1d;'>⛔ {label}: sem ping</span>"
+    mins = int(((_dt.datetime.now(_TZ) - when).total_seconds()) // 60)
+    if mins < 6:
+        bg, fg = "#d1fae5", "#065f46"   # verde
+    elif mins < 30:
+        bg, fg = "#fef3c7", "#78350f"   # amarelo
+    else:
+        bg, fg = "#fee2e2", "#7f1d1d"   # vermelho
+    return f"<span style='margin-right:8px;padding:2px 8px;border-radius:12px;background:{bg};color:{fg};'>{label}: {when.strftime('%H:%M')} ({mins}m)</span>"
+
+chips = "".join(_chip(k, hb_map.get(k)) for k in _robot_keys)
+st.markdown(f"<div style='margin:6px 0 12px 0'>{chips}</div>", unsafe_allow_html=True)
+
 
 # Prova de vida do ping (heartbeat)
 hb = _read_heartbeat()
