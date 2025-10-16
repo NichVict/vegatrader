@@ -20,6 +20,7 @@ import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
 import streamlit as st
+import requests
 
 # --- Query params (compatível com versões antigas e novas) ---
 try:
@@ -28,9 +29,15 @@ except Exception:
     q = st.experimental_get_query_params()  # fallback
 
 # Aceita ?ping, ?ping=1, ?ping=true, etc.
+# Aceita ?ping, ?ping=1, ?ping=true, etc. → roda ticks + grava heartbeat
 if "ping" in q and (q["ping"] in ([], None) or str(q["ping"]).lower() in ("1", "true", "ok")):
-    st.write("ok")
-    st.stop()
+    try:
+        run_all_ticks()     # (leve; se ainda não existir run_tick() nas páginas, não tem problema)
+        _write_heartbeat()  # grava prova de vida no Supabase
+        st.write("ok")
+    finally:
+        st.stop()
+
 
 # --- Tick leve chamado pelo ?ping=1 ---
 import datetime as _dt
@@ -64,12 +71,57 @@ def run_all_ticks():
             # não quebrar o ping se algum módulo não tiver tick ainda
             st.session_state.setdefault("_tick_errors", []).append(f"{mod}.{fn}: {e}")
 
+def _write_heartbeat():
+    """Grava um timestamp global de heartbeat em uma linha da tabela KV no Supabase."""
+    try:
+        now = _dt.datetime.utcnow().isoformat() + "Z"
+        url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
+        headers = {
+            "apikey": st.secrets["supabase_key_clube"],
+            "Authorization": f"Bearer {st.secrets['supabase_key_clube']}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+        }
+        payload = {"k": "heartbeat_streamlit", "v": {"ts": now}}
+        requests.post(url, headers=headers, json=payload, timeout=10)
+    except Exception:
+        # não quebrar o ping por causa do heartbeat
+        pass
+
+def _read_heartbeat():
+    """Lê o último heartbeat (ISO UTC) do Supabase. Retorna None se indisponível."""
+    try:
+        url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube?k=eq.heartbeat_streamlit&select=v"
+        headers = {
+            "apikey": st.secrets["supabase_key_clube"],
+            "Authorization": f"Bearer {st.secrets['supabase_key_clube']}",
+        }
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200 and r.json():
+            return r.json()[0]["v"]["ts"]
+    except Exception:
+        return None
+    return None
 
 
 # ============================
 # CONFIGURAÇÕES GERAIS
 # ============================
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
+
+# Prova de vida do ping (heartbeat)
+hb = _read_heartbeat()
+if hb:
+    try:
+        last_utc = _dt.datetime.fromisoformat(hb.replace("Z", "+00:00"))
+        last_local = last_utc.astimezone(_TZ)
+        diff_m = int(((_dt.datetime.now(_TZ) - last_local).total_seconds()) // 60)
+        st.caption(f"🟢 Último ping: **{last_local.strftime('%Y-%m-%d %H:%M:%S %Z')}** (há {diff_m} min)")
+    except Exception:
+        st.caption("🟢 Último ping: recebido (erro ao converter horário)")
+else:
+    st.caption("⚪ Ainda sem heartbeat registrado.")
+
 
 # Estilos globais (cards e bolinha flutuante)
 st.markdown("""
