@@ -4,6 +4,7 @@ monitor.py — motor central dos 6 robôs de monitoramento
 Executa continuamente, sincronizando com Supabase e notificações Telegram/E-mail.
 """
 
+import os
 import time
 import datetime
 import requests
@@ -14,7 +15,7 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from yahooquery import Ticker
 import pandas as pd
 from zoneinfo import ZoneInfo
-import tomllib
+import toml
 import asyncio
 from telegram import Bot
 
@@ -28,10 +29,30 @@ INTERVALO_VERIFICACAO = 300  # 5 min
 TEMPO_ACUMULADO_MAXIMO = 1500
 
 # =============================
-# LEITURA DE SECRETS
+# LEITURA DE SECRETS (automática)
 # =============================
-with open("secrets.toml", "rb") as f:
-    secrets = tomllib.load(f)
+
+def load_secrets():
+    """Carrega credenciais automaticamente:
+       - Usa secrets.toml se existir (local)
+       - Caso contrário, usa variáveis de ambiente (Render)
+    """
+    if os.path.exists("secrets.toml"):
+        with open("secrets.toml", "rb") as f:
+            print("✅ Usando credenciais locais (secrets.toml)")
+            return toml.load(f)
+    else:
+        print("☁️ Usando credenciais do ambiente (Render)")
+        env_secrets = {}
+        for key, value in os.environ.items():
+            if any(word in key.lower() for word in [
+                "supabase", "telegram", "gmail", "email", "key", "token", "url"
+            ]):
+                env_secrets[key] = value
+        return env_secrets
+
+secrets = load_secrets()
+print("✅ Credenciais carregadas com sucesso.\n")
 
 # =============================
 # FUNÇÕES GERAIS
@@ -128,7 +149,7 @@ class Robo:
         self.salvar_estado({"precos": resultados, "timestamp": agora().isoformat()})
         if dentro_pregao():
             msg = f"🤖 {self.nome.upper()} executado — {len(resultados)} ativos atualizados."
-            asyncio.run(enviar_telegram(secrets["telegram_token"], self.telegram_chat, msg))
+            asyncio.run(enviar_telegram(secrets.get("telegram_token"), self.telegram_chat, msg))
         self.last_run = agora()
 
 # =============================
@@ -136,12 +157,12 @@ class Robo:
 # =============================
 
 robos = [
-    Robo("curto", secrets["supabase_url_curto"], secrets["supabase_key_curto"], "kv_state_curto", secrets["telegram_chat_id_curto"], secrets["email_recipient_curto"]),
-    Robo("curtissimo", secrets["supabase_url_curtissimo"], secrets["supabase_key_curtissimo"], "kv_state_curtissimo", secrets["telegram_chat_id_curtissimo"], secrets["email_recipient_curtissimo"]),
-    Robo("clube", secrets["supabase_url_clube"], secrets["supabase_key_clube"], "kv_state_clube", secrets["telegram_chat_id_clube"], secrets["email_sender"]),
-    Robo("losscurto", secrets["supabase_url_losscurto"], secrets["supabase_key_losscurto"], "kv_state_losscurto", secrets["telegram_chat_id_losscurto"], secrets["email_recipient_losscurto"]),
-    Robo("losscurtissimo", secrets["supabase_url_losscurtissimo"], secrets["supabase_key_losscurtissimo"], "kv_state_losscurtissimo", secrets["telegram_chat_id_losscurtissimo"], secrets["email_recipient_losscurtissimo"]),
-    Robo("lossclube", secrets["supabase_url_lossclube"], secrets["supabase_key_lossclube"], "kv_state_lossclube", secrets["telegram_chat_id_lossclube"], secrets["email_sender"]),
+    Robo("curto", secrets.get("supabase_url_curto"), secrets.get("supabase_key_curto"), "kv_state_curto", secrets.get("telegram_chat_id_curto"), secrets.get("email_recipient_curto")),
+    Robo("curtissimo", secrets.get("supabase_url_curtissimo"), secrets.get("supabase_key_curtissimo"), "kv_state_curtissimo", secrets.get("telegram_chat_id_curtissimo"), secrets.get("email_recipient_curtissimo")),
+    Robo("clube", secrets.get("supabase_url_clube"), secrets.get("supabase_key_clube"), "kv_state_clube", secrets.get("telegram_chat_id_clube"), secrets.get("email_sender")),
+    Robo("losscurto", secrets.get("supabase_url_losscurto"), secrets.get("supabase_key_losscurto"), "kv_state_losscurto", secrets.get("telegram_chat_id_losscurto"), secrets.get("email_recipient_losscurto")),
+    Robo("losscurtissimo", secrets.get("supabase_url_losscurtissimo"), secrets.get("supabase_key_losscurtissimo"), "kv_state_losscurtissimo", secrets.get("telegram_chat_id_losscurtissimo"), secrets.get("email_recipient_losscurtissimo")),
+    Robo("lossclube", secrets.get("supabase_url_lossclube"), secrets.get("supabase_key_lossclube"), "kv_state_lossclube", secrets.get("telegram_chat_id_lossclube"), secrets.get("email_sender")),
 ]
 
 # =============================
