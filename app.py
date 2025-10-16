@@ -65,7 +65,12 @@ def run_all_ticks():
 # --- Ping por robô (começando só com 'curto') ---
 # --- Ping por robô (começando só com 'curto') ---
 PING_MAP = {
-    "curto": ("bots.curto", "run_tick"),
+    "curto":           ("bots.curto", "run_tick"),
+    "curtissimo":      ("bots.curtissimo", "run_tick"),
+    "clube":           ("bots.clube", "run_tick"),
+    "loss_curto":      ("bots.loss_curto", "run_tick"),
+    "loss_curtissimo": ("bots.loss_curtissimo", "run_tick"),
+    "loss_clube":      ("bots.loss_clube", "run_tick"),
 }
 
 def _run_one_tick(key: str):
