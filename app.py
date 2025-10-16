@@ -28,27 +28,6 @@ try:
 except Exception:
     q = st.experimental_get_query_params()  # fallback
 
-# Aceita ?ping, ?ping=1, ?ping=true, etc.
-# Aceita ?ping, ?ping=1, ?ping=true, etc. → roda ticks + grava heartbeat
-# Roteamento do ping:
-#   /?ping=1       → roda todos (run_all_ticks)
-#   /?ping=curto   → roda só o robô 'curto'
-# Roteamento do ping:
-#   /?ping=1       → roda todos os ticks leves (run_all_ticks)
-#   /?ping=curto   → roda só o robô 'curto' via bots.curto.run_tick()
-if "ping" in q:
-    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
-    try:
-        if val in ("", "1", "true", "ok", "all", "tudo"):
-            run_all_ticks()
-            st.write("ok")
-        elif val == "curto":
-            _run_one_tick("curto")
-            st.write("ok:curto")
-        else:
-            st.write("ok")
-    finally:
-        st.stop()
 
 
 
@@ -131,6 +110,19 @@ def _read_heartbeat():
     except Exception:
         return None
     return None
+if "ping" in q:
+    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
+    try:
+        if val in ("", "1", "true", "ok", "all", "tudo"):
+            run_all_ticks()
+            st.write("ok")
+        elif val == "curto":
+            _run_one_tick("curto")
+            st.write("ok:curto")
+        else:
+            st.write("ok")
+    finally:
+        st.stop()
 
 
 # ============================
