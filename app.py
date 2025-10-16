@@ -115,15 +115,16 @@ def _read_heartbeat():
     except Exception:
         return None
     return None
+# Roteamento do ping (depois das definições)
 if "ping" in q:
     val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
     try:
         if val in ("", "1", "true", "ok", "all", "tudo"):
             run_all_ticks()
             st.write("ok")
-        elif val == "curto":
-            _run_one_tick("curto")
-            st.write("ok:curto")
+        elif val in PING_MAP:
+            _run_one_tick(val)
+            st.write(f"ok:{val}")
         else:
             st.write("ok")
     finally:
