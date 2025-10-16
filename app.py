@@ -33,6 +33,9 @@ except Exception:
 # Roteamento do ping:
 #   /?ping=1       → roda todos (run_all_ticks)
 #   /?ping=curto   → roda só o robô 'curto'
+# Roteamento do ping:
+#   /?ping=1       → roda todos os ticks leves (run_all_ticks)
+#   /?ping=curto   → roda só o robô 'curto' via bots.curto.run_tick()
 if "ping" in q:
     val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
     try:
@@ -80,6 +83,7 @@ def run_all_ticks():
         except Exception as e:
             # não quebrar o ping se algum módulo não tiver tick ainda
             st.session_state.setdefault("_tick_errors", []).append(f"{mod}.{fn}: {e}")
+# --- Ping por robô (começando só com 'curto') ---
 # --- Ping por robô (começando só com 'curto') ---
 PING_MAP = {
     "curto": ("bots.curto", "run_tick"),
