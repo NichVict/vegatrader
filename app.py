@@ -19,6 +19,12 @@ import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
+# --- MODO PING (para UptimeRobot manter acordado) ---
+# Quando acessado com /?ping=1, responde "ok" e não carrega a UI.
+if "ping" in st.query_params:
+    st.write("ok")
+    st.stop()
+
 # ============================
 # CONFIGURAÇÕES GERAIS
 # ============================
