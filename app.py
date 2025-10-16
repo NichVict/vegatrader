@@ -32,6 +32,39 @@ if "ping" in q and (q["ping"] in ([], None) or str(q["ping"]).lower() in ("1", "
     st.write("ok")
     st.stop()
 
+# --- Tick leve chamado pelo ?ping=1 ---
+import datetime as _dt
+from zoneinfo import ZoneInfo as _ZoneInfo
+
+_TZ = _ZoneInfo("Europe/Lisbon")
+
+def run_all_ticks():
+    """Executa um ciclo rápido dos robôs. Mantenha idempotente e leve."""
+    now = _dt.datetime.now(_TZ)
+
+    # 1) Marcar última execução (útil p/ ver no painel)
+    st.session_state["_last_tick"] = now.isoformat()
+
+    # 2) (Opcional) chamar ticks específicos se já existir
+    # Tente importar funções de tick dos seus módulos/páginas.
+    # Se ainda não tiver, deixamos para o próximo passo.
+    for mod, fn in [
+        ("pages.clube", "run_tick"),
+        ("pages.curtissimo", "run_tick"),
+        ("pages.curto", "run_tick"),
+        ("pages.loss_clube", "run_tick"),
+        ("pages.loss_curtissimo", "run_tick"),
+        ("pages.loss_curto", "run_tick"),
+    ]:
+        try:
+            _m = __import__(mod, fromlist=[fn])
+            if hasattr(_m, fn):
+                getattr(_m, fn)()  # chama pages/<mod>.py: def run_tick(): ...
+        except Exception as e:
+            # não quebrar o ping se algum módulo não tiver tick ainda
+            st.session_state.setdefault("_tick_errors", []).append(f"{mod}.{fn}: {e}")
+
+
 
 # ============================
 # CONFIGURAÇÕES GERAIS
