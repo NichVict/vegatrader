@@ -38,11 +38,17 @@ from zoneinfo import ZoneInfo as _ZoneInfo
 _TZ = _ZoneInfo("Europe/Lisbon")
 
 def run_all_ticks():
-    """Executa um ciclo rápido dos robôs. Mantenha idempotente e leve."""
+    """Executa um ciclo rápido dos robôs: roda cada run_tick() e grava heartbeat individual."""
     now = _dt.datetime.now(_TZ)
-
-    # 1) Marcar última execução (útil p/ ver no painel)
     st.session_state["_last_tick"] = now.isoformat()
+
+    for key in PING_MAP.keys():
+        try:
+            _run_one_tick(key)
+            _write_heartbeat_for(key)  # registra heartbeat do robô
+        except Exception as e:
+            st.session_state.setdefault("_tick_errors", []).append(f"{key}: {e}")
+
 
     # 2) (Opcional) chamar ticks específicos se já existir
     # Tente importar funções de tick dos seus módulos/páginas.
@@ -153,16 +159,25 @@ def _read_heartbeats(keys):
     return out
 
 # Roteamento do ping (depois das definições)
+# Roteamento do ping (depois das definições)
+# Roteamento do ping (depois das definições)
 if "ping" in q:
     val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
     try:
         if val in ("", "1", "true", "ok", "all", "tudo"):
-            run_all_ticks()
+            run_all_ticks()           # roda todos
+            _write_heartbeat()        # heartbeat global (opcional)
             st.write("ok")
-        elif val in PING_MAP:
-    _run_one_tick(val)
-    _write_heartbeat_for(val)   # <- novo
-    st.write(f"ok:{val}")
+        elif val in PING_MAP:          # roda só um robô
+            _run_one_tick(val)
+            _write_heartbeat_for(val)  # heartbeat desse robô
+            st.write(f"ok:{val}")
+        else:
+            st.write("ok")             # fallback silencioso
+    finally:
+        st.stop()                      # importantíssimo: não renderiza a UI no ping
+
+
 
 
 
