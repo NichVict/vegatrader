@@ -11,8 +11,8 @@ def _write_heartbeat():
         table = "kv_state_curtissimo"  # tabela específica do robô
 
         # Usa os secrets do Supabase (padrão: os do clube)
-        supabase_url = st.secrets["supabase_url_clube"]
-        supabase_key = st.secrets["supabase_key_clube"]
+        supabase_url = st.secrets["supabase_url_cutissmo"]
+        supabase_key = st.secrets["supabase_key_curtissimo"]
 
         now = datetime.datetime.utcnow().isoformat() + "Z"
         url = f"{supabase_url}/rest/v1/{table}"
