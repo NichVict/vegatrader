@@ -231,6 +231,22 @@ def _read_heartbeats(keys: list[str]):
             st.session_state.setdefault("_tick_errors", []).append(f"read_heartbeats({key}): {e}")
     return out
 
+def _write_heartbeat():
+    """Grava heartbeat global."""
+    try:
+        supabase_url, supabase_key = _get_supabase_creds("clube")
+        url = f"{supabase_url}/rest/v1/kv_state_clube"
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+        }
+        payload = {"k": "heartbeat_global", "v": {"ts": now}}
+        requests.post(url, headers=headers, json=payload, timeout=10)
+    except Exception as e:
+        st.session_state.setdefault("_tick_errors", []).append(f"_write_heartbeat(): {e}")
 
 # ============================
 # BARRA DE PINGS (CHIPS)
