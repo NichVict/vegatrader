@@ -128,36 +128,24 @@ def run_all_ticks():
 # HEARTBEATS (individual e global)
 # ============================
 
-def _write_heartbeat_for(key: str):
-    """Escreve heartbeat na TABELA correta e com 'k' coerente."""
-    try:
-        supabase_url, supabase_key = _get_supabase_creds(key)
-        table_name = TABLE_MAP[key]
-        k_value    = HBKEY_MAP[key]
+# ============================
+# HEARTBEATS
+# ============================
 
-        now = datetime.datetime.utcnow().isoformat() + "Z"
-        url = f"{supabase_url}/rest/v1/{table_name}"
-        headers = {
-            "apikey": supabase_key,
-            "Authorization": f"Bearer {supabase_key}",
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates",
-        }
-        payload = {"k": k_value, "v": {"ts": now}}
-        requests.post(url, headers=headers, json=payload, timeout=10)
-    except Exception as e:
-        st.session_state.setdefault("_tick_errors", []).append(f"heartbeat_{key}: {e}")
-
+@st.cache_data(ttl=0)
 def _read_heartbeats(keys: list[str]):
-    """Lê o heartbeat em cada TABELA e 'k' corretos."""
+    """Lê os heartbeats diretamente do Supabase, sem cache."""
     out = {}
     for key in keys:
         try:
-            supabase_url, supabase_key = _get_supabase_creds(key)
-            table_name = TABLE_MAP[key]
-            k_value    = HBKEY_MAP[key]
+            url_key = f"supabase_url_{key}" if f"supabase_url_{key}" in st.secrets else "supabase_url_clube"
+            key_key = f"supabase_key_{key}" if f"supabase_key_{key}" in st.secrets else "supabase_key_clube"
+            supabase_url = st.secrets[url_key]
+            supabase_key = st.secrets[key_key]
 
-            url = f"{supabase_url}/rest/v1/{table_name}?k=eq.{k_value}&select=v"
+            table_name = f"kv_state_{key.replace('_', '')}"
+            url = f"{supabase_url}/rest/v1/{table_name}?k=eq.heartbeat_{key}&select=v"
+
             headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code == 200 and r.json():
@@ -168,61 +156,12 @@ def _read_heartbeats(keys: list[str]):
             st.session_state.setdefault("_tick_errors", []).append(f"read_heartbeats({key}): {e}")
     return out
 
-def _write_heartbeat():
-    """Heartbeat global do painel (fixo em kv_state_clube)."""
-    try:
-        now = datetime.datetime.utcnow().isoformat() + "Z"
-        url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
-        headers = {
-            "apikey": st.secrets["supabase_key_clube"],
-            "Authorization": f"Bearer {st.secrets['supabase_key_clube']}",
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates",
-        }
-        payload = {"k": "heartbeat_streamlit", "v": {"ts": now}}
-        requests.post(url, headers=headers, json=payload, timeout=10)
-    except Exception:
-        pass
-
-def _read_heartbeat():
-    """Lê o heartbeat global do painel."""
-    try:
-        url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube?k=eq.heartbeat_streamlit&select=v"
-        headers = {
-            "apikey": st.secrets["supabase_key_clube"],
-            "Authorization": f"Bearer {st.secrets['supabase_key_clube']}",
-        }
-        r = requests.get(url, headers=headers, timeout=10)
-        if r.status_code == 200 and r.json():
-            return r.json()[0]["v"]["ts"]
-    except Exception:
-        return None
-    return None
-
-# ============================
-# ROTEAMENTO DO PING
-# ============================
-
-if "ping" in q:
-    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
-    try:
-        if val in ("", "1", "true", "ok", "all", "tudo"):
-            run_all_ticks()
-            _write_heartbeat()
-            st.write("ok")
-        elif val in PING_MAP:
-            _run_one_tick(val)
-            _write_heartbeat_for(val)
-            st.write(f"ok:{val}")
-        else:
-            st.write("ok")
-    finally:
-        st.stop()
-
 
 # ============================
 # BARRA DE PINGS (CHIPS)
 # ============================
+
+st.caption(f"🔄 Atualizado em: {datetime.datetime.now(_TZ).strftime('%H:%M:%S')}")
 
 _robot_keys = list(PING_MAP.keys())
 hb_map = _read_heartbeats(_robot_keys)
@@ -234,11 +173,8 @@ def _chip(label, when, reference_time=None):
 
     now = datetime.datetime.now(_TZ)
     mins = int((now - when).total_seconds() // 60)
-
-    # diferença pro mais recente
     delta_ref = abs((reference_time - when).total_seconds()) / 60 if reference_time else 0
 
-    # Lógica de cor
     if delta_ref <= 1 or mins < 6:
         bg, fg = "#d1fae5", "#065f46"  # verde
     elif mins < 30:
