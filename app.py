@@ -86,12 +86,20 @@ SECRETS_API_KEY = {
 }
 
 def _get_supabase_creds(key: str) -> tuple[str, str]:
-    url_name = SECRETS_URL_KEY.get(key, "supabase_url_clube")
-    api_name = SECRETS_API_KEY.get(key, "supabase_key_clube")
-    if url_name not in st.secrets or api_name not in st.secrets:
-        url_name = "supabase_url_clube"
-        api_name = "supabase_key_clube"
-    return st.secrets[url_name], st.secrets[api_name]
+    url_name = SECRETS_URL_KEY.get(key)
+    api_name = SECRETS_API_KEY.get(key)
+
+    # tenta chaves específicas
+    url = st.secrets.get(url_name)
+    api = st.secrets.get(api_name)
+
+    # se não existir, usa as padrão (clube)
+    if not url or not api:
+        url = st.secrets.get("supabase_url_clube") or st.secrets.get("supabase_url")
+        api = st.secrets.get("supabase_key_clube") or st.secrets.get("supabase_key")
+
+    return url, api
+
 
 # ============================
 # HEARTBEATS (individual e global)
