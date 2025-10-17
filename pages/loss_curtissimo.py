@@ -42,8 +42,8 @@ PALETTE = [
 # =============================
 # PERSISTÊNCIA (SUPABASE via REST API + LOCAL JSON)
 # =============================
-SUPABASE_URL = st.secrets["supabase_url_lc"]
-SUPABASE_KEY = st.secrets["supabase_key_lc"]
+SUPABASE_URL = st.secrets["supabase_url_loss_curtissimo"]
+SUPABASE_KEY = st.secrets["supabase_key_loss_curtissimo"]
 TABLE = "kv_state_losscurtissimo"
 STATE_KEY = "losscurtissimo_przo_v1"
 LOCAL_STATE_FILE = "session_data/state_losscurtissimo.json"
