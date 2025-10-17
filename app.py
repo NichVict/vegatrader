@@ -86,19 +86,39 @@ SECRETS_API_KEY = {
 }
 
 def _get_supabase_creds(key: str) -> tuple[str, str]:
+    """
+    Retorna as credenciais do Supabase para o robô indicado.
+    Usa fallback automático para 'clube' ou genérico ('supabase_url', 'supabase_key')
+    caso as chaves específicas não estejam configuradas.
+    """
+
     url_name = SECRETS_URL_KEY.get(key)
     api_name = SECRETS_API_KEY.get(key)
 
-    # tenta chaves específicas
-    url = st.secrets.get(url_name)
-    api = st.secrets.get(api_name)
+    # tenta as chaves específicas
+    supabase_url = st.secrets.get(url_name)
+    supabase_key = st.secrets.get(api_name)
 
-    # se não existir, usa as padrão (clube)
-    if not url or not api:
-        url = st.secrets.get("supabase_url_clube") or st.secrets.get("supabase_url")
-        api = st.secrets.get("supabase_key_clube") or st.secrets.get("supabase_key")
+    # fallback 1: usa as do clube
+    if not supabase_url or not supabase_key:
+        supabase_url = st.secrets.get("supabase_url_clube")
+        supabase_key = st.secrets.get("supabase_key_clube")
 
-    return url, api
+    # fallback 2: usa genéricas
+    if not supabase_url or not supabase_key:
+        supabase_url = st.secrets.get("supabase_url")
+        supabase_key = st.secrets.get("supabase_key")
+
+    # loga erro se ainda não encontrou
+    if not supabase_url or not supabase_key:
+        st.session_state.setdefault("_tick_errors", []).append(
+            f"[ERRO] Falha ao obter credenciais Supabase para '{key}' "
+            f"(url_name={url_name}, api_name={api_name})"
+        )
+        raise RuntimeError(f"Sem credenciais Supabase válidas para '{key}'")
+
+    return supabase_url, supabase_key
+
 
 
 # ============================
