@@ -199,22 +199,6 @@ def _read_heartbeats(keys):
 
 # Roteamento do ping (depois das definições)
 # Roteamento do ping (depois das definições)
-# Roteamento do ping (depois das definições)
-if "ping" in q:
-    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
-    try:
-        if val in ("", "1", "true", "ok", "all", "tudo"):
-            run_all_ticks()           # roda todos
-            _write_heartbeat()        # heartbeat global (opcional)
-            st.write("ok")
-        elif val in PING_MAP:          # roda só um robô
-            _run_one_tick(val)
-            _write_heartbeat_for(val)  # heartbeat desse robô
-            st.write(f"ok:{val}")
-        else:
-            st.write("ok")             # fallback silencioso
-    finally:
-        st.stop()                      # importantíssimo: não renderiza a UI no ping
 
 
 
@@ -258,6 +242,22 @@ if hb:
 else:
     st.caption("⚪ Ainda sem heartbeat registrado.")
 
+# Roteamento do ping (depois das definições)
+if "ping" in q:
+    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
+    try:
+        if val in ("", "1", "true", "ok", "all", "tudo"):
+            run_all_ticks()           # roda todos
+            _write_heartbeat()        # heartbeat global (opcional)
+            st.write("ok")
+        elif val in PING_MAP:          # roda só um robô
+            _run_one_tick(val)
+            _write_heartbeat_for(val)  # heartbeat desse robô
+            st.write(f"ok:{val}")
+        else:
+            st.write("ok")             # fallback silencioso
+    finally:
+        st.stop()                      # importantíssimo: não renderiza a UI no ping
 
 # Estilos globais (cards e bolinha flutuante)
 st.markdown("""
