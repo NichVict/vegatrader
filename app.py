@@ -558,65 +558,87 @@ left_col, right_col = st.columns(2)
 st.markdown("---")
 
 def render_robot_card(robo: Dict[str, Any], container):
-    key = robo["key"]; title = robo["title"]; emoji = robo.get("emoji", ""); app_url = robo.get("app_url")
+    key = robo["key"]
+    title = robo["title"]
+    emoji = robo.get("emoji", "")
+    app_url = robo.get("app_url")
 
     with container:
-        st.markdown("<div class='robot-card'>", unsafe_allow_html=True)
+        # Bloco visual com estilo de cartão
+        with st.container():
+            st.markdown(f"<div class='robot-card'>", unsafe_allow_html=True)
 
-        st.markdown(f"### {emoji} {title}", unsafe_allow_html=True)
+            st.markdown(f"### {emoji} {title}", unsafe_allow_html=True)
 
-        state = loaded_states.get(key)
-        if state is None:
-            st.markdown(status_dot_html(None), unsafe_allow_html=True)
-            err = errors.get(key)
-            st.error(err) if err else st.warning("Arquivo de estado ainda não foi criado por este robô.")
+            state = loaded_states.get(key)
+
+            # Caso o robô ainda não tenha criado seu arquivo
+            if state is None:
+                st.markdown(status_dot_html(None), unsafe_allow_html=True)
+                err = errors.get(key)
+                if err:
+                    st.error(err)
+                else:
+                    st.warning("Arquivo de estado ainda não foi criado por este robô.")
+                if app_url:
+                    st.link_button("Abrir app", app_url, type="primary")
+                st.markdown("</div>", unsafe_allow_html=True)
+                return
+
+            # Último update
+            last_dt = summarize_robot_state(state)["last_update"]
+            st.markdown(status_dot_html(last_dt), unsafe_allow_html=True)
+
+            # Badges principais
+            now_dt = agora_lx()
+            status_badge = badge_status_tempo(last_dt)
+            badges = (
+                f"{badge_pregao(now_dt)} &nbsp;&nbsp;"
+                f"{badge_pause(bool(state.get('pausado', False)))} &nbsp;&nbsp;"
+                f"{status_badge}"
+            )
+            st.markdown(badges, unsafe_allow_html=True)
+
+            # Métricas
+            summary = summarize_robot_state(state)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Ativos monitorados", summary["ativos_monitorados"])
+            c2.metric("Disparos (sessão)", summary["total_disparos"])
+            c3.metric("Alertas (histórico)", summary["total_alertas"])
+
+            tickers = summary["tickers"] or []
+            st.caption("Tickers: " + (", ".join(map(str, tickers)) if tickers else "—"))
+
+            # Sparkline
+            fig = build_sparkline(state)
+            if fig:
+                st.plotly_chart(
+                    fig, use_container_width=True, config={"displayModeBar": False}, key=f"plot_{key}"
+                )
+            else:
+                st.caption("Sem histórico suficiente para gráfico.")
+
+            # Log
+            st.markdown("**Log recente:**")
+            lines = get_last_log_lines(state, 5)
+            if lines:
+                for ln in lines:
+                    st.code(ln, language="text")
+            else:
+                st.caption("Sem entradas de log ainda.")
+
+            # Rodapé do card
+            p1, p2 = st.columns(2)
+            with p1:
+                st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
+            with p2:
+                path_used = resolved_paths.get(key, "—")
+                st.caption(f"Fonte de estado: `{path_used}`")
+
             if app_url:
                 st.link_button("Abrir app", app_url, type="primary")
+
             st.markdown("</div>", unsafe_allow_html=True)
-            return
-
-        last_dt = summarize_robot_state(state)["last_update"]
-        st.markdown(status_dot_html(last_dt), unsafe_allow_html=True)
-
-        now_dt = agora_lx()
-        status_badge = badge_status_tempo(last_dt)
-        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(bool(state.get('pausado', False)))} &nbsp;&nbsp; {status_badge}"
-        st.markdown(badges, unsafe_allow_html=True)
-
-        summary = summarize_robot_state(state)
-
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Ativos monitorados", summary["ativos_monitorados"])
-        c2.metric("Disparos (sessão)", summary["total_disparos"])
-        c3.metric("Alertas (histórico)", summary["total_alertas"])
-
-        tickers = summary["tickers"] or []
-        st.caption("Tickers: " + (", ".join([str(t) for t in tickers]) if tickers else "—"))
-
-        fig = build_sparkline(state)
-        if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, key=f"plot_{key}")
-        else:
-            st.caption("Sem histórico suficiente para gráfico.")
-
-        st.markdown("**Log recente:**")
-        lines = get_last_log_lines(state, 5)
-        if lines:
-            for ln in lines: st.code(ln, language="text")
-        else:
-            st.caption("Sem entradas de log ainda.")
-
-        p1, p2 = st.columns(2)
-        with p1:
-            st.caption(f"Último update interno: **{nice_dt(summary['last_update'])}**")
-        with p2:
-            path_used = resolved_paths.get(key, "—")
-            st.caption(f"Fonte de estado: `{path_used}`")
-
-        if app_url:
-            st.link_button("Abrir app", app_url, type="primary")
-
-        st.markdown("</div>", unsafe_allow_html=True)
 
 for i in range(0, len(ROBOS), 2):
     with st.container():
