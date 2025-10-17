@@ -48,7 +48,7 @@ def _get_supabase_creds(key: str):
     key_name = f"supabase_key_{key}" if f"supabase_key_{key}" in st.secrets else "supabase_key_clube"
     return st.secrets[url_name], st.secrets[key_name]
 
-PAINEL_URL = st.secrets.get("painel_url", None)  # Ex: https://painel-1milhao.streamlit.app
+PAINEL_URL = st.secrets.get("https://robozinho.streamlit.app", None)  # Ex: https://painel-1milhao.streamlit.app
 
 
 # ===============================
