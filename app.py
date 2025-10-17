@@ -212,25 +212,45 @@ if "ping" in q:
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
 
 # --- Barra de pings por robô (chips) ---
+# --- Barra de pings por robô (chips) ---
 _robot_keys = list(PING_MAP.keys())
 hb_map = _read_heartbeats(_robot_keys)
 
-def _chip(label, when):
-    """Renderiza o chip colorido de cada robô."""
+def _chip(label, when, reference_time=None):
+    """
+    Mostra o status do robô com base no tempo desde o último ping.
+    Considera "sincronizado" (verde) se estiver dentro de ±1 minuto do mais recente.
+    """
     if not when:
         return f"<span style='margin-right:8px;padding:2px 8px;border-radius:12px;background:#fee2e2;color:#7f1d1d;'>⛔ {label}: sem ping</span>"
-    mins = int(((_dt.datetime.now(_TZ) - when).total_seconds()) // 60)
-    if mins < 6:
-        bg, fg = "#d1fae5", "#065f46"   # verde
+
+    now = _dt.datetime.now(_TZ)
+    mins = int((now - when).total_seconds() // 60)
+
+    # referência global — o ping mais recente de todos
+    if reference_time:
+        delta_ref = abs((reference_time - when).total_seconds()) / 60
+    else:
+        delta_ref = 0
+
+    # Lógica de cores com tolerância de ±1 minuto
+    if delta_ref <= 1 or mins < 6:
+        bg, fg = "#d1fae5", "#065f46"   # verde (sincronizado)
     elif mins < 30:
         bg, fg = "#fef3c7", "#78350f"   # amarelo
     else:
         bg, fg = "#fee2e2", "#7f1d1d"   # vermelho
+
     return f"<span style='margin-right:8px;padding:2px 8px;border-radius:12px;background:{bg};color:{fg};'>{label}: {when.strftime('%H:%M')} ({mins}m)</span>"
 
-chips = "".join(_chip(k, hb_map.get(k)) for k in _robot_keys)
-st.markdown(f"<div style='margin:6px 0 12px 0'>{chips}</div>", unsafe_allow_html=True)
+# Identifica o ping mais recente (referência global)
+if hb_map:
+    ref_time = max(hb_map.values())
+else:
+    ref_time = None
 
+# Gera os chips de status
+chips = "".join(_chip(k, hb_map.get(k), reference_time=ref_time) for k in _robot_keys)
 
 # Prova de vida do painel principal
 hb = _read_heartbeat()
