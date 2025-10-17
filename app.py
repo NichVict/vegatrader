@@ -79,8 +79,17 @@ def run_all_ticks():
 # HEARTBEAT INDIVIDUAL E GLOBAL
 # ============================
 
+def _table_name(key: str) -> str:
+    """
+    Ajusta o nome da tabela no Supabase.
+    Remove '_' dos nomes de robôs 'loss_*' porque as tabelas estão sem underscore.
+    """
+    if key.startswith("loss_"):
+        return f"kv_state_{key.replace('_', '')}"
+    return f"kv_state_{key}"
+
 def _write_heartbeat_for(key: str):
-    """Grava heartbeat do robô específico em kv_state_<key> no Supabase."""
+    """Grava heartbeat do robô específico em kv_state_<key> (ou kv_state_loss...) no Supabase."""
     try:
         url_key = f"supabase_url_{key}"
         key_key = f"supabase_key_{key}"
@@ -92,7 +101,8 @@ def _write_heartbeat_for(key: str):
         supabase_key = st.secrets[key_key]
 
         now = _dt.datetime.utcnow().isoformat() + "Z"
-        url = f"{supabase_url}/rest/v1/kv_state_{key.replace('_', '')}"
+        table = _table_name(key)
+        url = f"{supabase_url}/rest/v1/{table}"
         headers = {
             "apikey": supabase_key,
             "Authorization": f"Bearer {supabase_key}",
@@ -107,20 +117,25 @@ def _write_heartbeat_for(key: str):
 
 
 def _read_heartbeats(keys: list[str]):
-    """Lê os heartbeats individuais de cada robô (tabelas kv_state_<key>)."""
+    """
+    Lê os heartbeats individuais de cada robô.
+    Cada robô tem sua própria tabela kv_state_<key>.
+    Retorna {key: datetime_or_None}.
+    """
     out = {}
     try:
         for key in keys:
             url_key = f"supabase_url_{key}"
             key_key = f"supabase_key_{key}"
             if url_key not in st.secrets or key_key not in st.secrets:
-                url = f"{supabase_url}/rest/v1/kv_state_{key.replace('_', '')}"
+                url_key = "supabase_url_clube"
                 key_key = "supabase_key_clube"
 
             supabase_url = st.secrets[url_key]
             supabase_key = st.secrets[key_key]
 
-            url = f"{supabase_url}/rest/v1/kv_state_{key}?k=eq.heartbeat_{key}&select=v"
+            table = _table_name(key)
+            url = f"{supabase_url}/rest/v1/{table}?k=eq.heartbeat_{key}&select=v"
             headers = {
                 "apikey": supabase_key,
                 "Authorization": f"Bearer {supabase_key}",
@@ -137,7 +152,7 @@ def _read_heartbeats(keys: list[str]):
 
 
 def _write_heartbeat():
-    """Grava heartbeat global do painel principal (Streamlit)."""
+    """Heartbeat global do painel (streamlit principal)."""
     try:
         now = _dt.datetime.utcnow().isoformat() + "Z"
         url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
@@ -154,7 +169,7 @@ def _write_heartbeat():
 
 
 def _read_heartbeat():
-    """Lê o último heartbeat global do painel principal."""
+    """Lê o último heartbeat global (painel principal)."""
     try:
         url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube?k=eq.heartbeat_streamlit&select=v"
         headers = {
@@ -177,17 +192,17 @@ if "ping" in q:
     val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
     try:
         if val in ("", "1", "true", "ok", "all", "tudo"):
-            run_all_ticks()           # roda todos os robôs
-            _write_heartbeat()        # grava heartbeat global
+            run_all_ticks()
+            _write_heartbeat()
             st.write("ok")
-        elif val in PING_MAP:          # roda apenas 1 robô
+        elif val in PING_MAP:
             _run_one_tick(val)
             _write_heartbeat_for(val)
             st.write(f"ok:{val}")
         else:
-            st.write("ok")             # fallback
+            st.write("ok")
     finally:
-        st.stop()                      # impede renderização da UI nos pings
+        st.stop()
 
 
 # ============================
