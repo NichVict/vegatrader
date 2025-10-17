@@ -62,19 +62,36 @@ def _async_ping_runner(val: str):
 
 
 # --- Checa se o app foi chamado com parâmetro ?ping= ---
+# ====================================
+# 🔁 PINGS AUTOMÁTICOS VIA QUERY PARAM
+# ====================================
+
+try:
+    q = dict(st.query_params)
+except Exception:
+    q = st.experimental_get_query_params()
+    
 if "ping" in q:
     import threading
 
     def _async_ping_runner(robot_key):
         try:
-            _write_heartbeat_for(robot_key)
-            st.write(f"ok:{robot_key}")
+            ok = _write_heartbeat_for(robot_key)
+            if ok:
+                st.write(f"ok:{robot_key}")
+            else:
+                st.write(f"erro_gravacao:{robot_key}")
         except Exception as e:
-            st.write(f"erro:{robot_key}:{e}")
+            st.write(f"erro_execucao:{robot_key}:{e}")
 
     robot_key = q.get("ping", [""])[0]
-    threading.Thread(target=_async_ping_runner, args=(robot_key,)).start()
+    if robot_key:
+        threading.Thread(target=_async_ping_runner, args=(robot_key,)).start()
+    else:
+        st.write("erro:param_vazio")
+
     st.stop()
+
 
 
 # ============================
