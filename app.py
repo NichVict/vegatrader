@@ -215,6 +215,17 @@ def _run_one_tick(key: str):
     except Exception as e:
         st.session_state.setdefault("_tick_errors", []).append(f"run_tick[{key}]: {e}")
     return None
+# =========================================
+# ⚡ HANDLER DE ?uptime=  (ping leve BetterStack)
+# =========================================
+if "uptime" in q:
+    try:
+        _write_heartbeat_global()  # grava só o heartbeat global, sem rodar robôs
+        st.write("ok")              # resposta rápida para o monitor
+    except Exception as e:
+        st.write(f"erro:{e}")
+    finally:
+        st.stop()  # impede o Streamlit de renderizar a interface
 
 # =========================================
 # 🔁 HANDLER DE ?ping=  (UptimeRobot / cron)
