@@ -90,22 +90,37 @@ def _run_one_tick(key: str):
         st.session_state.setdefault("_tick_errors", []).append(f"{key}: {e}")
     return None
 
-def _write_heartbeat():
-    """Grava um timestamp global de heartbeat em uma linha da tabela KV no Supabase."""
+def _write_heartbeat_for(key: str):
+    """Grava heartbeat do robô específico em kv_state_<key> no Supabase."""
     try:
+        # Tenta usar secrets específicos do robô (ex: supabase_url_curto)
+        url_key = f"supabase_url_{key}"
+        key_key = f"supabase_key_{key}"
+
+        if url_key not in st.secrets or key_key not in st.secrets:
+            # fallback: usa 'clube' como padrão
+            url_key = "supabase_url_clube"
+            key_key = "supabase_key_clube"
+
+        supabase_url = st.secrets[url_key]
+        supabase_key = st.secrets[key_key]
+
         now = _dt.datetime.utcnow().isoformat() + "Z"
-        url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
+        url = f"{supabase_url}/rest/v1/kv_state_{key}"
         headers = {
-            "apikey": st.secrets["supabase_key_clube"],
-            "Authorization": f"Bearer {st.secrets['supabase_key_clube']}",
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates",
         }
-        payload = {"k": "heartbeat_streamlit", "v": {"ts": now}}
+        payload = {"k": f"heartbeat_{key}", "v": {"ts": now}}
+
         requests.post(url, headers=headers, json=payload, timeout=10)
-    except Exception:
-        # não quebrar o ping por causa do heartbeat
+
+    except Exception as e:
+        st.session_state.setdefault("_tick_errors", []).append(f"heartbeat_{key}: {e}")
         pass
+
 
 def _read_heartbeat():
     """Lê o último heartbeat (ISO UTC) do Supabase. Retorna None se indisponível."""
