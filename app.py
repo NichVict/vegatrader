@@ -131,6 +131,8 @@ def run_all_ticks():
 # ============================
 # HEARTBEATS
 # ============================
+# HEARTBEATS
+# ============================
 
 @st.cache_data(ttl=0)
 def _read_heartbeats(keys: list[str]):
@@ -188,11 +190,16 @@ ref_time = max(hb_map.values()) if hb_map else None
 chips = "".join(_chip(k, hb_map.get(k), ref_time) for k in _robot_keys)
 st.markdown(f"<div style='margin:6px 0 12px 0'>{chips}</div>", unsafe_allow_html=True)
 
+
 # ============================
-# HEARTBEAT GLOBAL
+# HEARTBEAT GLOBAL (com proteção de erro)
 # ============================
 
-hb = _read_heartbeat()
+try:
+    hb = _read_heartbeat()
+except NameError:
+    hb = None
+
 if hb:
     try:
         last_utc = datetime.datetime.fromisoformat(hb.replace("Z", "+00:00"))
@@ -209,6 +216,7 @@ if hb:
         st.caption("🟢 Último ping global: recebido (erro ao converter horário)")
 else:
     st.caption("⚪ Ainda sem heartbeat global registrado.")
+
 
 
 # Estilos globais (cards e bolinha flutuante)
