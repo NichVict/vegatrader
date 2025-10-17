@@ -18,58 +18,25 @@ import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
-
-import streamlit as st
 import requests
 
-# --- Query params (compatível com versões antigas e novas) ---
+# ============================
+# CONFIG BÁSICA E QUERY PARAMS
+# ============================
+
 try:
     q = dict(st.query_params)  # Streamlit ≥ 1.29
 except Exception:
     q = st.experimental_get_query_params()  # fallback
 
-
-
-
-# --- Tick leve chamado pelo ?ping=1 ---
 import datetime as _dt
 from zoneinfo import ZoneInfo as _ZoneInfo
-
 _TZ = _ZoneInfo("Europe/Lisbon")
 
-def run_all_ticks():
-    """Executa um ciclo rápido dos robôs: roda cada run_tick() e grava heartbeat individual."""
-    now = _dt.datetime.now(_TZ)
-    st.session_state["_last_tick"] = now.isoformat()
+# ============================
+# MAPEAMENTO DOS ROBÔS
+# ============================
 
-    for key in PING_MAP.keys():
-        try:
-            _run_one_tick(key)
-            _write_heartbeat_for(key)  # registra heartbeat do robô
-        except Exception as e:
-            st.session_state.setdefault("_tick_errors", []).append(f"{key}: {e}")
-
-
-    # 2) (Opcional) chamar ticks específicos se já existir
-    # Tente importar funções de tick dos seus módulos/páginas.
-    # Se ainda não tiver, deixamos para o próximo passo.
-    for mod, fn in [
-        ("pages.clube", "run_tick"),
-        ("pages.curtissimo", "run_tick"),
-        ("pages.curto", "run_tick"),
-        ("pages.loss_clube", "run_tick"),
-        ("pages.loss_curtissimo", "run_tick"),
-        ("pages.loss_curto", "run_tick"),
-    ]:
-        try:
-            _m = __import__(mod, fromlist=[fn])
-            if hasattr(_m, fn):
-                getattr(_m, fn)()  # chama pages/<mod>.py: def run_tick(): ...
-        except Exception as e:
-            # não quebrar o ping se algum módulo não tiver tick ainda
-            st.session_state.setdefault("_tick_errors", []).append(f"{mod}.{fn}: {e}")
-# --- Ping por robô (começando só com 'curto') ---
-# --- Ping por robô (começando só com 'curto') ---
 PING_MAP = {
     "curto":           ("bots.curto", "run_tick"),
     "curtissimo":      ("bots.curtissimo", "run_tick"),
@@ -79,8 +46,12 @@ PING_MAP = {
     "loss_clube":      ("bots.loss_clube", "run_tick"),
 }
 
+# ============================
+# FUNÇÕES DE EXECUÇÃO DOS ROBÔS
+# ============================
+
 def _run_one_tick(key: str):
-    """Roda o tick de um robô específico, se a função existir."""
+    """Roda o tick de um robô específico, se existir."""
     mod, fn = PING_MAP[key]
     try:
         m = __import__(mod, fromlist=[fn])
@@ -90,15 +61,31 @@ def _run_one_tick(key: str):
         st.session_state.setdefault("_tick_errors", []).append(f"{key}: {e}")
     return None
 
+
+def run_all_ticks():
+    """Executa todos os robôs de forma leve + grava heartbeat individual."""
+    now = _dt.datetime.now(_TZ)
+    st.session_state["_last_tick"] = now.isoformat()
+
+    for key in PING_MAP.keys():
+        try:
+            _run_one_tick(key)
+            _write_heartbeat_for(key)
+        except Exception as e:
+            st.session_state.setdefault("_tick_errors", []).append(f"{key}: {e}")
+
+
+# ============================
+# HEARTBEAT INDIVIDUAL E GLOBAL
+# ============================
+
 def _write_heartbeat_for(key: str):
     """Grava heartbeat do robô específico em kv_state_<key> no Supabase."""
     try:
-        # Tenta usar secrets específicos do robô (ex: supabase_url_curto)
+        # tenta secrets específicos do robô
         url_key = f"supabase_url_{key}"
         key_key = f"supabase_key_{key}"
-
         if url_key not in st.secrets or key_key not in st.secrets:
-            # fallback: usa 'clube' como padrão
             url_key = "supabase_url_clube"
             key_key = "supabase_key_clube"
 
@@ -114,9 +101,7 @@ def _write_heartbeat_for(key: str):
             "Prefer": "resolution=merge-duplicates",
         }
         payload = {"k": f"heartbeat_{key}", "v": {"ts": now}}
-
         requests.post(url, headers=headers, json=payload, timeout=10)
-
     except Exception as e:
         st.session_state.setdefault("_tick_errors", []).append(f"heartbeat_{key}: {e}")
         pass
@@ -125,16 +110,14 @@ def _write_heartbeat_for(key: str):
 def _read_heartbeats(keys: list[str]):
     """
     Lê os heartbeats individuais de cada robô.
-    Cada robô tem sua própria tabela: kv_state_<key>.
-    Retorna um dicionário {key: datetime_or_None}.
+    Cada robô tem sua própria tabela kv_state_<key>.
+    Retorna {key: datetime_or_None}.
     """
     out = {}
     try:
         for key in keys:
-            # Seleciona o par de secrets correspondente (com fallback)
             url_key = f"supabase_url_{key}"
             key_key = f"supabase_key_{key}"
-
             if url_key not in st.secrets or key_key not in st.secrets:
                 url_key = "supabase_url_clube"
                 key_key = "supabase_key_clube"
@@ -142,14 +125,12 @@ def _read_heartbeats(keys: list[str]):
             supabase_url = st.secrets[url_key]
             supabase_key = st.secrets[key_key]
 
-            # Faz leitura da tabela kv_state_<key>
             url = f"{supabase_url}/rest/v1/kv_state_{key}?k=eq.heartbeat_{key}&select=v"
             headers = {
                 "apikey": supabase_key,
                 "Authorization": f"Bearer {supabase_key}",
             }
             r = requests.get(url, headers=headers, timeout=10)
-
             if r.status_code == 200 and r.json():
                 ts = r.json()[0]["v"].get("ts")
                 if ts:
@@ -157,13 +138,11 @@ def _read_heartbeats(keys: list[str]):
     except Exception as e:
         st.session_state.setdefault("_tick_errors", []).append(f"read_heartbeats: {e}")
         pass
-
     return out
 
 
-# --- Heartbeat individual por robô ---
-def _write_heartbeat_for(key: str):
-    """Grava heartbeat do robô específico em kv_state_clube (k = heartbeat_<key>)."""
+def _write_heartbeat():
+    """Heartbeat global do painel (streamlit principal)."""
     try:
         now = _dt.datetime.utcnow().isoformat() + "Z"
         url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
@@ -173,35 +152,46 @@ def _write_heartbeat_for(key: str):
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates",
         }
-        payload = {"k": f"heartbeat_{key}", "v": {"ts": now}}
+        payload = {"k": "heartbeat_streamlit", "v": {"ts": now}}
         requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception:
         pass
 
-def _read_heartbeats(keys):
-    """Lê os heartbeats individuais e devolve dict {key: datetime_or_None}."""
-    out = {}
+
+def _read_heartbeat():
+    """Lê o último heartbeat global (painel principal)."""
     try:
-        base = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
+        url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube?k=eq.heartbeat_streamlit&select=v"
         headers = {
             "apikey": st.secrets["supabase_key_clube"],
             "Authorization": f"Bearer {st.secrets['supabase_key_clube']}",
         }
-        for k in keys:
-            r = requests.get(f"{base}?k=eq.heartbeat_{k}&select=v", headers=headers, timeout=10)
-            if r.status_code == 200 and r.json():
-                ts = r.json()[0]["v"].get("ts")
-                if ts:
-                    out[k] = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(_TZ)
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200 and r.json():
+            return r.json()[0]["v"]["ts"]
     except Exception:
-        pass
-    return out
+        return None
+    return None
 
-# Roteamento do ping (depois das definições)
-# Roteamento do ping (depois das definições)
+# ============================
+# ROTEAMENTO DO PING
+# ============================
 
-
-
+if "ping" in q:
+    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
+    try:
+        if val in ("", "1", "true", "ok", "all", "tudo"):
+            run_all_ticks()
+            _write_heartbeat()
+            st.write("ok")
+        elif val in PING_MAP:
+            _run_one_tick(val)
+            _write_heartbeat_for(val)
+            st.write(f"ok:{val}")
+        else:
+            st.write("ok")
+    finally:
+        st.stop()
 
 
 # ============================
