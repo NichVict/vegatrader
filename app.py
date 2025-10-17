@@ -82,7 +82,6 @@ def run_all_ticks():
 def _write_heartbeat_for(key: str):
     """Grava heartbeat do robô específico em kv_state_<key> no Supabase."""
     try:
-        # tenta secrets específicos do robô
         url_key = f"supabase_url_{key}"
         key_key = f"supabase_key_{key}"
         if url_key not in st.secrets or key_key not in st.secrets:
@@ -108,11 +107,7 @@ def _write_heartbeat_for(key: str):
 
 
 def _read_heartbeats(keys: list[str]):
-    """
-    Lê os heartbeats individuais de cada robô.
-    Cada robô tem sua própria tabela kv_state_<key>.
-    Retorna {key: datetime_or_None}.
-    """
+    """Lê os heartbeats individuais de cada robô (tabelas kv_state_<key>)."""
     out = {}
     try:
         for key in keys:
@@ -142,7 +137,7 @@ def _read_heartbeats(keys: list[str]):
 
 
 def _write_heartbeat():
-    """Heartbeat global do painel (streamlit principal)."""
+    """Grava heartbeat global do painel principal (Streamlit)."""
     try:
         now = _dt.datetime.utcnow().isoformat() + "Z"
         url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
@@ -159,7 +154,7 @@ def _write_heartbeat():
 
 
 def _read_heartbeat():
-    """Lê o último heartbeat global (painel principal)."""
+    """Lê o último heartbeat global do painel principal."""
     try:
         url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube?k=eq.heartbeat_streamlit&select=v"
         headers = {
@@ -173,6 +168,7 @@ def _read_heartbeat():
         return None
     return None
 
+
 # ============================
 # ROTEAMENTO DO PING
 # ============================
@@ -181,22 +177,23 @@ if "ping" in q:
     val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
     try:
         if val in ("", "1", "true", "ok", "all", "tudo"):
-            run_all_ticks()
-            _write_heartbeat()
+            run_all_ticks()           # roda todos os robôs
+            _write_heartbeat()        # grava heartbeat global
             st.write("ok")
-        elif val in PING_MAP:
+        elif val in PING_MAP:          # roda apenas 1 robô
             _run_one_tick(val)
             _write_heartbeat_for(val)
             st.write(f"ok:{val}")
         else:
-            st.write("ok")
+            st.write("ok")             # fallback
     finally:
-        st.stop()
+        st.stop()                      # impede renderização da UI nos pings
 
 
 # ============================
 # CONFIGURAÇÕES GERAIS
 # ============================
+
 st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
 
 # --- Barra de pings por robô (chips) ---
@@ -204,6 +201,7 @@ _robot_keys = list(PING_MAP.keys())
 hb_map = _read_heartbeats(_robot_keys)
 
 def _chip(label, when):
+    """Renderiza o chip colorido de cada robô."""
     if not when:
         return f"<span style='margin-right:8px;padding:2px 8px;border-radius:12px;background:#fee2e2;color:#7f1d1d;'>⛔ {label}: sem ping</span>"
     mins = int(((_dt.datetime.now(_TZ) - when).total_seconds()) // 60)
@@ -219,35 +217,19 @@ chips = "".join(_chip(k, hb_map.get(k)) for k in _robot_keys)
 st.markdown(f"<div style='margin:6px 0 12px 0'>{chips}</div>", unsafe_allow_html=True)
 
 
-# Prova de vida do ping (heartbeat)
+# Prova de vida do painel principal
 hb = _read_heartbeat()
 if hb:
     try:
         last_utc = _dt.datetime.fromisoformat(hb.replace("Z", "+00:00"))
         last_local = last_utc.astimezone(_TZ)
         diff_m = int(((_dt.datetime.now(_TZ) - last_local).total_seconds()) // 60)
-        st.caption(f"🟢 Último ping: **{last_local.strftime('%Y-%m-%d %H:%M:%S %Z')}** (há {diff_m} min)")
+        st.caption(f"🟢 Último ping global: **{last_local.strftime('%Y-%m-%d %H:%M:%S %Z')}** (há {diff_m} min)")
     except Exception:
-        st.caption("🟢 Último ping: recebido (erro ao converter horário)")
+        st.caption("🟢 Último ping global recebido (erro ao converter horário)")
 else:
-    st.caption("⚪ Ainda sem heartbeat registrado.")
+    st.caption("⚪ Ainda sem heartbeat global registrado.")
 
-# Roteamento do ping (depois das definições)
-if "ping" in q:
-    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
-    try:
-        if val in ("", "1", "true", "ok", "all", "tudo"):
-            run_all_ticks()           # roda todos
-            _write_heartbeat()        # heartbeat global (opcional)
-            st.write("ok")
-        elif val in PING_MAP:          # roda só um robô
-            _run_one_tick(val)
-            _write_heartbeat_for(val)  # heartbeat desse robô
-            st.write(f"ok:{val}")
-        else:
-            st.write("ok")             # fallback silencioso
-    finally:
-        st.stop()                      # importantíssimo: não renderiza a UI no ping
 
 # Estilos globais (cards e bolinha flutuante)
 st.markdown("""
