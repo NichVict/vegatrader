@@ -174,8 +174,40 @@ def run_all_ticks():
 # ============================
 # HEARTBEATS
 # ============================
+def _write_heartbeat_for(key: str):
+    """Grava o heartbeat individual de cada robô diretamente no Supabase."""
+    try:
+        table_name = TABLE_MAP.get(key)
+        hb_key = HBKEY_MAP.get(key)
+        if not table_name or not hb_key:
+            return False
+
+        supabase_url, supabase_key = _get_supabase_creds(key)
+        url = f"{supabase_url}/rest/v1/{table_name}"
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+        }
+        payload = {"k": hb_key, "v": {"ts": now}}
+
+        r = requests.post(url, headers=headers, json=payload, timeout=10)
+        if r.status_code not in (200, 201, 204):
+            st.session_state.setdefault("_tick_errors", []).append(
+                f"{key}: erro {r.status_code} ao gravar heartbeat"
+            )
+            return False
+
+        return True
+    except Exception as e:
+        st.session_state.setdefault("_tick_errors", []).append(f"_write_heartbeat_for({key}): {e}")
+        return False
 
 @st.cache_data(ttl=0)
+
 def _read_heartbeats(keys: list[str]):
     """Lê os heartbeats diretamente do Supabase, sem cache."""
     out = {}
