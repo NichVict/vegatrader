@@ -41,9 +41,9 @@ PING_MAP = {
     "curto": ("bots.curto", "run_tick"),
     "curtissimo": ("bots.curtissimo", "run_tick"),
     "clube": ("bots.clube", "run_tick"),
-    "losscurto": ("bots.losscurto", "run_tick"),
-    "losscurtissimo": ("bots.losscurtissimo", "run_tick"),
-    "lossclube": ("bots.lossclube", "run_tick"),
+    "loss_curto": ("bots.losscurto", "run_tick"),
+    "loss_curtissimo": ("bots.losscurtissimo", "run_tick"),
+    "loss_clube": ("bots.lossclube", "run_tick"),
 }
 
 # ============================
