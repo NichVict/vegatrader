@@ -223,21 +223,45 @@ if "ping" in q:
     val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
     try:
         if val in ("", "1", "true", "ok", "all", "tudo"):
-            # roda todos e grava HB de cada
+            # 🚀 Roda todos os robôs — com isolamento de erro individual
+            st.write("Executando ping global em todos os robôs...")
+            sucesso, falha = [], []
+
             for key in PING_MAP:
-                _run_one_tick(key)
-                _write_heartbeat_for(key)
+                try:
+                    _run_one_tick(key)
+                    _write_heartbeat_for(key)
+                    sucesso.append(key)
+                except Exception as e:
+                    falha.append(f"{key}: {e}")
+                    st.session_state.setdefault("_tick_errors", []).append(f"ping_all[{key}]: {e}")
+
             _write_heartbeat_global()
-            st.write("ok")
+
+            # 🧩 Resumo visual no console (útil para logs de monitoramento)
+            msg = f"ok: sucesso={sucesso or 'nenhum'}; falha={falha or 'nenhuma'}"
+            st.write(msg)
+            print(msg)
+
         elif val in PING_MAP:
-            _run_one_tick(val)
-            _write_heartbeat_for(val)
-            _write_heartbeat_global()
-            st.write(f"ok:{val}")
+            # 🔹 Ping individual
+            try:
+                _run_one_tick(val)
+                _write_heartbeat_for(val)
+                _write_heartbeat_global()
+                st.write(f"ok:{val}")
+            except Exception as e:
+                err = f"ping[{val}]: {e}"
+                st.session_state.setdefault("_tick_errors", []).append(err)
+                st.write(err)
+
         else:
-            st.write("ok")  # silencioso para valores aleatórios
+            # 🔸 Ping irrelevante ou teste silencioso
+            st.write("ok")
+
     finally:
-        st.stop()  # não renderiza UI para chamadas de ping
+        st.stop()  # evita renderizar a interface do Streamlit durante ping
+
 
 # ============================
 # UI — BARRA DE PINGS (CHIPS)
