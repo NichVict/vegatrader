@@ -63,16 +63,19 @@ def _async_ping_runner(val: str):
 
 # --- Checa se o app foi chamado com parâmetro ?ping= ---
 if "ping" in q:
-    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
+    import threading
 
-    # Executa o robô em thread separada
-    t = threading.Thread(target=_async_ping_runner, args=(val,))
-    t.daemon = True
-    t.start()
+    def _async_ping_runner(robot_key):
+        try:
+            _write_heartbeat_for(robot_key)
+            st.write(f"ok:{robot_key}")
+        except Exception as e:
+            st.write(f"erro:{robot_key}:{e}")
 
-    # Resposta imediata para o UptimeRobot
-    st.write(f"ok:{val}")
+    robot_key = q.get("ping", [""])[0]
+    threading.Thread(target=_async_ping_runner, args=(robot_key,)).start()
     st.stop()
+
 
 # ============================
 # MAPA DOS ROBÔS
@@ -174,39 +177,7 @@ def run_all_ticks():
 # ============================
 # HEARTBEATS
 # ============================
-def _write_heartbeat_for(key: str):
-    """Grava o heartbeat individual de cada robô diretamente no Supabase."""
-    try:
-        table_name = TABLE_MAP.get(key)
-        hb_key = HBKEY_MAP.get(key)
-        if not table_name or not hb_key:
-            return False
 
-        supabase_url, supabase_key = _get_supabase_creds(key)
-        url = f"{supabase_url}/rest/v1/{table_name}"
-        now = datetime.datetime.utcnow().isoformat() + "Z"
-
-        headers = {
-            "apikey": supabase_key,
-            "Authorization": f"Bearer {supabase_key}",
-            "Content-Type": "application/json",
-            "Prefer": "resolution=merge-duplicates",
-        }
-        payload = {"k": hb_key, "v": {"ts": now}}
-
-        r = requests.post(url, headers=headers, json=payload, timeout=10)
-        if r.status_code not in (200, 201, 204):
-            st.session_state.setdefault("_tick_errors", []).append(
-                f"{key}: erro {r.status_code} ao gravar heartbeat"
-            )
-            return False
-
-        return True
-    except Exception as e:
-        st.session_state.setdefault("_tick_errors", []).append(f"_write_heartbeat_for({key}): {e}")
-        return False
-
-@st.cache_data(ttl=0)
 
 def _read_heartbeats(keys: list[str]):
     """Lê os heartbeats diretamente do Supabase, sem cache."""
@@ -247,6 +218,33 @@ def _write_heartbeat():
         requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
         st.session_state.setdefault("_tick_errors", []).append(f"_write_heartbeat(): {e}")
+def _write_heartbeat_for(key: str):
+    """Grava heartbeat individual por robô."""
+    try:
+        supabase_url, supabase_key = _get_supabase_creds(key)
+        table_name = TABLE_MAP.get(key, "kv_state_clube")
+        hb_key = HBKEY_MAP.get(key, f"heartbeat_{key}")
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+
+        url = f"{supabase_url}/rest/v1/{table_name}"
+        headers = {
+            "apikey": supabase_key,
+            "Authorization": f"Bearer {supabase_key}",
+            "Content-Type": "application/json",
+            "Prefer": "resolution=merge-duplicates",
+        }
+        payload = {"k": hb_key, "v": {"ts": now}}
+        r = requests.post(url, headers=headers, json=payload, timeout=10)
+
+        if r.status_code not in (200, 201):
+            st.session_state.setdefault("_tick_errors", []).append(
+                f"Erro {r.status_code} ao gravar {key}: {r.text}"
+            )
+            return False
+        return True
+    except Exception as e:
+        st.session_state.setdefault("_tick_errors", []).append(f"_write_heartbeat_for({key}): {e}")
+        return False
 
 # ============================
 # BARRA DE PINGS (CHIPS)
