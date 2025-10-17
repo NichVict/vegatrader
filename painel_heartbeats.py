@@ -48,10 +48,28 @@ def _get_supabase_creds(key: str):
     key_name = f"supabase_key_{key}" if f"supabase_key_{key}" in st.secrets else "supabase_key_clube"
     return st.secrets[url_name], st.secrets[key_name]
 
-# ⚠️ CORREÇÃO IMPORTANTE:
-# antes estava errado: st.secrets.get("https://robozinho.streamlit.app/?ping=all", None)
-# agora usa a chave 'painel_url' definida no secrets.toml:
+# Define a URL base do painel (sem parâmetro ping)
 PAINEL_URL = st.secrets.get("painel_url", "https://robozinho.streamlit.app")
+
+def force_global_ping():
+    """Envia ?ping=all ao painel principal"""
+    if not PAINEL_URL:
+        st.error("⚠️ 'painel_url' não configurado em st.secrets.")
+        return False
+    try:
+        # monta a URL completa com ?ping=all
+        url = f"{PAINEL_URL}?ping=all"
+        r = requests.get(url, timeout=30)
+        if r.status_code == 200:
+            st.success(f"Ping global executado com sucesso ({r.text.strip()}) ✅")
+            return True
+        else:
+            st.error(f"Falha no ping: HTTP {r.status_code} — {r.text}")
+            return False
+    except Exception as e:
+        st.error(f"Erro ao enviar ping: {e}")
+        return False
+
 
 # ===============================
 # FUNÇÕES AUXILIARES
