@@ -168,12 +168,16 @@ st.caption("Verifica se os robôs estão sendo atualizados corretamente via Bett
 col1, col2 = st.columns([3, 1])
 with col1:
     st.caption("🕒 Atualiza automaticamente após ping global.")
-with col2:
+with col2:    
     if st.button("🔁 Forçar ping global e atualizar"):
         if force_global_ping():
             with st.spinner("⏳ Aguardando atualização dos heartbeats..."):
-                time.sleep(3)  # pequena espera para o Supabase registrar
-            st.rerun()  # recarrega automaticamente a página
+                # Aguardar um pouco mais para que todos os robôs confirmem o registro
+                for i in range(6, 0, -1):
+                    st.write(f"Aguardando sincronização ({i}s)...")
+                    time.sleep(1)
+            st.rerun()
+
 
 st.markdown("---")
 
