@@ -107,9 +107,9 @@ HBKEY_MAP = {
     "curto":           "heartbeat_curto",
     "curtissimo":      "heartbeat_curtissimo",
     "clube":           "heartbeat_clube",
-    "loss_curto":      "heartbeat_loss_curto",
-    "loss_curtissimo": "heartbeat_loss_curtissimo",
-    "loss_clube":      "heartbeat_loss_clube",
+    "loss_curto":      "heartbeat_losscurto",
+    "loss_curtissimo": "heartbeat_losscurtissimo",
+    "loss_clube":      "heartbeat_lossclube",
 }
 
 
