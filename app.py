@@ -807,6 +807,17 @@ for i in range(0, len(ROBOS), 2):
             render_robot_card(ROBOS[i + 1], col_right)
     # divisória entre linhas
     st.markdown("---")
+# ============================
+# DIAGNÓSTICO DE ERROS / LOGS
+# ============================
+
+if "_tick_errors" in st.session_state and st.session_state["_tick_errors"]:
+    st.markdown("### ⚠️ Erros recentes (últimos pings ou gravações no Supabase)")
+    last_errors = st.session_state["_tick_errors"][-10:]  # mostra só os 10 últimos
+    for err in reversed(last_errors):
+        st.code(err, language="text")
+else:
+    st.markdown("✅ Nenhum erro recente de ping ou gravação detectado.")
 
 # ============================
 # RODAPÉ
