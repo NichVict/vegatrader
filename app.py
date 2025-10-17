@@ -83,7 +83,8 @@ def _write_heartbeat_for(key: str):
         supabase_key = st.secrets[key_key]
 
         now = datetime.datetime.utcnow().isoformat() + "Z"
-        url = f"{supabase_url}/rest/v1/kv_state_{key}"
+        table_name = f"kv_state_{key.replace('_', '')}"
+        url = f"{supabase_url}/rest/v1/{table_name}"
         headers = {
             "apikey": supabase_key,
             "Authorization": f"Bearer {supabase_key}",
@@ -105,7 +106,9 @@ def _read_heartbeats(keys: list[str]):
             supabase_url = st.secrets[url_key]
             supabase_key = st.secrets[key_key]
 
-            url = f"{supabase_url}/rest/v1/kv_state_{key}?k=eq.heartbeat_{key}&select=v"
+            table_name = f"kv_state_{key.replace('_', '')}"
+            url = f"{supabase_url}/rest/v1/{table_name}?k=eq.heartbeat_{key}&select=v"
+
             headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code == 200 and r.json():
