@@ -47,8 +47,8 @@ PALETTE = [
 # PERSISTÊNCIA (SUPABASE via REST API + LOCAL JSON)
 # =============================
 # Usar apenas secrets
-SUPABASE_URL = st.secrets["supabase_url_losscurto"]
-SUPABASE_KEY = st.secrets["supabase_key_losscurto"]
+SUPABASE_URL = st.secrets["supabase_url_loss_curto"]
+SUPABASE_KEY = st.secrets["supabase_key_loss_curto"]
 
 
 TABLE = "kv_state_losscurto"
