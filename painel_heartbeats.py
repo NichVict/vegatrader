@@ -48,8 +48,10 @@ def _get_supabase_creds(key: str):
     key_name = f"supabase_key_{key}" if f"supabase_key_{key}" in st.secrets else "supabase_key_clube"
     return st.secrets[url_name], st.secrets[key_name]
 
-PAINEL_URL = st.secrets.get("https://robozinho.streamlit.app/?ping=all", None)  # Ex: https://painel-1milhao.streamlit.app
-
+# ⚠️ CORREÇÃO IMPORTANTE:
+# antes estava errado: st.secrets.get("https://robozinho.streamlit.app/?ping=all", None)
+# agora usa a chave 'painel_url' definida no secrets.toml:
+PAINEL_URL = st.secrets.get("painel_url", "https://robozinho.streamlit.app")
 
 # ===============================
 # FUNÇÕES AUXILIARES
@@ -82,8 +84,9 @@ def force_global_ping():
         st.error("⚠️ 'painel_url' não configurado em st.secrets.")
         return False
     try:
-        url = f"{PAINEL_URL}?ping=all"
-        r = requests.get(url, timeout=20)
+        # garante que o ?ping=all será anexado corretamente
+        url = f"{PAINEL_URL}?ping=all" if not PAINEL_URL.endswith("?ping=all") else PAINEL_URL
+        r = requests.get(url, timeout=30)
         if r.status_code == 200:
             st.success(f"Ping global executado com sucesso ({r.text.strip()}) ✅")
             return True
@@ -108,7 +111,7 @@ def montar_dataframe():
                 "Último v.ts": "—",
                 "updated_at": "—",
                 "Atraso (min)": "—",
-                "Status": "❌ Sem dados"
+                "Status": "❌ sem heartbeat"
             })
             continue
 
@@ -142,7 +145,7 @@ def montar_dataframe():
 # UI
 # ===============================
 st.title("💓 Painel de Heartbeats")
-st.caption("Verifica se os robôs estão sendo atualizados corretamente via UptimeRobot.")
+st.caption("Verifica se os robôs estão sendo atualizados corretamente via Better Uptime.")
 
 col1, col2 = st.columns([3, 1])
 with col1:
@@ -151,7 +154,7 @@ with col2:
     if st.button("🔁 Forçar ping global e atualizar"):
         if force_global_ping():
             with st.spinner("⏳ Aguardando atualização dos heartbeats..."):
-                time.sleep(2)  # pequena espera para o Supabase registrar
+                time.sleep(3)  # pequena espera para o Supabase registrar
             st.rerun()  # recarrega automaticamente a página
 
 st.markdown("---")
@@ -162,3 +165,4 @@ st.dataframe(df, hide_index=True, use_container_width=True)
 st.markdown("---")
 st.caption(f"⏱️ Atualizado em: {datetime.datetime.now(_TZ).strftime('%Y-%m-%d %H:%M:%S %Z')}")
 st.caption("Legenda: 🟢 <10min | 🟡 <30min | 🔴 ≥30min | ❌ sem heartbeat")
+
