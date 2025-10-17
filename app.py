@@ -37,14 +37,67 @@ _TZ = ZoneInfo("Europe/Lisbon")
 # MAPA DOS ROBÔS
 # ============================
 
+# ============================
+# MAPA DOS ROBÔS
+# ============================
+
 PING_MAP = {
-    "curto": ("bots.curto", "run_tick"),
-    "curtissimo": ("bots.curtissimo", "run_tick"),
-    "clube": ("bots.clube", "run_tick"),
-    "loss_curto": ("bots.losscurto", "run_tick"),
+    "curto":           ("bots.curto", "run_tick"),
+    "curtissimo":      ("bots.curtissimo", "run_tick"),
+    "clube":           ("bots.clube", "run_tick"),
+    "loss_curto":      ("bots.losscurto", "run_tick"),
     "loss_curtissimo": ("bots.losscurtissimo", "run_tick"),
-    "loss_clube": ("bots.lossclube", "run_tick"),
+    "loss_clube":      ("bots.lossclube", "run_tick"),
 }
+
+# Tabelas REAIS no Supabase (sem adivinhação)
+TABLE_MAP = {
+    "curto":           "kv_state_curto",
+    "curtissimo":      "kv_state_curtissimo",
+    "clube":           "kv_state_clube",
+    "loss_curto":      "kv_state_losscurto",
+    "loss_curtissimo": "kv_state_losscurtissimo",
+    "loss_clube":      "kv_state_lossclube",
+}
+
+# Chave 'k' usada no registro de heartbeat em cada tabela
+# (nos *loss* é SEM underscore, conforme você pediu/usa no Supabase)
+HBKEY_MAP = {
+    "curto":           "heartbeat_curto",
+    "curtissimo":      "heartbeat_curtissimo",
+    "clube":           "heartbeat_clube",
+    "loss_curto":      "heartbeat_losscurto",
+    "loss_curtissimo": "heartbeat_losscurtissimo",
+    "loss_clube":      "heartbeat_lossclube",
+}
+
+# (Opcional) Se quiser definir secrets por robô, use estes nomes.
+# Se não existir, caímos no par do "clube".
+SECRETS_URL_KEY = {
+    "curto":           "supabase_url_curto",
+    "curtissimo":      "supabase_url_curtissimo",
+    "clube":           "supabase_url_clube",
+    "loss_curto":      "supabase_url_losscurto",
+    "loss_curtissimo": "supabase_url_losscurtissimo",
+    "loss_clube":      "supabase_url_lossclube",
+}
+SECRETS_API_KEY = {
+    "curto":           "supabase_key_curto",
+    "curtissimo":      "supabase_key_curtissimo",
+    "clube":           "supabase_key_clube",
+    "loss_curto":      "supabase_key_losscurto",
+    "loss_curtissimo": "supabase_key_losscurtissimo",
+    "loss_clube":      "supabase_key_lossclube",
+}
+
+def _get_supabase_creds(key: str) -> tuple[str, str]:
+    """Escolhe o par (url, key) específico do robô ou cai no do 'clube'."""
+    url_name = SECRETS_URL_KEY.get(key, "supabase_url_clube")
+    api_name = SECRETS_API_KEY.get(key, "supabase_key_clube")
+    if url_name not in st.secrets or api_name not in st.secrets:
+        url_name = "supabase_url_clube"
+        api_name = "supabase_key_clube"
+    return st.secrets[url_name], st.secrets[api_name]
 
 # ============================
 # EXECUÇÃO DOS ROBÔS
@@ -60,7 +113,6 @@ def _run_one_tick(key: str):
         st.session_state.setdefault("_tick_errors", []).append(f"{key}: {e}")
     return None
 
-
 def run_all_ticks():
     now = datetime.datetime.now(_TZ)
     st.session_state["_last_tick"] = now.isoformat()
@@ -72,18 +124,17 @@ def run_all_ticks():
             st.session_state.setdefault("_tick_errors", []).append(f"{key}: {e}")
 
 # ============================
-# HEARTBEATS
+# HEARTBEATS (individual e global)
 # ============================
 
 def _write_heartbeat_for(key: str):
+    """Escreve heartbeat na TABELA correta e com 'k' coerente."""
     try:
-        url_key = f"supabase_url_{key}" if f"supabase_url_{key}" in st.secrets else "supabase_url_clube"
-        key_key = f"supabase_key_{key}" if f"supabase_key_{key}" in st.secrets else "supabase_key_clube"
-        supabase_url = st.secrets[url_key]
-        supabase_key = st.secrets[key_key]
+        supabase_url, supabase_key = _get_supabase_creds(key)
+        table_name = TABLE_MAP[key]
+        k_value    = HBKEY_MAP[key]
 
         now = datetime.datetime.utcnow().isoformat() + "Z"
-        table_name = f"kv_state_{key.replace('_', '')}"
         url = f"{supabase_url}/rest/v1/{table_name}"
         headers = {
             "apikey": supabase_key,
@@ -91,24 +142,21 @@ def _write_heartbeat_for(key: str):
             "Content-Type": "application/json",
             "Prefer": "resolution=merge-duplicates",
         }
-        payload = {"k": f"heartbeat_{key}", "v": {"ts": now}}
+        payload = {"k": k_value, "v": {"ts": now}}
         requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
         st.session_state.setdefault("_tick_errors", []).append(f"heartbeat_{key}: {e}")
 
-
 def _read_heartbeats(keys: list[str]):
+    """Lê o heartbeat em cada TABELA e 'k' corretos."""
     out = {}
     for key in keys:
         try:
-            url_key = f"supabase_url_{key}" if f"supabase_url_{key}" in st.secrets else "supabase_url_clube"
-            key_key = f"supabase_key_{key}" if f"supabase_key_{key}" in st.secrets else "supabase_key_clube"
-            supabase_url = st.secrets[url_key]
-            supabase_key = st.secrets[key_key]
+            supabase_url, supabase_key = _get_supabase_creds(key)
+            table_name = TABLE_MAP[key]
+            k_value    = HBKEY_MAP[key]
 
-            table_name = f"kv_state_{key.replace('_', '')}"
-            url = f"{supabase_url}/rest/v1/{table_name}?k=eq.heartbeat_{key}&select=v"
-
+            url = f"{supabase_url}/rest/v1/{table_name}?k=eq.{k_value}&select=v"
             headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code == 200 and r.json():
@@ -119,9 +167,8 @@ def _read_heartbeats(keys: list[str]):
             st.session_state.setdefault("_tick_errors", []).append(f"read_heartbeats({key}): {e}")
     return out
 
-
 def _write_heartbeat():
-    """Heartbeat global"""
+    """Heartbeat global do painel (fixo em kv_state_clube)."""
     try:
         now = datetime.datetime.utcnow().isoformat() + "Z"
         url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
@@ -136,9 +183,8 @@ def _write_heartbeat():
     except Exception:
         pass
 
-
 def _read_heartbeat():
-    """Lê o heartbeat global"""
+    """Lê o heartbeat global do painel."""
     try:
         url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube?k=eq.heartbeat_streamlit&select=v"
         headers = {
@@ -171,6 +217,7 @@ if "ping" in q:
             st.write("ok")
     finally:
         st.stop()
+
 
 # ============================
 # BARRA DE PINGS (CHIPS)
