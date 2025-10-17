@@ -89,9 +89,9 @@ PING_MAP = {
     "curto":           ("bots.curto", "run_tick"),
     "curtissimo":      ("bots.curtissimo", "run_tick"),
     "clube":           ("bots.clube", "run_tick"),
-    "loss_curto":      ("bots.losscurto", "run_tick"),
-    "loss_curtissimo": ("bots.losscurtissimo", "run_tick"),
-    "loss_clube":      ("bots.lossclube", "run_tick"),
+    "loss_curto":      ("bots.loss_curto", "run_tick"),
+    "loss_curtissimo": ("bots.loss_curtissimo", "run_tick"),
+    "loss_clube":      ("bots.loss_clube", "run_tick"),
 }
 
 # Tabelas REAIS no Supabase (sem adivinhação)
