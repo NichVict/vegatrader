@@ -137,7 +137,7 @@ HBKEY_MAP = {
 # Se não existir, caímos no par do "clube".
 SECRETS_URL_KEY = {
     "curto":           "supabase_url_curto",
-    "curtissimo":      "supabase_url_curtissimo",
+    "curtissimo":      "supabase_url",
     "clube":           "supabase_url_clube",
     "loss_curto":      "supabase_url_loss_curto",
     "loss_curtissimo": "supabase_url_loss_curtissimo",
@@ -145,7 +145,7 @@ SECRETS_URL_KEY = {
 }
 SECRETS_API_KEY = {
     "curto":           "supabase_key_curto",
-    "curtissimo":      "supabase_key_curtissimo",
+    "curtissimo":      "supabase_key",
     "clube":           "supabase_key_clube",
     "loss_curto":      "supabase_key_loss_curto",
     "loss_curtissimo": "supabase_key_loss_curtissimo",
