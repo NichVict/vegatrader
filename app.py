@@ -92,7 +92,7 @@ def _write_heartbeat_for(key: str):
         supabase_key = st.secrets[key_key]
 
         now = _dt.datetime.utcnow().isoformat() + "Z"
-        url = f"{supabase_url}/rest/v1/kv_state_{key}"
+        url = f"{supabase_url}/rest/v1/kv_state_{key.replace('_', '')}"
         headers = {
             "apikey": supabase_key,
             "Authorization": f"Bearer {supabase_key}",
@@ -114,7 +114,7 @@ def _read_heartbeats(keys: list[str]):
             url_key = f"supabase_url_{key}"
             key_key = f"supabase_key_{key}"
             if url_key not in st.secrets or key_key not in st.secrets:
-                url_key = "supabase_url_clube"
+                url = f"{supabase_url}/rest/v1/kv_state_{key.replace('_', '')}"
                 key_key = "supabase_key_clube"
 
             supabase_url = st.secrets[url_key]
