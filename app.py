@@ -19,6 +19,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 import requests
+import threading
 
 # ============================
 # CONFIGURAÇÕES BÁSICAS
@@ -32,6 +33,46 @@ except Exception:
     q = st.experimental_get_query_params()
 
 _TZ = ZoneInfo("Europe/Lisbon")
+
+# ======================================================
+# 🚀 TRATAMENTO DE PING DIRETO (para UptimeRobot e cron)
+# ======================================================
+import threading
+
+def _async_ping_runner(val: str):
+    """Executa o ping em segundo plano para não travar o retorno HTTP."""
+    try:
+        from importlib import import_module
+
+        # Importa dinamicamente o robô certo
+        if val in ("", "1", "true", "ok", "all", "tudo"):
+            # Executa todos
+            for key in PING_MAP.keys():
+                mod_name, fn_name = PING_MAP[key]
+                m = import_module(mod_name)
+                getattr(m, fn_name)()
+                _write_heartbeat_for(key)
+        elif val in PING_MAP:
+            mod_name, fn_name = PING_MAP[val]
+            m = import_module(mod_name)
+            getattr(m, fn_name)()
+            _write_heartbeat_for(val)
+    except Exception as e:
+        st.session_state.setdefault("_tick_errors", []).append(f"async_ping_runner({val}): {e}")
+
+
+# --- Checa se o app foi chamado com parâmetro ?ping= ---
+if "ping" in q:
+    val = ("" if q["ping"] in ([], None) else str(q["ping"]).lower())
+
+    # Executa o robô em thread separada
+    t = threading.Thread(target=_async_ping_runner, args=(val,))
+    t.daemon = True
+    t.start()
+
+    # Resposta imediata para o UptimeRobot
+    st.write(f"ok:{val}")
+    st.stop()
 
 # ============================
 # MAPA DOS ROBÔS
@@ -78,17 +119,17 @@ SECRETS_URL_KEY = {
     "curto":           "supabase_url_curto",
     "curtissimo":      "supabase_url_curtissimo",
     "clube":           "supabase_url_clube",
-    "loss_curto":      "supabase_url_losscurto",
-    "loss_curtissimo": "supabase_url_losscurtissimo",
-    "loss_clube":      "supabase_url_lossclube",
+    "loss_curto":      "supabase_url_loss_curto",
+    "loss_curtissimo": "supabase_url_loss_curtissimo",
+    "loss_clube":      "supabase_url_loss_clube",
 }
 SECRETS_API_KEY = {
     "curto":           "supabase_key_curto",
     "curtissimo":      "supabase_key_curtissimo",
     "clube":           "supabase_key_clube",
-    "loss_curto":      "supabase_key_losscurto",
-    "loss_curtissimo": "supabase_key_losscurtissimo",
-    "loss_clube":      "supabase_key_lossclube",
+    "loss_curto":      "supabase_key_loss_curto",
+    "loss_curtissimo": "supabase_key_loss_curtissimo",
+    "loss_clube":      "supabase_key_loss_clube",
 }
 
 def _get_supabase_creds(key: str) -> tuple[str, str]:
