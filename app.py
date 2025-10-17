@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-app.py
 Painel Central 1Milhão — Monitor de Robôs (Streamlit)
 
-- Lê os arquivos JSON persistidos por cada robô (APENAS LOCAL)
-- Mostra status consolidado + resumo por robô
-- Auto-refresh a cada 60s
+- Lê arquivos JSON locais (session_data)
+- Mostra status consolidado dos robôs
+- Faz ping/heartbeat individual e global via Supabase
+- Auto-refresh a cada 60 s
 """
 
 import os
@@ -21,37 +21,36 @@ from streamlit_autorefresh import st_autorefresh
 import requests
 
 # ============================
-# CONFIG BÁSICA E QUERY PARAMS
+# CONFIGURAÇÕES BÁSICAS
 # ============================
+
+st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
 
 try:
     q = dict(st.query_params)  # Streamlit ≥ 1.29
 except Exception:
-    q = st.experimental_get_query_params()  # fallback
+    q = st.experimental_get_query_params()
 
-import datetime as _dt
-from zoneinfo import ZoneInfo as _ZoneInfo
-_TZ = _ZoneInfo("Europe/Lisbon")
+_TZ = ZoneInfo("Europe/Lisbon")
 
 # ============================
-# MAPEAMENTO DOS ROBÔS
+# MAPA DOS ROBÔS
 # ============================
 
 PING_MAP = {
-    "curto":           ("bots.curto", "run_tick"),
-    "curtissimo":      ("bots.curtissimo", "run_tick"),
-    "clube":           ("bots.clube", "run_tick"),
-    "loss_curto":      ("bots.loss_curto", "run_tick"),
-    "loss_curtissimo": ("bots.loss_curtissimo", "run_tick"),
-    "loss_clube":      ("bots.loss_clube", "run_tick"),
+    "curto": ("bots.curto", "run_tick"),
+    "curtissimo": ("bots.curtissimo", "run_tick"),
+    "clube": ("bots.clube", "run_tick"),
+    "losscurto": ("bots.losscurto", "run_tick"),
+    "losscurtissimo": ("bots.losscurtissimo", "run_tick"),
+    "lossclube": ("bots.lossclube", "run_tick"),
 }
 
 # ============================
-# FUNÇÕES DE EXECUÇÃO DOS ROBÔS
+# EXECUÇÃO DOS ROBÔS
 # ============================
 
 def _run_one_tick(key: str):
-    """Roda o tick de um robô específico, se existir."""
     mod, fn = PING_MAP[key]
     try:
         m = __import__(mod, fromlist=[fn])
@@ -63,10 +62,8 @@ def _run_one_tick(key: str):
 
 
 def run_all_ticks():
-    """Executa todos os robôs de forma leve + grava heartbeat individual."""
-    now = _dt.datetime.now(_TZ)
+    now = datetime.datetime.now(_TZ)
     st.session_state["_last_tick"] = now.isoformat()
-
     for key in PING_MAP.keys():
         try:
             _run_one_tick(key)
@@ -74,35 +71,19 @@ def run_all_ticks():
         except Exception as e:
             st.session_state.setdefault("_tick_errors", []).append(f"{key}: {e}")
 
-
 # ============================
-# HEARTBEAT INDIVIDUAL E GLOBAL
+# HEARTBEATS
 # ============================
-
-def _table_name(key: str) -> str:
-    """
-    Ajusta o nome da tabela no Supabase.
-    Remove '_' dos nomes de robôs 'loss_*' porque as tabelas estão sem underscore.
-    """
-    if key.startswith("loss_"):
-        return f"kv_state_{key.replace('_', '')}"
-    return f"kv_state_{key}"
 
 def _write_heartbeat_for(key: str):
-    """Grava heartbeat do robô específico em kv_state_<key> (ou kv_state_loss...) no Supabase."""
     try:
-        url_key = f"supabase_url_{key}"
-        key_key = f"supabase_key_{key}"
-        if url_key not in st.secrets or key_key not in st.secrets:
-            url_key = "supabase_url_clube"
-            key_key = "supabase_key_clube"
-
+        url_key = f"supabase_url_{key}" if f"supabase_url_{key}" in st.secrets else "supabase_url_clube"
+        key_key = f"supabase_key_{key}" if f"supabase_key_{key}" in st.secrets else "supabase_key_clube"
         supabase_url = st.secrets[url_key]
         supabase_key = st.secrets[key_key]
 
-        now = _dt.datetime.utcnow().isoformat() + "Z"
-        table = _table_name(key)
-        url = f"{supabase_url}/rest/v1/{table}"
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        url = f"{supabase_url}/rest/v1/kv_state_{key}"
         headers = {
             "apikey": supabase_key,
             "Authorization": f"Bearer {supabase_key}",
@@ -113,48 +94,33 @@ def _write_heartbeat_for(key: str):
         requests.post(url, headers=headers, json=payload, timeout=10)
     except Exception as e:
         st.session_state.setdefault("_tick_errors", []).append(f"heartbeat_{key}: {e}")
-        pass
 
 
 def _read_heartbeats(keys: list[str]):
-    """
-    Lê os heartbeats individuais de cada robô.
-    Cada robô tem sua própria tabela kv_state_<key>.
-    Retorna {key: datetime_or_None}.
-    """
     out = {}
-    try:
-        for key in keys:
-            url_key = f"supabase_url_{key}"
-            key_key = f"supabase_key_{key}"
-            if url_key not in st.secrets or key_key not in st.secrets:
-                url_key = "supabase_url_clube"
-                key_key = "supabase_key_clube"
-
+    for key in keys:
+        try:
+            url_key = f"supabase_url_{key}" if f"supabase_url_{key}" in st.secrets else "supabase_url_clube"
+            key_key = f"supabase_key_{key}" if f"supabase_key_{key}" in st.secrets else "supabase_key_clube"
             supabase_url = st.secrets[url_key]
             supabase_key = st.secrets[key_key]
 
-            table = _table_name(key)
-            url = f"{supabase_url}/rest/v1/{table}?k=eq.heartbeat_{key}&select=v"
-            headers = {
-                "apikey": supabase_key,
-                "Authorization": f"Bearer {supabase_key}",
-            }
+            url = f"{supabase_url}/rest/v1/kv_state_{key}?k=eq.heartbeat_{key}&select=v"
+            headers = {"apikey": supabase_key, "Authorization": f"Bearer {supabase_key}"}
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code == 200 and r.json():
                 ts = r.json()[0]["v"].get("ts")
                 if ts:
-                    out[key] = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(_TZ)
-    except Exception as e:
-        st.session_state.setdefault("_tick_errors", []).append(f"read_heartbeats: {e}")
-        pass
+                    out[key] = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(_TZ)
+        except Exception as e:
+            st.session_state.setdefault("_tick_errors", []).append(f"read_heartbeats({key}): {e}")
     return out
 
 
 def _write_heartbeat():
-    """Heartbeat global do painel (streamlit principal)."""
+    """Heartbeat global"""
     try:
-        now = _dt.datetime.utcnow().isoformat() + "Z"
+        now = datetime.datetime.utcnow().isoformat() + "Z"
         url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube"
         headers = {
             "apikey": st.secrets["supabase_key_clube"],
@@ -169,7 +135,7 @@ def _write_heartbeat():
 
 
 def _read_heartbeat():
-    """Lê o último heartbeat global (painel principal)."""
+    """Lê o heartbeat global"""
     try:
         url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube?k=eq.heartbeat_streamlit&select=v"
         headers = {
@@ -182,7 +148,6 @@ def _read_heartbeat():
     except Exception:
         return None
     return None
-
 
 # ============================
 # ROTEAMENTO DO PING
@@ -204,64 +169,57 @@ if "ping" in q:
     finally:
         st.stop()
 
-
 # ============================
-# CONFIGURAÇÕES GERAIS
+# BARRA DE PINGS (CHIPS)
 # ============================
 
-st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_icon="📊")
-
-# --- Barra de pings por robô (chips) ---
-# --- Barra de pings por robô (chips) ---
 _robot_keys = list(PING_MAP.keys())
 hb_map = _read_heartbeats(_robot_keys)
 
 def _chip(label, when, reference_time=None):
-    """
-    Mostra o status do robô com base no tempo desde o último ping.
-    Considera "sincronizado" (verde) se estiver dentro de ±1 minuto do mais recente.
-    """
+    """Badge visual do robô com tolerância ±1 min"""
     if not when:
         return f"<span style='margin-right:8px;padding:2px 8px;border-radius:12px;background:#fee2e2;color:#7f1d1d;'>⛔ {label}: sem ping</span>"
 
-    now = _dt.datetime.now(_TZ)
+    now = datetime.datetime.now(_TZ)
     mins = int((now - when).total_seconds() // 60)
 
-    # referência global — o ping mais recente de todos
-    if reference_time:
-        delta_ref = abs((reference_time - when).total_seconds()) / 60
-    else:
-        delta_ref = 0
+    # diferença pro mais recente
+    delta_ref = abs((reference_time - when).total_seconds()) / 60 if reference_time else 0
 
-    # Lógica de cores com tolerância de ±1 minuto
+    # Lógica de cor
     if delta_ref <= 1 or mins < 6:
-        bg, fg = "#d1fae5", "#065f46"   # verde (sincronizado)
+        bg, fg = "#d1fae5", "#065f46"  # verde
     elif mins < 30:
-        bg, fg = "#fef3c7", "#78350f"   # amarelo
+        bg, fg = "#fef3c7", "#78350f"  # amarelo
     else:
-        bg, fg = "#fee2e2", "#7f1d1d"   # vermelho
+        bg, fg = "#fee2e2", "#7f1d1d"  # vermelho
 
     return f"<span style='margin-right:8px;padding:2px 8px;border-radius:12px;background:{bg};color:{fg};'>{label}: {when.strftime('%H:%M')} ({mins}m)</span>"
 
-# Identifica o ping mais recente (referência global)
-if hb_map:
-    ref_time = max(hb_map.values())
-else:
-    ref_time = None
+ref_time = max(hb_map.values()) if hb_map else None
+chips = "".join(_chip(k, hb_map.get(k), ref_time) for k in _robot_keys)
+st.markdown(f"<div style='margin:6px 0 12px 0'>{chips}</div>", unsafe_allow_html=True)
 
-# Gera os chips de status
-chips = "".join(_chip(k, hb_map.get(k), reference_time=ref_time) for k in _robot_keys)
+# ============================
+# HEARTBEAT GLOBAL
+# ============================
 
-# Prova de vida do painel principal
 hb = _read_heartbeat()
 if hb:
     try:
-        last_utc = _dt.datetime.fromisoformat(hb.replace("Z", "+00:00"))
+        last_utc = datetime.datetime.fromisoformat(hb.replace("Z", "+00:00"))
         last_local = last_utc.astimezone(_TZ)
-        diff_m = int(((_dt.datetime.now(_TZ) - last_local).total_seconds()) // 60)
-        st.caption(f"🟢 Último ping global: **{last_local.strftime('%Y-%m-%d %H:%M:%S %Z')}** (há {diff_m} min)")
+        diff_m = int((datetime.datetime.now(_TZ) - last_local).total_seconds() // 60)
+        if diff_m < 6:
+            color = "🟢"
+        elif diff_m < 20:
+            color = "🟡"
+        else:
+            color = "⚪"
+        st.caption(f"{color} Último ping global: **{last_local.strftime('%Y-%m-%d %H:%M:%S %Z')}** (há {diff_m} min)")
     except Exception:
-        st.caption("🟢 Último ping global recebido (erro ao converter horário)")
+        st.caption("🟢 Último ping global: recebido (erro ao converter horário)")
 else:
     st.caption("⚪ Ainda sem heartbeat global registrado.")
 
