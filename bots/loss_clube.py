@@ -12,8 +12,8 @@ def _write_heartbeat():
         table = "kv_state_lossclube"
 
         # Usa os secrets padrão (pode ser os do clube, já que estão configurados)
-        supabase_url = st.secrets["supabase_url_clube"]
-        supabase_key = st.secrets["supabase_key_clube"]
+        supabase_url = st.secrets["supabase_url_loss_clube"]
+        supabase_key = st.secrets["supabase_key_loss_clube"]
 
         now = datetime.datetime.utcnow().isoformat() + "Z"
         url = f"{supabase_url}/rest/v1/{table}"
