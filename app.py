@@ -122,20 +122,44 @@ def _write_heartbeat_for(key: str):
         pass
 
 
-def _read_heartbeat():
-    """Lê o último heartbeat (ISO UTC) do Supabase. Retorna None se indisponível."""
+def _read_heartbeats(keys: list[str]):
+    """
+    Lê os heartbeats individuais de cada robô.
+    Cada robô tem sua própria tabela: kv_state_<key>.
+    Retorna um dicionário {key: datetime_or_None}.
+    """
+    out = {}
     try:
-        url = f"{st.secrets['supabase_url_clube']}/rest/v1/kv_state_clube?k=eq.heartbeat_streamlit&select=v"
-        headers = {
-            "apikey": st.secrets["supabase_key_clube"],
-            "Authorization": f"Bearer {st.secrets['supabase_key_clube']}",
-        }
-        r = requests.get(url, headers=headers, timeout=10)
-        if r.status_code == 200 and r.json():
-            return r.json()[0]["v"]["ts"]
-    except Exception:
-        return None
-    return None
+        for key in keys:
+            # Seleciona o par de secrets correspondente (com fallback)
+            url_key = f"supabase_url_{key}"
+            key_key = f"supabase_key_{key}"
+
+            if url_key not in st.secrets or key_key not in st.secrets:
+                url_key = "supabase_url_clube"
+                key_key = "supabase_key_clube"
+
+            supabase_url = st.secrets[url_key]
+            supabase_key = st.secrets[key_key]
+
+            # Faz leitura da tabela kv_state_<key>
+            url = f"{supabase_url}/rest/v1/kv_state_{key}?k=eq.heartbeat_{key}&select=v"
+            headers = {
+                "apikey": supabase_key,
+                "Authorization": f"Bearer {supabase_key}",
+            }
+            r = requests.get(url, headers=headers, timeout=10)
+
+            if r.status_code == 200 and r.json():
+                ts = r.json()[0]["v"].get("ts")
+                if ts:
+                    out[key] = _dt.datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(_TZ)
+    except Exception as e:
+        st.session_state.setdefault("_tick_errors", []).append(f"read_heartbeats: {e}")
+        pass
+
+    return out
+
 
 # --- Heartbeat individual por robô ---
 def _write_heartbeat_for(key: str):
