@@ -683,7 +683,13 @@ def render_robot_card(robo: Dict[str, Any], container):
 
         fig = build_sparkline(state)
         if fig:
-            st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(                
+                fig,
+                use_container_width=True,
+                config={"displayModeBar": False},
+                key=f"plot_{key}"
+            )
+
         else:
             st.caption("Sem histórico suficiente para gráfico.")
 
