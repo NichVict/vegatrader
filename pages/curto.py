@@ -221,6 +221,7 @@ def inicializar_estado():
 
 inicializar_estado()
 carregar_estado_duravel()
+st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | Robô iniciado - Workflow GitHub ativo")
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
