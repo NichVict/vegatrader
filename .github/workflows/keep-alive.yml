@@ -2,7 +2,7 @@ name: Keep Streamlit App Awake
 
 on:
   schedule:
-    - cron: '0 */10 * * *'  # A cada 10 horas
+    - cron: '0 */2 * * *'  # A cada 10 horas
   workflow_dispatch:  # Adicione esta linha para habilitar run manual
 
 permissions:
