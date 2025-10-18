@@ -1,0 +1,20 @@
+name: Keep Streamlit App Awake
+
+on:
+  schedule:
+    - cron: '0 */2 * * *'  # Executa a cada 10 horas (ajuste se precisar de mais frequência, ex: */6 para 6 horas)
+
+permissions:
+  contents: write
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Commit vazio para manter app acordado
+        run: |
+          git config --global user.name 'GitHub Actions'
+          git config --global user.email 'actions@github.com'
+          git commit --allow-empty -m "Commit vazio para evitar hibernação no Streamlit"
+          git push
