@@ -52,7 +52,7 @@ SUPABASE_KEY = st.secrets["supabase_key_loss_curto"]
 
 
 TABLE = "kv_state_losscurto"
-STATE_KEY = "losscurto_przo_v1"
+STATE_KEY = "loss_curto_przo_v1"
 LOCAL_STATE_FILE = "session_data/state_losscurto.json"
 
 
