@@ -190,17 +190,15 @@ def apagar_estado_remoto():
     url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
     try:
         r = requests.delete(url, headers=headers, timeout=15)
-        if r.status_code not in (200, 204):
-            st.sidebar.error(f"Erro ao apagar estado remoto: {r.text}")
+        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | DEBUG: apagar_estado_remoto status = {r.status_code}")
+        if r.status_code == 204:
+            st.sidebar.success("✅ Estado remoto apagado com sucesso!")
+        else:
+            st.sidebar.error(f"Erro ao apagar estado remoto: {r.status_code} - {r.text}")
     except Exception as e:
+        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | DEBUG: apagar_estado_remoto erro = {e}")
         st.sidebar.error(f"Erro ao apagar estado remoto: {e}")
-
-    if os.path.exists(LOCAL_STATE_FILE):
-        try:
-            os.remove(LOCAL_STATE_FILE)
-        except Exception as e:
-            st.sidebar.warning(f"⚠️ Erro ao apagar local: {e}")
-
+        
 def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
