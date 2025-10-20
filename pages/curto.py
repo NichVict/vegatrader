@@ -943,7 +943,7 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
         st.error(f"Erro ao exibir JSON: {e}")
 
 
-refresh_ms = 50_000  # atualização visual a cada 50 segundos (não afeta lógica de tempo)
+refresh_ms = 300_000  # atualização visual a cada 50 segundos (não afeta lógica de tempo)
 st_autorefresh(interval=refresh_ms, limit=None, key="curto-refresh")
 
 
