@@ -29,7 +29,7 @@ import time
 st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")
-HORARIO_INICIO_PREGAO = datetime.time(09, 0, 0)
+HORARIO_INICIO_PREGAO = datetime.time(9, 0, 0)
 HORARIO_FIM_PREGAO    = datetime.time(23, 0, 0)
 
 INTERVALO_VERIFICACAO = 300
