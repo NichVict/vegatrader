@@ -446,7 +446,7 @@ def notificar_preco_alvo_alcancado_curto(ticker, preco_alvo, preco_atual, operac
     except Exception as e:
         st.session_state.log_monitoramento.append(f"⚠️ Erro no envio de alerta: {e}")
 
-    return f"💥 ALERTA de {msg_op} em {tk_sem_ext} enviado com sucesso!"
+    return f"💥🤖🤖🤖 ALERTA de {msg_op} em {tk_sem_ext} enviado com sucesso!"
 
 
 def formatar_mensagem_alerta(ticker_symbol, preco_alvo, preco_atual, operacao):
