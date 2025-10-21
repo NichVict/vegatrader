@@ -310,7 +310,8 @@ def inicializar_estado():
 
 # --- inicialização (ordem correta) ---
 inicializar_estado()
-garantir_estado_local_existe()
+garantir_estado_nuvem_existe()   # garante que a linha dos robôs exista
+garantir_estado_local_existe()   # garante que a linha local exista
 carregar_estado_duravel()
 st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | Robô iniciado - Workflow GitHub ativo")
 
