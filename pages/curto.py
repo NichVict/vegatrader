@@ -103,7 +103,7 @@ def garantir_estado_local_existe():
 def garantir_estado_nuvem_existe():
     """
     Garante que a linha principal dos robôs (curto_przo_v1) exista no Supabase.
-    Se não existir, cria vazia.
+    Se não existir, cria com a mesma estrutura padrão da linha local.
     """
     headers = {
         "apikey": SUPABASE_KEY,
@@ -111,22 +111,39 @@ def garantir_estado_nuvem_existe():
         "Content-Type": "application/json",
     }
     try:
-        # Verifica se a linha da nuvem já existe
+        # Verifica se já existe
         url_check = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}&select=k"
         r_check = requests.get(url_check, headers=headers, timeout=10)
         if r_check.status_code == 200 and r_check.json():
-            return  # Já existe, nada a fazer
+            return  # já existe
 
-        # Cria linha vazia da nuvem
-        payload = {"k": STATE_KEY_CLOUD, "v": {}}
+        # Estrutura padrão (igual à local)
+        estrutura_padrao = {
+            "ativos": [],
+            "status": {},
+            "pausado": False,
+            "disparos": {},
+            "em_contagem": {},
+            "tempo_acumulado": {},
+            "historico_alertas": [],
+            "log_monitoramento": [],
+            "precos_historicos": {},
+            "ultimo_estado_pausa": None,
+            "ultimo_update_tempo": {},
+            "ultimo_ping_keepalive": None,
+            "ultima_data_abertura_enviada": None,
+        }
+
+        payload = {"k": STATE_KEY_CLOUD, "v": estrutura_padrao}
         url_insert = f"{SUPABASE_URL}/rest/v1/{TABLE}"
         r_insert = requests.post(url_insert, headers=headers, data=json.dumps(payload), timeout=10)
         if r_insert.status_code in (200, 201):
-            st.sidebar.success("✅ Linha da nuvem (curto_przo_v1) criada automaticamente.")
+            st.sidebar.success("✅ Linha da nuvem criada com estrutura padrão.")
         else:
             st.sidebar.warning(f"⚠️ Falha ao criar linha da nuvem: {r_insert.text}")
     except Exception as e:
         st.sidebar.warning(f"⚠️ Erro ao garantir linha da nuvem: {e}")
+
 
 
 # -----------------------------------------------------
