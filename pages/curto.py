@@ -190,15 +190,27 @@ def _persist_now():
         "Content-Type": "application/json",
         "Prefer": "resolution=merge-duplicates",
     }
-    payload = {"k": STATE_KEY, "v": snapshot}
+
+    # 1️⃣ Salva o estado local normalmente
+    payload_local = {"k": STATE_KEY_LOCAL, "v": snapshot}
     url = f"{SUPABASE_URL}/rest/v1/{TABLE}"
     try:
-        r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
-        if r.status_code not in (200, 201, 204):
-            st.sidebar.error(f"Erro ao salvar estado remoto: {r.text}")
+        r_local = requests.post(url, headers=headers, data=json.dumps(payload_local), timeout=15)
+        if r_local.status_code not in (200, 201, 204):
+            st.sidebar.error(f"Erro ao salvar estado local: {r_local.text}")
     except Exception as e:
-        st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
+        st.sidebar.error(f"Erro ao salvar estado local: {e}")
 
+    # 2️⃣ Envia cópia do mesmo estado para a linha da nuvem
+    payload_cloud = {"k": STATE_KEY_CLOUD, "v": snapshot}
+    try:
+        r_cloud = requests.post(url, headers=headers, data=json.dumps(payload_cloud), timeout=15)
+        if r_cloud.status_code not in (200, 201, 204):
+            st.sidebar.warning(f"⚠️ Falha ao atualizar linha da nuvem: {r_cloud.text}")
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ Erro ao atualizar nuvem: {e}")
+
+    # 3️⃣ Salva localmente (arquivo JSON)
     try:
         os.makedirs("session_data", exist_ok=True)
         with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
@@ -207,6 +219,7 @@ def _persist_now():
         st.sidebar.warning(f"⚠️ Erro ao salvar local: {e}")
 
     st.session_state["__last_save_ts"] = agora_lx().timestamp()
+
 
 
 def salvar_estado_duravel(force: bool = False):
