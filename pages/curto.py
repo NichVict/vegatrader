@@ -496,29 +496,43 @@ st.sidebar.header("⚙️ Configurações")
 
 if st.sidebar.button("🧹 Limpar Tabela"):
     try:
-        # 1) apaga remoto (ambas as linhas: local e nuvem)
-        apagar_estado_remoto(keys=REMOTE_KEYS)
+        headers = {
+            "apikey": SUPABASE_KEY,
+            "Authorization": f"Bearer {SUPABASE_KEY}",
+            "Content-Type": "application/json",
+        }
 
-        # 2) apaga arquivo local
+        # 1️⃣ Zera os dados das linhas (local e nuvem) em vez de apagar
+        for k in REMOTE_KEYS:
+            payload = {"v": {}}  # mantém a linha, mas limpa os dados
+            url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{k}"
+            r = requests.patch(url, headers=headers, data=json.dumps(payload), timeout=15)
+            if r.status_code in (200, 204):
+                st.sidebar.success(f"✅ Linha '{k}' zerada com sucesso.")
+            else:
+                st.sidebar.warning(f"⚠️ Falha ao zerar '{k}': {r.status_code} - {r.text}")
+
+        # 2️⃣ Limpa arquivo local
         try:
             if os.path.exists(LOCAL_STATE_FILE):
                 os.remove(LOCAL_STATE_FILE)
         except Exception as e_local:
             st.sidebar.warning(f"⚠️ Erro ao apagar arquivo local: {e_local}")
 
-        # 3) limpa sessão e re-inicializa
+        # 3️⃣ Limpa session_state e re-inicializa
         st.session_state.clear()
         inicializar_estado()
-        st.session_state["ultima_data_abertura_enviada"] = str(agora_lx().date())
 
-        # 4) recria linha local vazia e salva
-        garantir_estado_local_existe()
+        # 4️⃣ Atualiza registro da data e salva
+        st.session_state["ultima_data_abertura_enviada"] = str(agora_lx().date())
         salvar_estado_duravel(force=True)
 
-        st.sidebar.success("✅ Estado local e nuvem apagados e reiniciados.")
+        st.sidebar.success("✅ Dados da nuvem e local zerados (linhas mantidas).")
         st.rerun()
+
     except Exception as e:
-        st.sidebar.error(f"Erro ao apagar estado: {e}")
+        st.sidebar.error(f"Erro ao limpar tabela: {e}")
+
 
 
 
