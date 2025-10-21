@@ -963,19 +963,24 @@ grafico.plotly_chart(fig, use_container_width=True)
 # -----------------------------
 # LOG E AUTOREFRESH
 # -----------------------------
+# -----------------------------
+# LOG E AUTOREFRESH
+# -----------------------------
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
     salvar_estado_duravel()
-# ---------- LOG: cor por ticker + box rolável + ordem decrescente ----------
+
 
 PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
+
 def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
+
 
 def color_for_ticker(ticker):
     ensure_color_map()
@@ -984,8 +989,10 @@ def color_for_ticker(ticker):
         st.session_state.ticker_colors[ticker] = PALETTE[idx]
     return st.session_state.ticker_colors[ticker]
 
+
 TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\.SA\b")
 PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")
+
 
 def extract_ticker(line):
     m = TICKER_PAT.search(line)
@@ -994,8 +1001,9 @@ def extract_ticker(line):
     m2 = PLAIN_TICKER_PAT.search(line)
     return m2.group(1) if m2 else None
 
+
 def render_log_html(lines, selected_tickers=None, max_lines=250):
-    """Renderiza o log no mesmo estilo visual do clube.py (cores, badges, rolagem)."""
+    """Renderiza o log com o mesmo estilo visual do clube.py (cores, badges, rolagem)."""
     if not lines:
         st.write("—")
         return
@@ -1051,13 +1059,42 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
         badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
         html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
     html.append("</div>")
-
     st.markdown("\n".join(html), unsafe_allow_html=True)
 
 
+def carregar_log_nuvem():
+    """Carrega o log_monitoramento da linha de nuvem (curto_przo_v1)."""
+    try:
+        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+        url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}&select=v"
+        r = requests.get(url, headers=headers, timeout=10)
+        if r.status_code == 200 and r.json():
+            dados = r.json()[0]["v"]
+            log_nuvem = dados.get("log_monitoramento", [])
+            return log_nuvem
+        else:
+            return []
+    except Exception as e:
+        st.warning(f"⚠️ Erro ao carregar log da nuvem: {e}")
+        return []
 
-with log_container:
+
+# --- Interface: duas colunas separadas ---
+col_local, col_nuvem = st.columns(2)
+
+with col_local:
+    st.subheader("🧭 Log Local")
     render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
+
+with col_nuvem:
+    st.subheader("☁️ Log da Nuvem")
+    log_nuvem = carregar_log_nuvem()
+    if log_nuvem:
+        render_log_html(log_nuvem, selected_tickers, 250)
+        st.caption(f"🗂️ {len(log_nuvem)} linhas carregadas da nuvem.")
+    else:
+        st.info("Nenhum log remoto encontrado (ainda).")
+
 
 # -----------------------------
 # DEBUG + AUTOREFRESH
@@ -1079,5 +1116,6 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
         st.error(f"Erro ao exibir JSON: {e}")
 
 
-refresh_ms = 300_000  # atualização visual a cada 50 segundos (não afeta lógica de tempo)
+refresh_ms = 300_000  # atualização visual a cada 5 min
 st_autorefresh(interval=refresh_ms, limit=None, key="curto-refresh")
+
