@@ -69,8 +69,7 @@ def agora_lx():
 def garantir_estado_local_existe():
     """
     Garante que a linha local (_local) exista no Supabase.
-    Se não existir, clona o snapshot atual da linha dos robôs (se houver);
-    senão cria vazia.
+    Se não existir, clona o snapshot da linha da nuvem (curto_przo_v1).
     """
     headers = {
         "apikey": SUPABASE_KEY,
@@ -78,25 +77,56 @@ def garantir_estado_local_existe():
         "Content-Type": "application/json",
     }
     try:
-        # já existe a linha local?
+        # Verifica se a linha local já existe
         url_check = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_LOCAL}&select=k"
         r_check = requests.get(url_check, headers=headers, timeout=10)
         if r_check.status_code == 200 and r_check.json():
-            return  # ok, nada a fazer
+            return  # Já existe
 
-        # tenta clonar da linha dos robôs
+        # Se não existe, tenta copiar o estado da linha dos robôs
         url_src = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}&select=v"
         r_src = requests.get(url_src, headers=headers, timeout=10)
         snapshot = r_src.json()[0]["v"] if (r_src.status_code == 200 and r_src.json()) else {}
 
-        # cria linha local
+        # Cria linha local
         payload = {"k": STATE_KEY_LOCAL, "v": snapshot}
         url_insert = f"{SUPABASE_URL}/rest/v1/{TABLE}"
         r_insert = requests.post(url_insert, headers=headers, data=json.dumps(payload), timeout=10)
-        if r_insert.status_code not in (200, 201):
-            st.sidebar.warning(f"⚠️ Não foi possível inicializar linha local: {r_insert.text}")
+        if r_insert.status_code in (200, 201):
+            st.sidebar.success("✅ Linha local criada automaticamente.")
+        else:
+            st.sidebar.warning(f"⚠️ Falha ao criar linha local: {r_insert.text}")
     except Exception as e:
-        st.sidebar.warning(f"⚠️ Falha ao garantir linha local: {e}")
+        st.sidebar.warning(f"⚠️ Erro ao garantir linha local: {e}")
+
+
+def garantir_estado_nuvem_existe():
+    """
+    Garante que a linha principal dos robôs (curto_przo_v1) exista no Supabase.
+    Se não existir, cria vazia.
+    """
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+    try:
+        # Verifica se a linha da nuvem já existe
+        url_check = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}&select=k"
+        r_check = requests.get(url_check, headers=headers, timeout=10)
+        if r_check.status_code == 200 and r_check.json():
+            return  # Já existe, nada a fazer
+
+        # Cria linha vazia da nuvem
+        payload = {"k": STATE_KEY_CLOUD, "v": {}}
+        url_insert = f"{SUPABASE_URL}/rest/v1/{TABLE}"
+        r_insert = requests.post(url_insert, headers=headers, data=json.dumps(payload), timeout=10)
+        if r_insert.status_code in (200, 201):
+            st.sidebar.success("✅ Linha da nuvem (curto_przo_v1) criada automaticamente.")
+        else:
+            st.sidebar.warning(f"⚠️ Falha ao criar linha da nuvem: {r_insert.text}")
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ Erro ao garantir linha da nuvem: {e}")
 
 
 # -----------------------------------------------------
