@@ -42,19 +42,66 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-# =============================
+
 # PERSISTÊNCIA (SUPABASE via REST API + LOCAL JSON)
 # =============================
 SUPABASE_URL = st.secrets["supabase_url_curto"]
 SUPABASE_KEY = st.secrets["supabase_key_curto"]
 TABLE = "kv_state_curto"
-STATE_KEY = "curto_przo_v1"
+
+# --- controle de chaves ---
+STATE_KEY_LOCAL = "curto_przo_v1_local"   # linha da interface (PC)
+STATE_KEY_CLOUD = "curto_przo_v1"         # linha dos robôs na nuvem (já existente)
+STATE_KEY = STATE_KEY_LOCAL               # esta instância usa sempre a linha local
+REMOTE_KEYS = [STATE_KEY_LOCAL, STATE_KEY_CLOUD]
+
 LOCAL_STATE_FILE = "session_data/state_curto.json"  # fallback local
+PERSIST_DEBOUNCE_SECONDS = 60
 
 
 def agora_lx():
     return datetime.datetime.now(TZ)
 
+
+# -----------------------------------------------------
+#  garantir que a linha local existe no Supabase
+# -----------------------------------------------------
+def garantir_estado_local_existe():
+    """
+    Garante que a linha local (_local) exista no Supabase.
+    Se não existir, clona o snapshot atual da linha dos robôs (se houver);
+    senão cria vazia.
+    """
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json",
+    }
+    try:
+        # já existe a linha local?
+        url_check = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_LOCAL}&select=k"
+        r_check = requests.get(url_check, headers=headers, timeout=10)
+        if r_check.status_code == 200 and r_check.json():
+            return  # ok, nada a fazer
+
+        # tenta clonar da linha dos robôs
+        url_src = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}&select=v"
+        r_src = requests.get(url_src, headers=headers, timeout=10)
+        snapshot = r_src.json()[0]["v"] if (r_src.status_code == 200 and r_src.json()) else {}
+
+        # cria linha local
+        payload = {"k": STATE_KEY_LOCAL, "v": snapshot}
+        url_insert = f"{SUPABASE_URL}/rest/v1/{TABLE}"
+        r_insert = requests.post(url_insert, headers=headers, data=json.dumps(payload), timeout=10)
+        if r_insert.status_code not in (200, 201):
+            st.sidebar.warning(f"⚠️ Não foi possível inicializar linha local: {r_insert.text}")
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ Falha ao garantir linha local: {e}")
+
+
+# -----------------------------------------------------
+#  snapshot, salvar, carregar e apagar
+# -----------------------------------------------------
 def _estado_snapshot():
     snapshot = {
         "ativos": st.session_state.get("ativos", []),
@@ -87,6 +134,7 @@ def _estado_snapshot():
     snapshot["disparos"] = disparos_serial
     return snapshot
 
+
 def _persist_now():
     snapshot = _estado_snapshot()
     headers = {
@@ -113,6 +161,7 @@ def _persist_now():
 
     st.session_state["__last_save_ts"] = agora_lx().timestamp()
 
+
 def salvar_estado_duravel(force: bool = False):
     if force:
         _persist_now()
@@ -121,6 +170,7 @@ def salvar_estado_duravel(force: bool = False):
     now_ts = agora_lx().timestamp()
     if not last or (now_ts - last) >= PERSIST_DEBOUNCE_SECONDS:
         _persist_now()
+
 
 def carregar_estado_duravel():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
@@ -134,24 +184,24 @@ def carregar_estado_duravel():
             estado = r.json()[0]["v"]
             for k, v in estado.items():
                 if k == "precos_historicos":
-                    precos_reconv = {}
-                    for t, dados in v.items():
-                        reconv = [(datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p) for dt, p in dados]
-                        precos_reconv[t] = reconv
+                    precos_reconv = {
+                        t: [(datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p) for dt, p in dados]
+                        for t, dados in v.items()
+                    }
                     st.session_state[k] = precos_reconv
                 elif k == "disparos":
-                    disparos_reconv = {}
-                    for t, pontos in v.items():
-                        reconv = [(datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p) for pt, p in pontos]
-                        disparos_reconv[t] = reconv
+                    disparos_reconv = {
+                        t: [(datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p) for pt, p in pontos]
+                        for t, pontos in v.items()
+                    }
                     st.session_state[k] = disparos_reconv
                 else:
                     st.session_state[k] = v
-            st.sidebar.info("Conectado na nuvem!")
+            st.sidebar.info("Conectado na nuvem (linha local) ☁️")
             remoto_ok = True
             origem = "☁️ Supabase"
         else:
-            st.sidebar.info("ℹ️ Nenhum estado remoto ainda.")
+            st.sidebar.info("ℹ️ Nenhum estado remoto ainda (linha local).")
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
 
@@ -161,16 +211,16 @@ def carregar_estado_duravel():
                 estado = json.load(f)
             for k, v in estado.items():
                 if k == "precos_historicos":
-                    precos_reconv = {}
-                    for t, dados in v.items():
-                        reconv = [(datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p) for dt, p in dados]
-                        precos_reconv[t] = reconv
+                    precos_reconv = {
+                        t: [(datetime.datetime.fromisoformat(dt) if isinstance(dt, str) else dt, p) for dt, p in dados]
+                        for t, dados in v.items()
+                    }
                     st.session_state[k] = precos_reconv
                 elif k == "disparos":
-                    disparos_reconv = {}
-                    for t, pontos in v.items():
-                        reconv = [(datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p) for pt, p in pontos]
-                        disparos_reconv[t] = reconv
+                    disparos_reconv = {
+                        t: [(datetime.datetime.fromisoformat(pt) if isinstance(pt, str) else pt, p) for pt, p in pontos]
+                        for t, pontos in v.items()
+                    }
                     st.session_state[k] = disparos_reconv
                 else:
                     st.session_state[k] = v
@@ -179,7 +229,6 @@ def carregar_estado_duravel():
         except Exception as e:
             st.sidebar.error(f"Erro no fallback local: {e}")
 
-    # 🔧 Consistência pós-carregamento (se havia tempo acumulado sem timestamp)
     for t in st.session_state.get("tempo_acumulado", {}):
         if st.session_state.tempo_acumulado.get(t, 0) > 0 and not st.session_state.ultimo_update_tempo.get(t):
             st.session_state.ultimo_update_tempo[t] = agora_lx().isoformat()
@@ -188,23 +237,31 @@ def carregar_estado_duravel():
     st.session_state["__carregado_ok__"] = (origem in ("☁️ Supabase", "📁 Local"))
 
 
-def apagar_estado_remoto():
+def apagar_estado_remoto(keys=None):
+    """
+    Apaga múltiplas linhas no Supabase (usado no botão 🧹).
+    """
+    keys = keys or [STATE_KEY]
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
-    try:
-        r = requests.delete(url, headers=headers, timeout=15)
-        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | DEBUG: apagar_estado_remoto status = {r.status_code}")
-        if r.status_code == 204:
-            st.sidebar.success("✅ Estado remoto apagado com sucesso!")
-        else:
-            st.sidebar.error(f"Erro ao apagar estado remoto: {r.status_code} - {r.text}")
-    except Exception as e:
-        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | DEBUG: apagar_estado_remoto erro = {e}")
-        st.sidebar.error(f"Erro ao apagar estado remoto: {e}")
-        
+    for k in keys:
+        url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{k}"
+        try:
+            r = requests.delete(url, headers=headers, timeout=15)
+            st.session_state.log_monitoramento.append(
+                f"{agora_lx().strftime('%H:%M:%S')} | DEBUG: apagar_estado_remoto({k}) status = {r.status_code}"
+            )
+            if r.status_code == 204:
+                st.sidebar.success(f"✅ Estado remoto apagado: {k}")
+            else:
+                st.sidebar.error(f"Erro ao apagar {k}: {r.status_code} - {r.text}")
+        except Exception as e:
+            st.sidebar.error(f"Erro ao apagar {k}: {e}")
+
+
 def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
+
 
 def inicializar_estado():
     defaults = {
@@ -220,9 +277,13 @@ def inicializar_estado():
             st.session_state[k] = v
     ensure_color_map()
 
+
+# --- inicialização (ordem correta) ---
 inicializar_estado()
+garantir_estado_local_existe()
 carregar_estado_duravel()
 st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | Robô iniciado - Workflow GitHub ativo")
+
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -435,31 +496,30 @@ st.sidebar.header("⚙️ Configurações")
 
 if st.sidebar.button("🧹 Limpar Tabela"):
     try:
-        # 1) Apaga remoto (Supabase)
-        apagar_estado_remoto()
+        # 1) apaga remoto (ambas as linhas: local e nuvem)
+        apagar_estado_remoto(keys=REMOTE_KEYS)
 
-        # 2) Apaga local
+        # 2) apaga arquivo local
         try:
             if os.path.exists(LOCAL_STATE_FILE):
                 os.remove(LOCAL_STATE_FILE)
         except Exception as e_local:
             st.sidebar.warning(f"⚠️ Erro ao apagar arquivo local: {e_local}")
 
-        # 3) Limpa session_state e re-inicializa
+        # 3) limpa sessão e re-inicializa
         st.session_state.clear()
         inicializar_estado()
-
-        # 4) 🔒 Bloqueia aviso de 'Pregão Aberto' neste dia (não enviar após reset)
         st.session_state["ultima_data_abertura_enviada"] = str(agora_lx().date())
 
-        # 5) Log e persistência
-        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | 🧹 Reset manual do estado executado")
+        # 4) recria linha local vazia e salva
+        garantir_estado_local_existe()
         salvar_estado_duravel(force=True)
 
-        st.sidebar.success("✅ Estado apagado e reiniciado (sem alerta de pregão aberto).")
+        st.sidebar.success("✅ Estado local e nuvem apagados e reiniciados.")
         st.rerun()
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado: {e}")
+
 
 
 
