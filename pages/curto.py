@@ -459,7 +459,7 @@ def formatar_mensagem_alerta(ticker_symbol, preco_alvo, preco_atual, operacao):
 
     # --- Texto para Telegram (HTML) ---
     mensagem_telegram = f"""
-💥 <b>ALERTA DE {msg_op.upper()} ATIVADA!</b>\n\n
+💥🤖🤖🤖<b>ALERTA DE {msg_op.upper()} ATIVADA!</b>\n\n
 <b>Ticker:</b> {ticker_symbol_sem_ext}\n
 <b>Preço alvo:</b> R$ {preco_alvo:.2f}\n
 <b>Preço atual:</b> R$ {preco_atual:.2f}\n\n
