@@ -183,7 +183,17 @@ def _estado_snapshot():
 
 
 def _persist_now():
+    """
+    Salva o estado atual no Supabase (local + nuvem) e também em arquivo local.
+    Agora usa PATCH para a linha da nuvem, evitando sobrescrever dados existentes.
+    """
     snapshot = _estado_snapshot()
+
+    # --- validação básica ---
+    if not isinstance(snapshot, dict) or not snapshot:
+        st.sidebar.warning("⚠️ Snapshot vazio — atualização ignorada.")
+        return
+
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
@@ -191,34 +201,44 @@ def _persist_now():
         "Prefer": "resolution=merge-duplicates",
     }
 
-    # 1️⃣ Salva o estado local normalmente
-    payload_local = {"k": STATE_KEY_LOCAL, "v": snapshot}
     url = f"{SUPABASE_URL}/rest/v1/{TABLE}"
+
+    # 1️⃣ SALVAR LINHA LOCAL (pode sobrescrever, é o comportamento esperado)
+    payload_local = {"k": STATE_KEY_LOCAL, "v": snapshot}
     try:
         r_local = requests.post(url, headers=headers, data=json.dumps(payload_local), timeout=15)
         if r_local.status_code not in (200, 201, 204):
             st.sidebar.error(f"Erro ao salvar estado local: {r_local.text}")
+        else:
+            st.sidebar.info("💾 Estado local salvo.")
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado local: {e}")
 
-    # 2️⃣ Envia cópia do mesmo estado para a linha da nuvem
-    payload_cloud = {"k": STATE_KEY_CLOUD, "v": snapshot}
+    # 2️⃣ ATUALIZAR LINHA DA NUVEM (PATCH para não apagar dados)
+    payload_cloud = {"v": snapshot}
     try:
-        r_cloud = requests.post(url, headers=headers, data=json.dumps(payload_cloud), timeout=15)
-        if r_cloud.status_code not in (200, 201, 204):
-            st.sidebar.warning(f"⚠️ Falha ao atualizar linha da nuvem: {r_cloud.text}")
-    except Exception as e:
-        st.sidebar.warning(f"⚠️ Erro ao atualizar nuvem: {e}")
+        url_patch = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}"
+        r_cloud = requests.patch(url_patch, headers=headers, data=json.dumps(payload_cloud), timeout=15)
 
-    # 3️⃣ Salva localmente (arquivo JSON)
+        if r_cloud.status_code in (200, 204):
+            st.sidebar.info("☁️ Linha da nuvem atualizada com sucesso.")
+        else:
+            st.sidebar.warning(f"⚠️ Falha ao atualizar linha da nuvem: {r_cloud.status_code} - {r_cloud.text}")
+
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ Erro ao atualizar linha da nuvem: {e}")
+
+    # 3️⃣ SALVAR ARQUIVO LOCAL (backup)
     try:
         os.makedirs("session_data", exist_ok=True)
         with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
             json.dump(snapshot, f, ensure_ascii=False, indent=2)
     except Exception as e:
-        st.sidebar.warning(f"⚠️ Erro ao salvar local: {e}")
+        st.sidebar.warning(f"⚠️ Erro ao salvar arquivo local: {e}")
 
+    # 4️⃣ Atualiza timestamp interno
     st.session_state["__last_save_ts"] = agora_lx().timestamp()
+
 
 
 
