@@ -1,17 +1,11 @@
-# CURTO.PY - ENVIO DE ORDENS
-
-
+# CURTO.PY - ENVIO DE ORDENS (versão nuvem: curto_przo_v1)
 # -*- coding: utf-8 -*-
+
 import streamlit as st
 from yahooquery import Ticker
 import datetime
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests
 import asyncio
-from telegram import Bot
 import pandas as pd
 import plotly.graph_objects as go
 from zoneinfo import ZoneInfo
@@ -22,11 +16,12 @@ import json
 import os
 from streamlit_autorefresh import st_autorefresh
 import time
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
-st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
+st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA (Nuvem)", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(18, 0, 0)
@@ -42,20 +37,17 @@ PALETTE = [
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-
-# PERSISTÊNCIA (SUPABASE via REST API + LOCAL JSON)
+# PERSISTÊNCIA (SUPABASE via REST API)
 # =============================
 SUPABASE_URL = st.secrets["supabase_url_curto"]
 SUPABASE_KEY = st.secrets["supabase_key_curto"]
 TABLE = "kv_state_curto"
 
-# --- controle de chaves ---
-STATE_KEY_LOCAL = "curto_przo_v1_local"   # linha da interface (PC)
-STATE_KEY_CLOUD = "curto_przo_v1"         # linha dos robôs na nuvem (já existente)
-STATE_KEY = STATE_KEY_LOCAL               # esta instância usa sempre a linha local
-REMOTE_KEYS = [STATE_KEY_LOCAL, STATE_KEY_CLOUD]
+# Linha única da nuvem
+STATE_KEY_CLOUD = "curto_przo_v1"
+STATE_KEY = STATE_KEY_CLOUD  # esta instância usa somente a linha da nuvem
 
-LOCAL_STATE_FILE = "session_data/state_curto.json"  # fallback local
+LOCAL_STATE_FILE = "session_data/state_curto.json"  # backup local opcional
 PERSIST_DEBOUNCE_SECONDS = 60
 
 
@@ -64,60 +56,20 @@ def agora_lx():
 
 
 # -----------------------------------------------------
-#  garantir que a linha local existe no Supabase
+#  garantir que a linha da nuvem existe no Supabase
 # -----------------------------------------------------
-def garantir_estado_local_existe():
-    """
-    Garante que a linha local (_local) exista no Supabase.
-    Se não existir, clona o snapshot da linha da nuvem (curto_przo_v1).
-    """
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
-    }
-    try:
-        # Verifica se a linha local já existe
-        url_check = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_LOCAL}&select=k"
-        r_check = requests.get(url_check, headers=headers, timeout=10)
-        if r_check.status_code == 200 and r_check.json():
-            return  # Já existe
-
-        # Se não existe, tenta copiar o estado da linha dos robôs
-        url_src = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}&select=v"
-        r_src = requests.get(url_src, headers=headers, timeout=10)
-        snapshot = r_src.json()[0]["v"] if (r_src.status_code == 200 and r_src.json()) else {}
-
-        # Cria linha local
-        payload = {"k": STATE_KEY_LOCAL, "v": snapshot}
-        url_insert = f"{SUPABASE_URL}/rest/v1/{TABLE}"
-        r_insert = requests.post(url_insert, headers=headers, data=json.dumps(payload), timeout=10)
-        if r_insert.status_code in (200, 201):
-            st.sidebar.success("✅ Linha local criada automaticamente.")
-        else:
-            st.sidebar.warning(f"⚠️ Falha ao criar linha local: {r_insert.text}")
-    except Exception as e:
-        st.sidebar.warning(f"⚠️ Erro ao garantir linha local: {e}")
-
-
 def garantir_estado_nuvem_existe():
-    """
-    Garante que a linha principal dos robôs (curto_przo_v1) exista no Supabase.
-    Se não existir, cria com a mesma estrutura padrão da linha local.
-    """
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
     }
     try:
-        # Verifica se já existe
         url_check = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}&select=k"
         r_check = requests.get(url_check, headers=headers, timeout=10)
         if r_check.status_code == 200 and r_check.json():
             return  # já existe
 
-        # Estrutura padrão (igual à local)
         estrutura_padrao = {
             "ativos": [],
             "status": {},
@@ -137,17 +89,14 @@ def garantir_estado_nuvem_existe():
         payload = {"k": STATE_KEY_CLOUD, "v": estrutura_padrao}
         url_insert = f"{SUPABASE_URL}/rest/v1/{TABLE}"
         r_insert = requests.post(url_insert, headers=headers, data=json.dumps(payload), timeout=10)
-        if r_insert.status_code in (200, 201):
-            st.sidebar.success("✅ Linha da nuvem criada com estrutura padrão.")
-        else:
+        if r_insert.status_code not in (200, 201):
             st.sidebar.warning(f"⚠️ Falha ao criar linha da nuvem: {r_insert.text}")
     except Exception as e:
         st.sidebar.warning(f"⚠️ Erro ao garantir linha da nuvem: {e}")
 
 
-
 # -----------------------------------------------------
-#  snapshot, salvar, carregar e apagar
+#  snapshot, salvar, carregar
 # -----------------------------------------------------
 def _estado_snapshot():
     snapshot = {
@@ -183,15 +132,9 @@ def _estado_snapshot():
 
 
 def _persist_now():
-    """
-    Salva o estado atual no Supabase (local + nuvem) e também em arquivo local.
-    Agora usa PATCH para a linha da nuvem, evitando sobrescrever dados existentes.
-    """
+    """Salva o estado atual apenas na linha da nuvem e backup local."""
     snapshot = _estado_snapshot()
-
-    # --- validação básica ---
     if not isinstance(snapshot, dict) or not snapshot:
-        st.sidebar.warning("⚠️ Snapshot vazio — atualização ignorada.")
         return
 
     headers = {
@@ -201,34 +144,16 @@ def _persist_now():
         "Prefer": "resolution=merge-duplicates",
     }
 
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}"
-
-    # 1️⃣ SALVAR LINHA LOCAL (pode sobrescrever, é o comportamento esperado)
-    payload_local = {"k": STATE_KEY_LOCAL, "v": snapshot}
-    try:
-        r_local = requests.post(url, headers=headers, data=json.dumps(payload_local), timeout=15)
-        if r_local.status_code not in (200, 201, 204):
-            st.sidebar.error(f"Erro ao salvar estado local: {r_local.text}")
-        else:
-            st.sidebar.info("💾 Estado local salvo.")
-    except Exception as e:
-        st.sidebar.error(f"Erro ao salvar estado local: {e}")
-
-    # 2️⃣ ATUALIZAR LINHA DA NUVEM (PATCH para não apagar dados)
-    payload_cloud = {"v": snapshot}
+    # Atualiza linha da nuvem (PATCH)
     try:
         url_patch = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}"
-        r_cloud = requests.patch(url_patch, headers=headers, data=json.dumps(payload_cloud), timeout=15)
-
-        if r_cloud.status_code in (200, 204):
-            st.sidebar.info("☁️ Linha da nuvem atualizada com sucesso.")
-        else:
-            st.sidebar.warning(f"⚠️ Falha ao atualizar linha da nuvem: {r_cloud.status_code} - {r_cloud.text}")
-
+        r_cloud = requests.patch(url_patch, headers=headers, data=json.dumps({"v": snapshot}), timeout=15)
+        if r_cloud.status_code not in (200, 204):
+            st.sidebar.warning(f"⚠️ Falha ao atualizar nuvem: {r_cloud.status_code} - {r_cloud.text}")
     except Exception as e:
-        st.sidebar.warning(f"⚠️ Erro ao atualizar linha da nuvem: {e}")
+        st.sidebar.warning(f"⚠️ Erro ao atualizar nuvem: {e}")
 
-    # 3️⃣ SALVAR ARQUIVO LOCAL (backup)
+    # Backup local (opcional)
     try:
         os.makedirs("session_data", exist_ok=True)
         with open(LOCAL_STATE_FILE, "w", encoding="utf-8") as f:
@@ -236,10 +161,7 @@ def _persist_now():
     except Exception as e:
         st.sidebar.warning(f"⚠️ Erro ao salvar arquivo local: {e}")
 
-    # 4️⃣ Atualiza timestamp interno
     st.session_state["__last_save_ts"] = agora_lx().timestamp()
-
-
 
 
 def salvar_estado_duravel(force: bool = False):
@@ -256,7 +178,6 @@ def carregar_estado_duravel():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
     url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v"
     remoto_ok = False
-    origem = "❌ Nenhum"
 
     try:
         r = requests.get(url, headers=headers, timeout=15)
@@ -277,11 +198,10 @@ def carregar_estado_duravel():
                     st.session_state[k] = disparos_reconv
                 else:
                     st.session_state[k] = v
-            st.sidebar.info("Conectado na nuvem (linha local) ☁️")
+            st.session_state["origem_estado"] = "☁️ Supabase"
             remoto_ok = True
-            origem = "☁️ Supabase"
         else:
-            st.sidebar.info("ℹ️ Nenhum estado remoto ainda (linha local).")
+            st.sidebar.info("ℹ️ Nenhum estado remoto ainda (nuvem).")
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
 
@@ -304,8 +224,9 @@ def carregar_estado_duravel():
                     st.session_state[k] = disparos_reconv
                 else:
                     st.session_state[k] = v
-            st.sidebar.info("💾 Estado carregado do local (fallback)!")
-            origem = "📁 Local"
+            st.sidebar.info("💾 Estado carregado do local (fallback).")
+            st.session_state["origem_estado"] = "📁 Local"
+
         except Exception as e:
             st.sidebar.error(f"Erro no fallback local: {e}")
 
@@ -313,29 +234,7 @@ def carregar_estado_duravel():
         if st.session_state.tempo_acumulado.get(t, 0) > 0 and not st.session_state.ultimo_update_tempo.get(t):
             st.session_state.ultimo_update_tempo[t] = agora_lx().isoformat()
 
-    st.session_state["origem_estado"] = origem
-    st.session_state["__carregado_ok__"] = (origem in ("☁️ Supabase", "📁 Local"))
-
-
-def apagar_estado_remoto(keys=None):
-    """
-    Apaga múltiplas linhas no Supabase (usado no botão 🧹).
-    """
-    keys = keys or [STATE_KEY]
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    for k in keys:
-        url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{k}"
-        try:
-            r = requests.delete(url, headers=headers, timeout=15)
-            st.session_state.log_monitoramento.append(
-                f"{agora_lx().strftime('%H:%M:%S')} | DEBUG: apagar_estado_remoto({k}) status = {r.status_code}"
-            )
-            if r.status_code == 204:
-                st.sidebar.success(f"✅ Estado remoto apagado: {k}")
-            else:
-                st.sidebar.error(f"Erro ao apagar {k}: {r.status_code} - {r.text}")
-        except Exception as e:
-            st.sidebar.error(f"Erro ao apagar {k}: {e}")
+    st.session_state["__carregado_ok__"] = True
 
 
 def ensure_color_map():
@@ -360,70 +259,28 @@ def inicializar_estado():
 
 # --- inicialização (ordem correta) ---
 inicializar_estado()
-garantir_estado_nuvem_existe()   # garante que a linha dos robôs exista
-garantir_estado_local_existe()   # garante que a linha local exista
+garantir_estado_nuvem_existe()   # garante que a linha da nuvem exista
 carregar_estado_duravel()
-st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | Robô iniciado - Workflow GitHub ativo")
-
+st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | Robô (nuvem) iniciado - Workflow GitHub ativo")
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
 # -----------------------------
-def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
-    msg = MIMEMultipart()
-    msg["From"], msg["To"], msg["Subject"] = remetente, destinatario, assunto
-    msg.attach(MIMEText(corpo, "plain"))
-    with smtplib.SMTP("smtp.gmail.com", 587) as s:
-        s.starttls()
-        s.login(remetente, senha_ou_token)
-        s.send_message(msg)
+# >>>>>>>>>>>>  ENVIO DE MENSAGENS DESATIVADO  <<<<<<<<<<<<<<
+# Qualquer tentativa de enviar e-mail/telegram vira NO-OP + log.
 
-def enviar_notificacao_curto(dest, assunto, corpo_email_html, rem, senha, tok_tg, chat_id, corpo_telegram=None):
-    """
-    Envia e-mail em HTML e mensagem Telegram (HTML), com compatibilidade retroativa.
-    """
-    # --- E-mail (em HTML) ---
-    if senha and dest:
-        try:
-            # Se o corpo não for HTML, envia como texto simples (compatibilidade)
-            mensagem = MIMEMultipart()
-            mensagem["From"] = rem
-            mensagem["To"] = dest
-            mensagem["Subject"] = assunto
+def _log_only(msg: str):
+    st.session_state.log_monitoramento.append(msg)
+    salvar_estado_duravel()
 
-            if "<html" in corpo_email_html.lower():
-                mensagem.attach(MIMEText(corpo_email_html, "html"))
-            else:
-                mensagem.attach(MIMEText(corpo_email_html, "plain"))
+def enviar_email(*args, **kwargs):
+    _log_only(f"{agora_lx().strftime('%H:%M:%S')} | [NO-OP] Envio de e-mail desativado.")
 
-            with smtplib.SMTP("smtp.gmail.com", 587) as servidor:
-                servidor.starttls()
-                servidor.login(rem, senha)
-                servidor.send_message(mensagem)
+def enviar_notificacao_curto(*args, **kwargs):
+    _log_only(f"{agora_lx().strftime('%H:%M:%S')} | [NO-OP] Envio de Telegram/e-mail desativado.")
 
-            st.session_state.log_monitoramento.append("📧 E-mail enviado com sucesso.")
-        except Exception as e:
-            st.session_state.log_monitoramento.append(f"⚠️ Erro e-mail: {e}")
-    else:
-        st.session_state.log_monitoramento.append("⚠️ Email não configurado.")
-
-    # --- Telegram (HTML ou texto simples) ---
-    async def send_tg():
-        try:
-            if tok_tg and chat_id:
-                bot = Bot(token=tok_tg)
-                texto_final = corpo_telegram if corpo_telegram else corpo_email_html
-                await bot.send_message(
-                    chat_id=chat_id,
-                    text=f"{texto_final}\n\n🤖 Robot 1milhão Invest",
-                    parse_mode="HTML",
-                    disable_web_page_preview=True
-                )
-        except Exception as e:
-            st.session_state.log_monitoramento.append(f"⚠️ Erro Telegram: {e}")
-
-    asyncio.run(send_tg())
-
+async def testar_telegram():
+    return False, "Envio de mensagens desativado nesta versão (nuvem)."
 
 @st.cache_data(ttl=5)
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
@@ -441,95 +298,15 @@ def obter_preco_atual(ticker_symbol):
 
 def notificar_preco_alvo_alcancado_curto(ticker, preco_alvo, preco_atual, operacao):
     """
-    Gera e envia alertas (Telegram + e-mail) com template visual e compliance.
-    Compatível com enviar_notificacao_curto().
+    **Apenas loga** que o alerta teria sido disparado (sem envio real).
     """
-    # --- Formata mensagens com visual e compliance ---
-    msg_telegram, msg_email_html = formatar_mensagem_alerta(ticker, preco_alvo, preco_atual, operacao)
-
-    # --- Ajusta campos e parâmetros ---
     tk_sem_ext = ticker.replace(".SA", "")
-    msg_op = "VENDA A DESCOBERTO" if operacao == "venda" else operacao.upper()
-    assunto = f"ALERTA CURTO PRAZO: {msg_op} em {tk_sem_ext}"
-
-    # --- Credenciais (st.secrets) ---
-    remetente = st.secrets.get("email_sender", "")
-    senha = st.secrets.get("gmail_app_password", "")
-    destinatario = st.secrets.get("email_recipient_curto", "")
-    token_tg = st.secrets.get("telegram_token", "")
-    chat_id = st.secrets.get("telegram_chat_id_curto", "")
-
-    # --- Envio centralizado (função já existente no seu código) ---
-    try:
-        enviar_notificacao_curto(destinatario, assunto, msg_email_html, remetente, senha, token_tg, chat_id, msg_telegram)
-        st.session_state.log_monitoramento.append(f"📤 Alerta enviado: {tk_sem_ext} ({msg_op})")
-    except Exception as e:
-        st.session_state.log_monitoramento.append(f"⚠️ Erro no envio de alerta: {e}")
-
-    return f"💥🤖🤖🤖 ALERTA de {msg_op} em {tk_sem_ext} enviado com sucesso!"
-
-
-def formatar_mensagem_alerta(ticker_symbol, preco_alvo, preco_atual, operacao):
-    """
-    Gera o texto formatado de alerta para envio por Telegram e E-mail.
-    Inclui mensagem principal + compliance em tamanho reduzido (visual).
-    """
-    ticker_symbol_sem_ext = ticker_symbol.replace(".SA", "")
     msg_op = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
-
-    # --- Texto para Telegram (HTML) ---
-    mensagem_telegram = f"""
-💥🤖🤖🤖<b>ALERTA DE {msg_op.upper()} ATIVADA!</b>\n\n
-<b>Ticker:</b> {ticker_symbol_sem_ext}\n
-<b>Preço alvo:</b> R$ {preco_alvo:.2f}\n
-<b>Preço atual:</b> R$ {preco_atual:.2f}\n\n
-📊 <a href='https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}'>Abrir gráfico no TradingView</a>\n\n
-<em>
-COMPLIANCE: Esta mensagem é uma sugestão de compra/venda baseada em nossa CARTEIRA.
-A compra ou venda é de total decisão e responsabilidade do Destinatário.
-Esta informação é CONFIDENCIAL, de propriedade de 1milhao Invest e de seu DESTINATÁRIO tão somente.
-Se você NÃO for DESTINATÁRIO ou pessoa autorizada a recebê-lo, NÃO PODE usar, copiar, transmitir, retransmitir
-ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI.
-A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
-</em>
-""".strip()
-
-    # --- Corpo HTML do e-mail (dark, título azul, compliance pequeno/cinza) ---
-    corpo_email_html = f"""
-<html>
-  <body style="font-family:Arial,sans-serif; background-color:#0b1220; color:#e5e7eb; padding:20px;">
-    <h2 style="color:#3b82f6;">💥 ALERTA DE {msg_op.upper()} ATIVADA!</h2>
-    <p><b>Ticker:</b> {ticker_symbol_sem_ext}</p>
-    <p><b>Preço alvo:</b> R$ {preco_alvo:.2f}</p>
-    <p><b>Preço atual:</b> R$ {preco_atual:.2f}</p>    
-    <p>📊 <a href="https://br.tradingview.com/symbols/{ticker_symbol_sem_ext}" style="color:#60a5fa;">Ver gráfico no TradingView</a></p>
-    <hr style="border:1px solid #3b82f6; margin:20px 0;">
-    <p style="font-size:11px; line-height:1.4; color:#9ca3af;">
-      <b>COMPLIANCE:</b> Esta mensagem é uma sugestão de compra/venda baseada em nossa CARTEIRA.<br>
-      A compra ou venda é de total decisão e responsabilidade do Destinatário.<br>
-      Esta informação é <b>CONFIDENCIAL</b>, de propriedade do Canal 1milhao e de seu DESTINATÁRIO tão somente.<br>
-      Se você <b>NÃO</b> for DESTINATÁRIO ou pessoa autorizada a recebê-lo, <b>NÃO PODE</b> usar, copiar, transmitir, retransmitir
-      ou divulgar seu conteúdo (no todo ou em partes), estando sujeito às penalidades da LEI.<br>
-      A Lista de Ações do Canal 1milhao é devidamente <b>REGISTRADA.</b>
-    </p>
-  </body>
-</html>
-""".strip()
-
-    return mensagem_telegram, corpo_email_html
-
-
-async def testar_telegram():
-    tok = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id_curto", "")
-    try:
-        if tok and chat:
-            bot = Bot(token=tok)
-            await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
-            return True, None
-        return False, "token/chat_id não configurado"
-    except Exception as e:
-        return False, str(e)
+    st.session_state.log_monitoramento.append(
+        f"{agora_lx().strftime('%H:%M:%S')} | 🚀 ALERTA (simulado) {msg_op} em {tk_sem_ext} | alvo {preco_alvo:.2f} | atual {preco_atual:.2f}"
+    )
+    salvar_estado_duravel(force=True)
+    return f"💥🤖 ALERTA (simulado) de {msg_op} em {tk_sem_ext}"
 
 def dentro_pregao(dt):
     t = dt.time()
@@ -547,26 +324,13 @@ def segundos_ate_abertura(dt):
         return 0, abre
 
 def notificar_abertura_pregao_uma_vez_por_dia():
-    """Envia notificação de pregão aberto no máximo uma vez por dia."""
+    """Versão sem envio de mensagem: apenas registra no log uma vez por dia."""
     now = agora_lx()
     data_atual = now.date()
     ultima_data_envio = st.session_state.get("ultima_data_abertura_enviada")
-
     if ultima_data_envio == str(data_atual):
         return
-
-    try:
-        tok = st.secrets.get("telegram_token", "").strip()
-        chat = st.secrets.get("telegram_chat_id_curto", "").strip()
-        if tok and chat:
-            bot = Bot(token=tok)
-            asyncio.run(bot.send_message(chat_id=chat, text="🤖 Robô iniciando monitoramento — Pregão Aberto!"))
-            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | 📣 Telegram: Pregão Aberto")
-        else:
-            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Telegram não configurado.")
-    except Exception as e:
-        st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Erro Telegram: {e}")
-
+    st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | 📣 Pregão Aberto (log, sem envio)")
     st.session_state["ultima_data_abertura_enviada"] = str(data_atual)
     salvar_estado_duravel(force=True)
 
@@ -582,65 +346,37 @@ if st.sidebar.button("🧹 Limpar Tabela"):
             "Authorization": f"Bearer {SUPABASE_KEY}",
             "Content-Type": "application/json",
         }
+        # Zera dados da linha da nuvem (mantém a linha)
+        payload = {"v": {}}
+        url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY_CLOUD}"
+        r = requests.patch(url, headers=headers, data=json.dumps(payload), timeout=15)
+        if r.status_code in (200, 204):
+            st.sidebar.success(f"✅ Linha '{STATE_KEY_CLOUD}' zerada com sucesso.")
+        else:
+            st.sidebar.warning(f"⚠️ Falha ao zerar '{STATE_KEY_CLOUD}': {r.status_code} - {r.text}")
 
-        # 1️⃣ Zera os dados das linhas (local e nuvem) em vez de apagar
-        for k in REMOTE_KEYS:
-            payload = {"v": {}}  # mantém a linha, mas limpa os dados
-            url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{k}"
-            r = requests.patch(url, headers=headers, data=json.dumps(payload), timeout=15)
-            if r.status_code in (200, 204):
-                st.sidebar.success(f"✅ Linha '{k}' zerada com sucesso.")
-            else:
-                st.sidebar.warning(f"⚠️ Falha ao zerar '{k}': {r.status_code} - {r.text}")
-
-        # 2️⃣ Limpa arquivo local
+        # Limpa arquivo local (backup)
         try:
             if os.path.exists(LOCAL_STATE_FILE):
                 os.remove(LOCAL_STATE_FILE)
         except Exception as e_local:
             st.sidebar.warning(f"⚠️ Erro ao apagar arquivo local: {e_local}")
 
-        # 3️⃣ Limpa session_state e re-inicializa
+        # Limpa session_state e re-inicializa
         st.session_state.clear()
         inicializar_estado()
 
-        # 4️⃣ Atualiza registro da data e salva
+        # Atualiza registro da data e salva
         st.session_state["ultima_data_abertura_enviada"] = str(agora_lx().date())
         salvar_estado_duravel(force=True)
 
-        st.sidebar.success("✅ Dados da nuvem e local zerados (linhas mantidas).")
+        st.sidebar.success("✅ Dados da nuvem zerados (linha mantida).")
         st.rerun()
 
     except Exception as e:
         st.sidebar.error(f"Erro ao limpar tabela: {e}")
 
-
-
-
-
-if st.sidebar.button("📤 Testar Envio Telegram"):
-    st.sidebar.info("Enviando mensagem de teste...")
-    ok, erro = asyncio.run(testar_telegram())
-    st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
-# -----------------------------------------
-# TESTE COMPLETO DE ALERTA (com layout e compliance)
-# -----------------------------------------
-if st.sidebar.button("📩 Testar mensagem"):
-    st.sidebar.info("Gerando alerta simulado...")
-
-    ticker_teste = "PETR4.SA"
-    preco_alvo = 37.50
-    preco_atual = 37.52
-    operacao = "compra"
-
-    try:
-        msg = notificar_preco_alvo_alcancado_curto(ticker_teste, preco_alvo, preco_atual, operacao)
-        st.sidebar.success("✅ Mensagem de teste enviada (verifique Telegram e e-mail).")
-        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | 🧪 Teste estilizado executado com sucesso.")
-    except Exception as e:
-        st.sidebar.error(f"❌ Erro no teste: {e}")
-        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | ⚠️ Erro teste estilizado: {e}")
-
+# (Removidos botões de envio/ teste de mensagens)
 st.sidebar.checkbox("⏸️ Pausar monitoramento", key="pausado")
 salvar_estado_duravel()
 
@@ -656,6 +392,7 @@ if st.sidebar.button("🧹 Limpar Histórico"):
     st.session_state.historico_alertas.clear()
     salvar_estado_duravel(force=True)
     st.sidebar.success("Histórico limpo!")
+
 if st.sidebar.button("🧹 Limpar Monitoramento"):
     st.session_state.log_monitoramento.clear()
     salvar_estado_duravel(force=True)
@@ -682,7 +419,6 @@ if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
         t: v for t, v in st.session_state.status.items() if t in ativos_atuais
     }
 
-    # Salva e confirma visualmente
     salvar_estado_duravel(force=True)
     st.sidebar.success("Marcadores e históricos antigos limpos!")
 
@@ -694,17 +430,13 @@ selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_exis
 # INTERFACE PRINCIPAL
 # -----------------------------
 now = agora_lx()
-st.title("📈 CURTO PRAZO - COMPRA E VENDA")
+st.title("📈 CURTO PRAZO - COMPRA E VENDA (Robô na Nuvem)")
 
 origem = st.session_state.get("origem_estado", "❓")
-st.markdown({
-    "☁️ Supabase": "🟢 **Origem dos dados:** Nuvem (Supabase)",
-    "📁 Local": "🟠 **Origem dos dados:** Local",
-}.get(origem, "⚪ **Origem dos dados:** Desconhecida"))
-
+st.markdown("🟢 **Origem dos dados:** Nuvem (Supabase)")
 st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
            f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}")
-st.write("Robô automático da **CARTEIRA CURTO PRAZO** — dispara alerta após 25 min na zona de preço alvo.")
+st.write("Robô automático da **CARTEIRA CURTO PRAZO** — dispara alerta (simulado) após 25 min na zona de preço alvo.")
 
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -739,34 +471,32 @@ if st.button("➕ Adicionar ativo"):
         except Exception as e:
             st.error(f"Erro ao coletar preço de {ticker}: {e}")
         salvar_estado_duravel(force=True)
-# -----------------------------
-# STATUS + GRÁFICO + LOG
+
 # -----------------------------
 # STATUS + GRÁFICO + LOG
 # -----------------------------
 st.subheader("📊 Status dos Ativos Monitorados")
 tabela_status = st.empty()
 grafico = st.empty()
-st.subheader("🕒 Monitoramento")
+st.subheader("🕒 Monitoramento (Log da Nuvem)")
 log_container = st.empty()
 
 # -----------------------------
-# -----------------------------
-# LOOP DE MONITORAMENTO (VERSÃO CORRIGIDA + DEBUG)
+# LOOP DE MONITORAMENTO
 # -----------------------------
 sleep_segundos = 60
 if st.session_state.pausado:
     st.info("⏸️ Monitoramento pausado.")
 else:
     now = agora_lx()
-    # 🧩 Exibe a tabela mesmo fora do pregão (mantém última atualização)
+    # Exibe a tabela mesmo fora do pregão (mantém última atualização)
     if st.session_state.ativos:
         data = []
         now = agora_lx()
         for ativo in st.session_state.ativos:
             t = ativo["ticker"]
             preco_alvo = ativo["preco"]
-            operacao = ativo["operacao"].upper()
+            operacao_atv = ativo["operacao"].upper()
             tempo = st.session_state.tempo_acumulado.get(t, 0)
             minutos = tempo / 60
             preco_atual = "-"
@@ -777,7 +507,7 @@ else:
     
             data.append({
                 "Ticker": t,
-                "Operação": operacao,
+                "Operação": operacao_atv,
                 "Preço Alvo": f"R$ {preco_alvo:.2f}",
                 "Preço Atual": f"R$ {preco_atual:.2f}" if preco_atual != "-" else "-",
                 "Status": st.session_state.status.get(t, "🟢 Monitorando"),
@@ -834,9 +564,7 @@ else:
                 (operacao_atv == "venda" and preco_atual <= preco_alvo)
             )
 
-            # -----------------------------
-            # BLOCO PRINCIPAL DE CONTAGEM (CORRIGIDO + DEBUG)
-            # -----------------------------
+            # BLOCO DE CONTAGEM
             if condicao:
                 st.session_state.status[t] = "🟡 Em contagem"
 
@@ -854,11 +582,6 @@ else:
                 else:
                     # Continua contagem
                     ultimo = st.session_state.ultimo_update_tempo.get(t)
-                    st.session_state.log_monitoramento.append(
-                        f"🐞 DEBUG {t}: ultimo_update_tempo bruto = {ultimo}"
-                    )
-
-                    # 🕒 Conversão robusta
                     if ultimo:
                         try:
                             if isinstance(ultimo, str):
@@ -867,36 +590,24 @@ else:
                                     dt_ultimo = dt_ultimo.replace(tzinfo=TZ)
                             else:
                                 dt_ultimo = ultimo
-                        except Exception as e:
-                            st.session_state.log_monitoramento.append(
-                                f"🐞 DEBUG {t}: erro convertendo ultimo_update_tempo → {e}"
-                            )
+                        except Exception:
                             dt_ultimo = now
                     else:
                         dt_ultimo = now
 
-                    
-                   
-                    # 🧮 Calcula delta real entre o último update e agora
                     delta = (now - dt_ultimo).total_seconds()
-                    
-                    # Proteção mínima: se der delta negativo, zera (ex: relógio do servidor muda)
                     if delta < 0:
                         delta = 0
-                    
-                    # Atualiza acumulador e timestamp
+
                     st.session_state.tempo_acumulado[t] = float(st.session_state.tempo_acumulado.get(t, 0)) + float(delta)
                     st.session_state.ultimo_update_tempo[t] = now.isoformat()
-                    
-                    # Loga o incremento real
+
                     st.session_state.log_monitoramento.append(
                         f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
                     )
-                    
-                    # Salva imediatamente o estado
                     salvar_estado_duravel(force=True)
 
-                # 🚀 Disparo de alerta quando atinge o tempo máximo
+                # Disparo quando atinge o tempo máximo (simulado)
                 if (
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
                     and st.session_state.status.get(t) != "🚀 Disparado"
@@ -981,26 +692,11 @@ fig.update_layout(title="📉 Evolução dos Preços", template="plotly_dark")
 grafico.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# LOG E AUTOREFRESH
-# -----------------------------
-# -----------------------------
-# LOG E AUTOREFRESH
+# LOG (APENAS NUVEM)
 # -----------------------------
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
     salvar_estado_duravel()
-
-
-PALETTE = [
-    "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
-    "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
-]
-
-
-def ensure_color_map():
-    if "ticker_colors" not in st.session_state:
-        st.session_state.ticker_colors = {}
-
 
 def color_for_ticker(ticker):
     ensure_color_map()
@@ -1009,10 +705,8 @@ def color_for_ticker(ticker):
         st.session_state.ticker_colors[ticker] = PALETTE[idx]
     return st.session_state.ticker_colors[ticker]
 
-
 TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\.SA\b")
 PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")
-
 
 def extract_ticker(line):
     m = TICKER_PAT.search(line)
@@ -1021,11 +715,9 @@ def extract_ticker(line):
     m2 = PLAIN_TICKER_PAT.search(line)
     return m2.group(1) if m2 else None
 
-
 def render_log_html(lines, selected_tickers=None, max_lines=250):
-    """Renderiza o log com o mesmo estilo visual do clube.py (cores, badges, rolagem)."""
     if not lines:
-        st.write("—")
+        st.info("Nenhum log ainda.")
         return
     subset = lines[-max_lines:][::-1]
     if selected_tickers:
@@ -1081,7 +773,6 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
     html.append("</div>")
     st.markdown("\n".join(html), unsafe_allow_html=True)
 
-
 def carregar_log_nuvem():
     """Carrega o log_monitoramento da linha de nuvem (curto_przo_v1)."""
     try:
@@ -1098,23 +789,9 @@ def carregar_log_nuvem():
         st.warning(f"⚠️ Erro ao carregar log da nuvem: {e}")
         return []
 
-
-# --- Interface: duas colunas separadas ---
-col_local, col_nuvem = st.columns(2)
-
-with col_local:
-    st.subheader("🧭 Log Local")
-    render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
-
-with col_nuvem:
-    st.subheader("☁️ Log da Nuvem")
-    log_nuvem = carregar_log_nuvem()
-    if log_nuvem:
-        render_log_html(log_nuvem, selected_tickers, 250)
-        st.caption(f"🗂️ {len(log_nuvem)} linhas carregadas da nuvem.")
-    else:
-        st.info("Nenhum log remoto encontrado (ainda).")
-
+# Exibe apenas o log da nuvem
+st.subheader("☁️ Log do Robô (Nuvem)")
+render_log_html(carregar_log_nuvem(), selected_tickers, 250)
 
 # -----------------------------
 # DEBUG + AUTOREFRESH
@@ -1135,7 +812,6 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
-
-refresh_ms = 300_000  # atualização visual a cada 5 min
+# Atualização visual a cada 5 min (mantido)
+refresh_ms = 300_000
 st_autorefresh(interval=refresh_ms, limit=None, key="curto-refresh")
-
