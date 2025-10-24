@@ -816,20 +816,21 @@ else:
                     salvar_estado_duravel(force=True)
 
                 
+                
                 # 🚀 Disparo de alerta quando atinge o tempo máximo
                 if (
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
                     and st.session_state.status.get(t) != "🚀 Disparado"
                 ):
                     st.session_state.status[t] = "🚀 Disparado"
-                
+            
                     # 🔹 Garante que histórico e estrela fiquem salvos no gráfico
                     st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
-                
+            
                     alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
                     st.warning(alerta_msg)
-                
+            
                     st.session_state.historico_alertas.append({
                         "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
                         "ticker": t,
@@ -837,22 +838,22 @@ else:
                         "preco_alvo": preco_alvo,
                         "preco_atual": preco_atual
                     })
-                
+            
                     # 🔸 Remove da tabela mas mantém no gráfico
                     tickers_para_remover.append(t)
                     salvar_estado_duravel(force=True)
-                
-              
-                # 🔁 Continua para próxima verificação
-                else:
-                    # Saiu da zona de preço
-                    if st.session_state.em_contagem.get(t, False):
-                        st.session_state.em_contagem[t] = False
-                        st.session_state.tempo_acumulado[t] = 0
-                        st.session_state.status[t] = "🔴 Fora da zona"
-                        st.session_state.ultimo_update_tempo[t] = None
-                        st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo.")
-                        salvar_estado_duravel(force=True)
+            
+            # 🔁 Continua para próxima verificação (só entra aqui se NÃO estiver em condicao)
+            else:
+                # Saiu da zona de preço
+                if st.session_state.em_contagem.get(t, False):
+                    st.session_state.em_contagem[t] = False
+                    st.session_state.tempo_acumulado[t] = 0
+                    st.session_state.status[t] = "🔴 Fora da zona"
+                    st.session_state.ultimo_update_tempo[t] = None
+                    st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo.")
+                    salvar_estado_duravel(force=True)
+
 
 
                     
