@@ -496,6 +496,11 @@ def notificar_abertura_pregao_uma_vez_por_dia():
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
+if st.sidebar.button("📤 Testar Envio Telegram"):
+    st.sidebar.info("Enviando mensagem de teste...")
+    ok, erro = asyncio.run(testar_telegram())
+    st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
+
 if st.sidebar.button("🧹 Limpar Tabela"):
     try:
         # 1) Apaga remoto (Supabase)
@@ -526,10 +531,7 @@ if st.sidebar.button("🧹 Limpar Tabela"):
 
 
 
-if st.sidebar.button("📤 Testar Envio Telegram"):
-    st.sidebar.info("Enviando mensagem de teste...")
-    ok, erro = asyncio.run(testar_telegram())
-    st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
+
 # -----------------------------------------
 # TESTE COMPLETO DE ALERTA (com layout e compliance)
 # -----------------------------------------
