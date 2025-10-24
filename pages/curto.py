@@ -21,6 +21,13 @@ import streamlit.components.v1 as components
 # -----------------------------
 st.set_page_config(page_title="🤖 CURTO PRAZO - COMPRA E VENDA", layout="wide")
 
+# ✅ Atualiza tudo a cada 2 minutos — seguro e sem conflito
+try:
+    st.autorefresh(interval=120 * 1000, key="refresh_monitoramento")
+except Exception:
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=120 * 1000, key="refresh_monitoramento")
+
 TZ = ZoneInfo("Europe/Lisbon")
 HORARIO_INICIO_PREGAO = datetime.time(3, 0, 0)
 HORARIO_FIM_PREGAO    = datetime.time(23, 59, 0)
@@ -503,37 +510,11 @@ for t, pontos in st.session_state.disparos.items():
 fig.update_layout(title="📉 Evolução dos Preços (visual/local)", template="plotly_dark")
 grafico.plotly_chart(fig, use_container_width=True)
 
-# 3) GRÁFICO (linhas + estrelas que persistem localmente)
-fig = go.Figure()
-for t, dados in st.session_state.precos_historicos.items():
-    if dados:
-        xs, ys = zip(*dados)
-        fig.add_trace(go.Scatter(
-            x=xs, y=ys, mode="lines+markers", name=t,
-            line=dict(color=color_for_ticker(t), width=2)
-        ))
-for t, pontos in st.session_state.disparos.items():
-    if pontos:
-        xs, ys = zip(*pontos)
-        fig.add_trace(go.Scatter(
-            x=xs, y=ys, mode="markers", name=f"Disparou {t}",
-            marker=dict(symbol="star", size=12, line=dict(width=2, color="white"))
-        ))
-
-fig.update_layout(title="📉 Evolução dos Preços (visual/local)", template="plotly_dark")
-grafico.plotly_chart(fig, use_container_width=True)
-
 # -----------------------------
 # MONITORAMENTO VISUAL (NO ESTILO DO LOG)
 # -----------------------------
 
 # Atualiza automaticamente a cada 2 minutos (120.000 ms)
-try:
-    st.autorefresh(interval=120 * 1000, key="refresh_monitoramento")
-except Exception:
-    from streamlit_autorefresh import st_autorefresh
-    st_autorefresh(interval=120 * 1000, key="refresh_monitoramento")
-
 if ativos:
     st.markdown("### 📡 Status Visual dos Ativos")
 
