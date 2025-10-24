@@ -839,16 +839,20 @@ else:
                     salvar_estado_duravel(force=True)
 
         if tickers_para_remover:
-            st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
-            for t in tickers_para_remover:
-                st.session_state.tempo_acumulado.pop(t, None)
-                st.session_state.em_contagem.pop(t, None)
-                st.session_state.status[t] = "✅ Ativado (removido)"
-                st.session_state.ultimo_update_tempo.pop(t, None)
-            st.session_state.log_monitoramento.append(
-                f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ativação: {', '.join(tickers_para_remover)}"
-            )
-            salvar_estado_duravel(force=True)
+        # Remove da tabela, mas mantém dados no gráfico
+        st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
+        for t in tickers_para_remover:
+            st.session_state.tempo_acumulado.pop(t, None)
+            st.session_state.em_contagem.pop(t, None)
+            st.session_state.status[t] = "✅ Ativado (removido)"
+            st.session_state.ultimo_update_tempo.pop(t, None)
+            # ❌ NÃO apagar histórico nem disparos
+            # Mantém precos_historicos[t] e disparos[t] intactos no gráfico
+        st.session_state.log_monitoramento.append(
+            f"{now.strftime('%H:%M:%S')} | 🧹 Removidos da tabela (mantidos no gráfico): {', '.join(tickers_para_remover)}"
+        )
+        salvar_estado_duravel(force=True)
+
         sleep_segundos = INTERVALO_VERIFICACAO
     else:
         st.session_state["avisou_abertura_pregao"] = False
