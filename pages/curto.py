@@ -842,6 +842,7 @@ else:
                     tickers_para_remover.append(t)
                     salvar_estado_duravel(force=True)
                 
+              
                 # 🔁 Continua para próxima verificação
                 else:
                     # Saiu da zona de preço
