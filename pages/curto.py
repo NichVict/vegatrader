@@ -526,24 +526,24 @@ if st.sidebar.button("📤 Testar Envio Telegram"):
 # -----------------------------------------
 # TESTE COMPLETO DE ALERTA (com layout e compliance)
 # -----------------------------------------
-if st.sidebar.button("📩 Testar mensagem"):
-    st.sidebar.info("Gerando alerta simulado...")
+#if st.sidebar.button("📩 Testar mensagem"):
+    #st.sidebar.info("Gerando alerta simulado...")
 
-    ticker_teste = "PETR4.SA"
-    preco_alvo = 37.50
-    preco_atual = 37.52
-    operacao = "compra"
+    #ticker_teste = "PETR4.SA"
+    #preco_alvo = 37.50
+    #preco_atual = 37.52
+    #operacao = "compra"
 
-    try:
-        msg = notificar_preco_alvo_alcancado_curto(ticker_teste, preco_alvo, preco_atual, operacao)
-        st.sidebar.success("✅ Mensagem de teste enviada (verifique Telegram e e-mail).")
-        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | 🧪 Teste estilizado executado com sucesso.")
-    except Exception as e:
-        st.sidebar.error(f"❌ Erro no teste: {e}")
-        st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | ⚠️ Erro teste estilizado: {e}")
+    #try:
+        #msg = notificar_preco_alvo_alcancado_curto(ticker_teste, preco_alvo, preco_atual, operacao)
+        #st.sidebar.success("✅ Mensagem de teste enviada (verifique Telegram e e-mail).")
+        #st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | 🧪 Teste estilizado executado com sucesso.")
+    #except Exception as e:
+        #st.sidebar.error(f"❌ Erro no teste: {e}")
+        #st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | ⚠️ Erro teste estilizado: {e}")
 
-st.sidebar.checkbox("⏸️ Pausar monitoramento", key="pausado")
-salvar_estado_duravel()
+#st.sidebar.checkbox("⏸️ Pausar monitoramento", key="pausado")
+#salvar_estado_duravel()
 
 # -----------------------------------------
 # HISTÓRICO DE ALERTAS (Somente Nuvem)
