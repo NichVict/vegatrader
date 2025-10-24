@@ -503,12 +503,108 @@ for t, pontos in st.session_state.disparos.items():
 fig.update_layout(title="📉 Evolução dos Preços (visual/local)", template="plotly_dark")
 grafico.plotly_chart(fig, use_container_width=True)
 
+# 3) GRÁFICO (linhas + estrelas que persistem localmente)
+fig = go.Figure()
+for t, dados in st.session_state.precos_historicos.items():
+    if dados:
+        xs, ys = zip(*dados)
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="lines+markers", name=t,
+            line=dict(color=color_for_ticker(t), width=2)
+        ))
+for t, pontos in st.session_state.disparos.items():
+    if pontos:
+        xs, ys = zip(*pontos)
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="markers", name=f"Disparou {t}",
+            marker=dict(symbol="star", size=12, line=dict(width=2, color="white"))
+        ))
+
+fig.update_layout(title="📉 Evolução dos Preços (visual/local)", template="plotly_dark")
+grafico.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# MONITORAMENTO VISUAL (NO ESTILO DO LOG)
+# -----------------------------
+
+# Atualiza automaticamente a cada 2 minutos (120.000 ms)
+try:
+    st.autorefresh(interval=120 * 1000, key="refresh_monitoramento")
+except Exception:
+    from streamlit_autorefresh import st_autorefresh
+    st_autorefresh(interval=120 * 1000, key="refresh_monitoramento")
+
+if ativos:
+    st.markdown("### 📡 Status Visual dos Ativos")
+
+    monitor_lines = []
+    for a in ativos:
+        t = a["ticker"]
+        op = a["operacao"].upper()
+        preco_alvo = a["preco"]
+        preco_atual = obter_preco_atual(t)
+        cor = color_for_ticker(t)
+
+        if preco_atual == "-":
+            status = "⚪ Sem dados"
+        elif (a["operacao"] == "compra" and preco_atual >= preco_alvo) or \
+             (a["operacao"] == "venda" and preco_atual <= preco_alvo):
+            status = "🟡 Em contagem"
+        elif t in st.session_state.disparos and st.session_state.disparos[t]:
+            status = "🚀 Disparou"
+        else:
+            status = "🟢 Monitorando"
+
+        minutos = int(st.session_state.tempo_acumulado.get(t, 0) / 60)
+        ts = agora_lx().strftime("%H:%M:%S")
+
+        line = (
+            f"{ts} | "
+            f"<span class='badge' style='background:{cor}'>{t}</span> "
+            f"<b>{op}</b> • Alvo: R$ {preco_alvo:.2f} • Atual: "
+            f"{('-' if preco_atual == '-' else f'R$ {preco_atual:.2f}')} "
+            f"• {status} • ⏱️ {minutos} min"
+        )
+        monitor_lines.append(line)
+
+    css_monitor = """
+    <style>
+      .log-card {
+        background: #0b1220;
+        border: 1px solid #1f2937;
+        border-radius: 10px;
+        padding: 10px 12px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+      .log-line {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+        font-size: 13px;
+        line-height: 1.35;
+        margin: 2px 0;
+        color: #e5e7eb;
+      }
+      .badge {
+        display: inline-block; padding: 1px 8px; font-size: 12px;
+        border-radius: 9999px; color: white;
+      }
+    </style>
+    """
+    html_monitor = [css_monitor, "<div class='log-card'>"]
+    for l in monitor_lines:
+        html_monitor.append(f"<div class='log-line'>{l}</div>")
+    html_monitor.append("</div>")
+    st.markdown("\n".join(html_monitor), unsafe_allow_html=True)
+else:
+    st.info("Nenhum ativo para monitorar.")
+
 # 4) LOG (com filtro opcional)
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
 
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
+
 
 # 5) SALVA PERSISTÊNCIA LOCAL DO GRÁFICO (não mexe na nuvem)
 salvar_visual_state()
