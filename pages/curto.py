@@ -1,214 +1,103 @@
-# CURTO.PY – Interface Operacional (Somente Envia / Lê da Nuvem)
+# CURTO.PY - LEITURA DO ESTADO DA NUVEM (SUPABASE)
 # -*- coding: utf-8 -*-
-
 import streamlit as st
 import datetime
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 import requests
-import asyncio
 from telegram import Bot
+import asyncio
 import pandas as pd
 import plotly.graph_objects as go
 from zoneinfo import ZoneInfo
-import json
-import os
-from streamlit_autorefresh import st_autorefresh
 import re
+import os
+import json
+import streamlit.components.v1 as components
+from streamlit_autorefresh import st_autorefresh
 
 # -----------------------------
-# CONFIGURAÇÃO INICIAL
+# CONFIGURAÇÕES
 # -----------------------------
 st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
-
-try:
-    st.cache_data.clear()
-    st.cache_resource.clear()
-except Exception:
-    pass
-
-# -----------------------------
-# CONSTANTES
-# -----------------------------
 TZ = ZoneInfo("Europe/Lisbon")
+
 SUPABASE_URL = st.secrets["supabase_url_curto"]
 SUPABASE_KEY = st.secrets["supabase_key_curto"]
 TABLE = "kv_state_curto"
 STATE_KEY = "curto_przo_v1"
-
 LOCAL_STATE_FILE = "session_data/state_curto.json"
 
+LOG_MAX_LINHAS = 1000
+PALETTE = [
+    "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
+    "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
+]
+
+# -----------------------------
+# FUNÇÕES BÁSICAS
+# -----------------------------
 def agora_lx():
     return datetime.datetime.now(TZ)
 
-# -----------------------------
-# TICKERS – normalização e exibição
-# -----------------------------
-def normalizar_ticker(tk: str) -> str:
-    """Garante formato padronizado (.SA)."""
-    if not tk:
-        return tk
-    tk = tk.strip().upper()
-    if "." not in tk:
-        tk = f"{tk}.SA"
-    return tk
+def ensure_color_map():
+    if "ticker_colors" not in st.session_state:
+        st.session_state.ticker_colors = {}
 
-def mostrar_ticker(tk: str) -> str:
-    """Remove o sufixo .SA para exibição."""
-    return tk.replace(".SA", "")
+def color_for_ticker(ticker):
+    ensure_color_map()
+    if ticker not in st.session_state.ticker_colors:
+        idx = len(st.session_state.ticker_colors) % len(PALETTE)
+        st.session_state.ticker_colors[ticker] = PALETTE[idx]
+    return st.session_state.ticker_colors[ticker]
 
-# -----------------------------
-# ESTADO LOCAL
-# -----------------------------
+TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\.SA\b")
+PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")
+
+def extract_ticker(line):
+    m = TICKER_PAT.search(line)
+    if m:
+        return m.group(1)
+    m2 = PLAIN_TICKER_PAT.search(line)
+    return m2.group(1) if m2 else None
+
 def inicializar_estado():
     defaults = {
-        "ativos": [],
-        "historico_alertas": [],
-        "log_monitoramento": [],
-        "status": {},
-        "precos_historicos": {},
-        "disparos": {},
-        "__carregado_ok__": False,
-        "origem_estado": "❓"
+        "ativos": [], "historico_alertas": [], "log_monitoramento": [],
+        "precos_historicos": {}, "disparos": {}, "status": {},
+        "origem_estado": "❓", "__carregado_ok__": False,
     }
     for k, v in defaults.items():
-        st.session_state[k] = v
+        if k not in st.session_state:
+            st.session_state[k] = v
+    ensure_color_map()
 
-def carregar_estado_duravel():
-    """Lê o estado atual do Supabase (tabela kv_state_curto, coluna v)."""
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Accept": "application/json"
-    }
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?select=v&k=eq.{STATE_KEY}"
+def carregar_estado_nuvem():
+    """Lê o JSONB do Supabase."""
+    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v"
     origem = "❌ Nenhum"
     try:
-        r = requests.get(url, headers=headers, timeout=10)
+        r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200 and r.json():
-            payload = r.json()[0]["v"]
-
-            # Se vier como string, tenta decodificar
-            if isinstance(payload, str):
-                try:
-                    payload = json.loads(payload)
-                except Exception:
-                    payload = {}
-
-            # Normaliza tickers para padrão com .SA
-            ativos = payload.get("ativos", [])
-            for ativo in ativos:
-                ativo["ticker"] = normalizar_ticker(ativo.get("ticker", ""))
-
-            # Atualiza session_state
-            for k, v in payload.items():
+            estado = r.json()[0]["v"]
+            if isinstance(estado, str):
+                estado = json.loads(estado)
+            for k, v in estado.items():
                 st.session_state[k] = v
-            st.session_state["ativos"] = ativos
-            st.session_state["origem_estado"] = "☁️ Supabase"
-            st.session_state["__carregado_ok__"] = True
+            origem = "☁️ Supabase"
             st.sidebar.success("✅ Estado carregado da nuvem.")
         else:
-            st.sidebar.warning("ℹ️ Nenhum estado remoto encontrado.")
+            st.sidebar.info("ℹ️ Nenhum estado remoto encontrado.")
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
 
-# -----------------------------
-# SALVAR ESTADO
-# -----------------------------
-def salvar_estado_duravel(force: bool = False):
-    """Salva o estado atual (delete + insert)."""
-    snapshot = {
-        "ativos": st.session_state.get("ativos", []),
-        "historico_alertas": st.session_state.get("historico_alertas", []),
-        "log_monitoramento": st.session_state.get("log_monitoramento", []),
-        "status": st.session_state.get("status", {}),
-        "precos_historicos": st.session_state.get("precos_historicos", {}),
-        "disparos": st.session_state.get("disparos", {})
-    }
-    headers = {
-        "apikey": SUPABASE_KEY,
-        "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {"k": STATE_KEY, "v": snapshot}
-    try:
-        # Remove o registro anterior
-        requests.delete(f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}", headers=headers)
-        # Insere novamente
-        r = requests.post(f"{SUPABASE_URL}/rest/v1/{TABLE}", headers=headers, data=json.dumps(payload))
-        if r.status_code not in (200, 201, 204):
-            st.sidebar.error(f"Erro ao salvar estado remoto: {r.text}")
-    except Exception as e:
-        st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
-
-# -----------------------------
-# NOTIFICAÇÕES / TESTES
-# -----------------------------
-def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
-    msg = MIMEMultipart()
-    msg["From"], msg["To"], msg["Subject"] = remetente, destinatario, assunto
-    msg.attach(MIMEText(corpo, "html" if "<html" in corpo.lower() else "plain"))
-    with smtplib.SMTP("smtp.gmail.com", 587) as s:
-        s.starttls()
-        s.login(remetente, senha_ou_token)
-        s.send_message(msg)
-
-def formatar_mensagem_alerta(ticker, preco_alvo, preco_atual, operacao):
-    ticker_simples = mostrar_ticker(ticker)
-    tipo = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
-    msg_tg = f"""
-💥 <b>ALERTA DE {tipo.upper()} ATIVADA!</b>\n
-<b>Ticker:</b> {ticker_simples}\n
-<b>Preço alvo:</b> R$ {preco_alvo:.2f}\n
-<b>Preço atual:</b> R$ {preco_atual:.2f}\n\n
-📊 <a href='https://br.tradingview.com/symbols/{ticker_simples}'>Ver gráfico</a>
-"""
-    msg_email = f"""
-<html><body style="background:#0b1220;color:#e5e7eb;font-family:Arial;">
-<h2 style="color:#3b82f6;">💥 ALERTA DE {tipo.upper()} ATIVADA!</h2>
-<p><b>Ticker:</b> {ticker_simples}</p>
-<p><b>Preço alvo:</b> R$ {preco_alvo:.2f}</p>
-<p><b>Preço atual:</b> R$ {preco_atual:.2f}</p>
-<p>📊 <a href="https://br.tradingview.com/symbols/{ticker_simples}" style="color:#60a5fa;">Abrir gráfico</a></p>
-</body></html>
-"""
-    return msg_tg.strip(), msg_email.strip()
-
-def enviar_notificacao_curto(dest, assunto, corpo_email, rem, senha, token_tg, chat_id, corpo_tg=None):
-    if senha and dest and rem:
-        try:
-            enviar_email(dest, assunto, corpo_email, rem, senha)
-        except Exception as e:
-            st.sidebar.warning(f"⚠️ Falha e-mail: {e}")
-
-    async def send_tg():
-        try:
-            if token_tg and chat_id:
-                bot = Bot(token=token_tg)
-                await bot.send_message(chat_id=chat_id, text=corpo_tg or corpo_email, parse_mode="HTML")
-        except Exception as e:
-            st.sidebar.warning(f"⚠️ Falha Telegram: {e}")
-
-    asyncio.run(send_tg())
-
-async def testar_telegram():
-    tok = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id_curto", "")
-    try:
-        if tok and chat:
-            bot = Bot(token=tok)
-            await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
-            return True, None
-        return False, "token/chat_id não configurado"
-    except Exception as e:
-        return False, str(e)
+    st.session_state["origem_estado"] = origem
+    st.session_state["__carregado_ok__"] = (origem == "☁️ Supabase")
 
 # -----------------------------
 # INICIALIZAÇÃO
 # -----------------------------
 inicializar_estado()
-carregar_estado_duravel()
+carregar_estado_nuvem()
 
 # -----------------------------
 # SIDEBAR
@@ -216,135 +105,167 @@ carregar_estado_duravel()
 st.sidebar.header("⚙️ Configurações")
 
 if st.sidebar.button("📤 Testar Envio Telegram"):
-    st.sidebar.info("Enviando teste...")
-    ok, erro = asyncio.run(testar_telegram())
-    st.sidebar.success("✅ Enviado!" if ok else f"❌ {erro}")
+    st.sidebar.info("Enviando mensagem de teste...")
+    tok = st.secrets.get("telegram_token", "")
+    chat = st.secrets.get("telegram_chat_id_curto", "")
+    async def teste_tg():
+        try:
+            if tok and chat:
+                bot = Bot(token=tok)
+                await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
+                st.sidebar.success("✅ Mensagem enviada com sucesso!")
+            else:
+                st.sidebar.warning("Token/chat_id não configurado.")
+        except Exception as e:
+            st.sidebar.error(f"Erro Telegram: {e}")
+    asyncio.run(teste_tg())
 
-if st.sidebar.button("📩 Testar Mensagem"):
-    st.sidebar.info("Gerando alerta simulado...")
-    try:
-        tkr = "PETR4.SA"
-        preco_alvo = 37.5
-        preco_atual = 37.52
-        oper = "compra"
-        msg_tg, msg_email = formatar_mensagem_alerta(tkr, preco_alvo, preco_atual, oper)
-        enviar_notificacao_curto(
-            st.secrets.get("email_recipient_curto", ""),
-            f"ALERTA CURTO PRAZO: {oper.upper()} em {mostrar_ticker(tkr)}",
-            msg_email,
-            st.secrets.get("email_sender", ""),
-            st.secrets.get("gmail_app_password", ""),
-            st.secrets.get("telegram_token", ""),
-            st.secrets.get("telegram_chat_id_curto", ""),
-            msg_tg
+st.sidebar.header("📜 Histórico de Alertas")
+if st.session_state.historico_alertas:
+    for alerta in reversed(st.session_state.historico_alertas):
+        st.sidebar.write(f"**{alerta['ticker']}** - {alerta['operacao'].upper()}")
+        st.sidebar.caption(
+            f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}"
         )
-        st.sidebar.success("✅ Mensagem enviada.")
-    except Exception as e:
-        st.sidebar.error(f"Erro: {e}")
+else:
+    st.sidebar.info("Nenhum alerta ainda.")
 
-if st.sidebar.button("🧹 Limpar Dados"):
-    inicializar_estado()
-    salvar_estado_duravel()
-    st.sidebar.success("🧹 Estado local e remoto limpo.")
+if st.sidebar.button("🔄 Atualizar Agora"):
+    carregar_estado_nuvem()
+    st.sidebar.success("Dados atualizados da nuvem!")
 
 # -----------------------------
 # INTERFACE PRINCIPAL
 # -----------------------------
+now = agora_lx()
 st.title("📈 CURTO PRAZO - COMPRA E VENDA")
-st.caption(f"Origem: {st.session_state.get('origem_estado', '❓')}")
 
-col1, col2, col3 = st.columns(3)
-with col1:
-    ticker = st.text_input("Ticker (ex: PETR4)").upper()
-with col2:
-    operacao = st.selectbox("Operação", ["compra", "venda"])
-with col3:
-    preco = st.number_input("Preço alvo", min_value=0.01, step=0.01)
+origem = st.session_state.get("origem_estado", "❓")
+st.markdown({
+    "☁️ Supabase": "🟢 **Origem dos dados:** Nuvem (Supabase)",
+    "📁 Local": "🟠 **Origem dos dados:** Local",
+}.get(origem, "⚪ **Origem dos dados:** Desconhecida"))
+st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')}")
 
-if st.button("➕ Adicionar ativo"):
-    if ticker:
-        tk_norm = normalizar_ticker(ticker)
-        ativos = st.session_state.get("ativos", [])
-        if not any(a["ticker"] == tk_norm for a in ativos):
-            ativos.append({"ticker": tk_norm, "operacao": operacao, "preco": float(preco)})
-            st.session_state["ativos"] = ativos
-            salvar_estado_duravel()
-            st.success(f"{tk_norm} enviado à nuvem.")
-        else:
-            st.warning("Ticker já existe.")
+st.write("Robô automático da **CARTEIRA CURTO PRAZO** — leitura da nuvem (somente visualização).")
 
 # -----------------------------
 # STATUS DOS ATIVOS
 # -----------------------------
-st.subheader("📊 Status dos Ativos")
-status_map = {
-    "monitorando": "🟢 Monitorando",
-    "em_contagem": "🟡 Em contagem",
-    "disparado": "🚀 Disparado"
-}
+st.subheader("📊 Status dos Ativos Monitorados")
+tabela_status = st.empty()
 data = []
 for ativo in st.session_state.get("ativos", []):
-    t = ativo["ticker"]
-    raw = str(st.session_state.get("status", {}).get(t, "")).lower()
-    status_fmt = status_map.get(raw, "⏳ Aguardando robô da nuvem")
+    t = ativo.get("ticker", "")
+    preco_alvo = ativo.get("preco", 0)
+    operacao = ativo.get("operacao", "").upper()
+    status_txt = st.session_state.get("status", {}).get(t, "🟢 Monitorando")
     data.append({
-        "Ticker": mostrar_ticker(t),
-        "Operação": ativo["operacao"].upper(),
-        "Preço Alvo": f"R$ {float(ativo['preco']):.2f}",
-        "Status": status_fmt
+        "Ticker": t,
+        "Operação": operacao,
+        "Preço Alvo": f"R$ {preco_alvo:.2f}",
+        "Status": status_txt
     })
 if data:
-    st.dataframe(pd.DataFrame(data), use_container_width=True, height=250)
+    tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
 else:
-    st.info("Nenhum ativo cadastrado.")
+    tabela_status.info("Nenhum ativo registrado.")
 
 # -----------------------------
 # GRÁFICO
 # -----------------------------
-st.subheader("📈 Evolução dos Preços (Robô da Nuvem)")
-ativos_set = {a["ticker"] for a in st.session_state.get("ativos", [])}
+st.subheader("📉 Evolução dos Preços")
 fig = go.Figure()
-for t, dados in st.session_state.get("precos_historicos", {}).items():
-    if not dados or t not in ativos_set:
-        continue
-    xs, ys = [], []
-    for dtv, pv in dados:
-        try:
-            xs.append(datetime.datetime.fromisoformat(dtv))
-        except Exception:
-            xs.append(dtv)
-        ys.append(pv)
-    fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines+markers", name=mostrar_ticker(t)))
-fig.update_layout(template="plotly_dark")
+precos_hist = st.session_state.get("precos_historicos", {})
+historico_alertas = st.session_state.get("historico_alertas", [])
+disparos = st.session_state.get("disparos", {})
+
+if precos_hist:
+    for t, dados in precos_hist.items():
+        if not dados:
+            continue
+        xs, ys = zip(*[(datetime.datetime.fromisoformat(dtv) if isinstance(dtv, str) else dtv, pv) for dtv, pv in dados])
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines+markers", name=t))
+elif historico_alertas:
+    df = pd.DataFrame(historico_alertas)
+    df["hora"] = pd.to_datetime(df["hora"], errors="coerce")
+    for tkr, df_tkr in df.groupby("ticker"):
+        fig.add_trace(go.Scatter(
+            x=df_tkr["hora"], y=df_tkr["preco_atual"],
+            mode="lines+markers", name=f"{tkr} (alertas)",
+            line=dict(dash="dot")
+        ))
+for t, pontos in disparos.items():
+    if pontos:
+        xs, ys = zip(*pontos)
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode="markers", name=f"Ativação {t}",
+            marker=dict(symbol="star", size=12, line=dict(width=2, color="white"))
+        ))
+fig.update_layout(title="📉 Evolução dos Preços", template="plotly_dark")
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# LOG
+# LOG DE MONITORAMENTO
 # -----------------------------
-st.subheader("🕒 Monitoramento")
+st.subheader("🕒 Monitoramento (Logs e Alertas)")
 log_lines = st.session_state.get("log_monitoramento", [])
-ativos_fmt = set(a["ticker"] for a in st.session_state.get("ativos", []))
-ativos_fmt |= {t.replace(".SA", "") for t in ativos_fmt}
-if ativos_fmt:
-    pat = re.compile(r"\b(" + "|".join(re.escape(t) for t in ativos_fmt) + r")\b")
-    log_lines = [l for l in log_lines if pat.search(l)]
+if not log_lines and historico_alertas:
+    for h in historico_alertas:
+        log_lines.append(
+            f"{h['hora']} | ALERTA {h['operacao'].upper()} | {h['ticker']} "
+            f"alvo R$ {h['preco_alvo']:.2f} | atual R$ {h['preco_atual']:.2f}"
+        )
 
-st.markdown("""
-<style>
-  .log-card {background:#0b1220;border:1px solid #1f2937;border-radius:10px;
-             padding:10px 12px;max-height:360px;overflow-y:auto;}
-  .log-line {font-family: monospace;font-size:13px;color:#e5e7eb;}
-</style>
-""", unsafe_allow_html=True)
+def render_log_html(lines, max_lines=250):
+    if not lines:
+        st.write("—")
+        return
+    subset = lines[-max_lines:][::-1]
+    css = """
+    <style>
+      .log-card {background:#0b1220;border:1px solid #1f2937;border-radius:10px;
+        padding:10px 12px;max-height:360px;overflow-y:auto;}
+      .log-line {font-family:ui-monospace, Menlo, Monaco, Consolas;
+        font-size:13px;line-height:1.35;margin:2px 0;color:#e5e7eb;
+        display:flex;align-items:baseline;gap:8px;}
+      .ts {color:#9ca3af;min-width:64px;text-align:right;}
+      .badge {display:inline-block;padding:1px 8px;font-size:12px;
+        border-radius:9999px;color:white;}
+      .msg {white-space:pre-wrap;}
+    </style>
+    """
+    html = [css, "<div class='log-card'>"]
+    for l in subset:
+        if " | " in l:
+            ts, rest = l.split(" | ", 1)
+        else:
+            ts, rest = "", l
+        tk = extract_ticker(l)
+        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
+        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
+    html.append("</div>")
+    st.markdown("\n".join(html), unsafe_allow_html=True)
 
-if log_lines:
-    st.markdown("<div class='log-card'>" + "<br>".join(
-        f"<div class='log-line'>{l}</div>" for l in log_lines[-300:][::-1]
-    ) + "</div>", unsafe_allow_html=True)
-else:
-    st.info("Sem logs no momento.")
+render_log_html(log_lines, 250)
 
 # -----------------------------
-# AUTOREFRESH
+# DEBUG E AUTOREFRESH
 # -----------------------------
-st_autorefresh(interval=60000, key="curto-refresh")
+with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
+    try:
+        headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
+        url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v,updated_at"
+        res = requests.get(url, headers=headers, timeout=15)
+        if res.status_code == 200 and res.json():
+            state_preview = res.json()[0]["v"]
+            st.json(state_preview)
+            st.download_button("⬇️ Baixar state_curto.json",
+                               data=json.dumps(state_preview, indent=2),
+                               file_name="state_curto.json", mime="application/json")
+        else:
+            st.info("Nenhum estado salvo ainda.")
+    except Exception as e:
+        st.error(f"Erro ao exibir JSON: {e}")
+
+st_autorefresh(interval=60_000, limit=None, key="curto-refresh")
