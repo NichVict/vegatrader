@@ -447,6 +447,10 @@ if ativos:
         except Exception as e:
             st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {t}.SA erro: {e}")
 
+        # 🧩 garante que o campo contagem_inicio exista
+        if "contagem_inicio" not in st.session_state:
+            st.session_state.contagem_inicio = {}
+        
         # atualiza histórico local p/ gráfico
         if preco_atual != "-":
             st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
