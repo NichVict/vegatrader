@@ -14,6 +14,7 @@ import re
 import json
 import os
 import time
+from streamlit_autorefresh import st_autorefresh  # 🆕 auto-refresh visual
 import streamlit.components.v1 as components
 
 # -----------------------------
@@ -41,8 +42,6 @@ PALETTE = [
 # -----------------------------
 SUPABASE_URL   = st.secrets["supabase_url_curto"]
 SUPABASE_KEY   = st.secrets["supabase_key_curto"]
-
-# Nome da tabela KV e chave do estado (confirmado por você)
 SUPABASE_TABLE = "kv_state_curto"
 STATE_KEY      = "curto_przo_v1"   # (atenção: é "przo" mesmo)
 
@@ -54,10 +53,6 @@ def _sb_headers():
     }
 
 def ler_ativos_da_supabase() -> list[dict]:
-    """
-    Lê os ativos de v['ativos'] na linha (k) 'curto_przo_v1' da tabela kv_state_curto.
-    Espera cada item com: {"ticker": str, "operacao": "compra"|"venda", "preco": float}.
-    """
     url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}&select=v"
     try:
         r = requests.get(url, headers=_sb_headers(), timeout=15)
@@ -80,25 +75,18 @@ def ler_ativos_da_supabase() -> list[dict]:
         return []
 
 def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple[bool, str | None]:
-    """
-    Insere um novo ativo no array v['ativos'] (merge) da chave 'curto_przo_v1'.
-    NÃO remove/atualiza nada do que já existe. Apenas adiciona.
-    """
     try:
-        # 1) Lê estado atual
         url_get = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}&select=v"
         r = requests.get(url_get, headers=_sb_headers(), timeout=15)
         r.raise_for_status()
         data = r.json()
         estado = data[0].get("v", {}) if data else {}
 
-        # 2) Atualiza a lista de ativos local
         ativos = estado.get("ativos", [])
         novo = {"ticker": ticker.upper().strip(), "operacao": operacao.lower().strip(), "preco": float(preco)}
         ativos.append(novo)
         estado["ativos"] = ativos
 
-        # 3) Envia merge (não apaga nada)
         payload = {"k": STATE_KEY, "v": estado}
         r2 = requests.post(
             f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
@@ -114,7 +102,6 @@ def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple
 # -----------------------------
 # ESTADO LOCAL (APENAS VISUAL)
 # -----------------------------
-# Persistência local do GRÁFICO (disparos/linhas) – arquivo no servidor (não nuvem)
 VIS_STATE_FILE = "session_data/visual_state_curto.json"
 
 def carregar_visual_state():
@@ -123,7 +110,6 @@ def carregar_visual_state():
         try:
             with open(VIS_STATE_FILE, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            # reconverte datas
             precos = {
                 t: [(datetime.datetime.fromisoformat(dt), v) for dt, v in pares]
                 for t, pares in data.get("precos_historicos", {}).items()
@@ -159,19 +145,25 @@ def inicializar_estado():
     defaults = {
         "log_monitoramento": [],
         "ticker_colors": {},
-        "tempo_acumulado": {},       # segundos em contagem POR TICKER (local)
-        "em_contagem": {},           # bool por ticker
-        "status": {},                # string por ticker (visual)
-        "precos_historicos": {},     # {ticker: [(dt, preco), ...]}
-        "disparos": {},              # {ticker: [(dt, preco), ...]}  -> estrelas
+        "tempo_acumulado": {},
+        "em_contagem": {},
+        "status": {},
+        "precos_historicos": {},
+        "disparos": {},
     }
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-    # carrega gráfico persistente local
     carregar_visual_state()
 
 inicializar_estado()
+
+# -----------------------------
+# AUTO-REFRESH 🆕
+# -----------------------------
+st.sidebar.header("⚙️ Configurações")
+refresh_secs = st.sidebar.slider("⏱️ Auto-refresh (segundos)", 60, 600, 300, 30)
+st_autorefresh(interval=refresh_secs * 1000, key="curto-refresh", limit=None)
 
 # -----------------------------
 # UTILITÁRIOS
@@ -185,16 +177,9 @@ def dentro_pregao(dt):
 
 @st.cache_data(ttl=5)
 def obter_preco_atual(ticker_symbol: str):
-    """
-    Retorna float com o preço atual ou "-" quando não houver dado.
-    Trata respostas inconsistentes do yahooquery.
-    """
     if not ticker_symbol.endswith(".SA"):
         ticker_symbol = f"{ticker_symbol}.SA"
-
     tk = Ticker(ticker_symbol)
-
-    # 1) tk.price
     try:
         price_data = tk.price
         if isinstance(price_data, dict):
@@ -210,10 +195,8 @@ def obter_preco_atual(ticker_symbol: str):
                      or symbol_data.get("preMarketPrice"))
                 if isinstance(p, (int, float)):
                     return float(p)
-    except Exception as e:
-        st.session_state.log_monitoramento.append(f"⚠️ {ticker_symbol}: erro price ({e})")
-
-    # 2) history 1d
+    except Exception:
+        pass
     try:
         hist = tk.history(period="1d")
         if isinstance(hist, pd.DataFrame) and not hist.empty and "close" in hist.columns:
@@ -226,9 +209,8 @@ def obter_preco_atual(ticker_symbol: str):
                     return float(df_sym["close"].dropna().iloc[-1])
             else:
                 return float(hist["close"].dropna().iloc[-1])
-    except Exception as e:
-        st.session_state.log_monitoramento.append(f"⚠️ {ticker_symbol}: erro history ({e})")
-
+    except Exception:
+        pass
     return "-"
 
 def color_for_ticker(ticker):
@@ -239,105 +221,6 @@ def color_for_ticker(ticker):
         st.session_state.ticker_colors[ticker] = PALETTE[idx]
     return st.session_state.ticker_colors[ticker]
 
-TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\.SA\b")
-PLAIN_TICKER_PAT = re.compile(r"\b([A-Z0-9]{4,6})\b")
-def extract_ticker(line):
-    m = TICKER_PAT.search(line)
-    if m:
-        return m.group(1)
-    m2 = PLAIN_TICKER_PAT.search(line)
-    return m2.group(1) if m2 else None
-
-def render_log_html(lines, selected_tickers=None, max_lines=250):
-    if not lines:
-        st.write("—")
-        return
-    subset = lines[-max_lines:][::-1]
-    if selected_tickers:
-        subset = [l for l in subset if extract_ticker(l) in selected_tickers]
-
-    css = """
-    <style>
-      .log-card {
-        background: #0b1220;
-        border: 1px solid #1f2937;
-        border-radius: 10px;
-        padding: 10px 12px;
-        max-height: 360px;
-        overflow-y: auto;
-      }
-      .log-line {
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-        font-size: 13px;
-        line-height: 1.35;
-        margin: 2px 0;
-        color: #e5e7eb;
-        display: flex;
-        align-items: baseline;
-        gap: 8px;
-      }
-      .ts { color: #9ca3af; min-width: 64px; text-align: right; }
-      .badge {
-        display: inline-block; padding: 1px 8px; font-size: 12px;
-        border-radius: 9999px; color: white;
-      }
-      .msg { white-space: pre-wrap; }
-    </style>
-    """
-
-    html = [css, "<div class='log-card'>"]
-    for l in subset:
-        if " | " in l:
-            ts, rest = l.split(" | ", 1)
-        else:
-            ts, rest = "", l
-        tk = extract_ticker(l)
-        badge_html = f"<span class='badge' style='background:{color_for_ticker(tk)}'>{tk}</span>" if tk else ""
-        html.append(f"<div class='log-line'><span class='ts'>{ts}</span>{badge_html}<span class='msg'>{rest}</span></div>")
-    html.append("</div>")
-    st.markdown("\n".join(html), unsafe_allow_html=True)
-
-# -----------------------------
-# SIDEBAR (apenas ações locais + inserir novo ativo)
-# -----------------------------
-st.sidebar.header("⚙️ Configurações")
-
-# Teste manual (não interfere no robô da nuvem)
-async def testar_telegram():
-    tok = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id_curto", "")
-    try:
-        if tok and chat:
-            bot = Bot(token=tok)
-            await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
-            return True, None
-        return False, "token/chat_id não configurado"
-    except Exception as e:
-        return False, str(e)
-
-if st.sidebar.button("📤 Testar Envio Telegram"):
-    st.sidebar.info("Enviando mensagem de teste...")
-    ok, erro = asyncio.run(testar_telegram())
-    st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
-
-if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
-    # Limpa apenas o estado LOCAL do gráfico
-    st.session_state.disparos = {}
-    st.session_state.precos_historicos = {}
-    salvar_visual_state()
-    st.sidebar.success("Marcadores e histórico do gráfico limpos!")
-
-# Aviso temporário para limpar log
-placeholder_log = st.sidebar.empty()
-if st.sidebar.button("🧹 Limpar Monitoramento"):
-    st.session_state["log_monitoramento"] = []
-    with placeholder_log.container():
-        st.success(f"🧹 Log limpo às {agora_lx().strftime('%H:%M:%S')}")
-        time.sleep(3)
-        placeholder_log.empty()
-
-# Filtro do log (preenchemos após ler os ativos)
-selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", [], default=[])
 
 # -----------------------------
 # CABEÇALHO / LAYOUT
