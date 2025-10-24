@@ -920,7 +920,7 @@ for t, dados in st.session_state.precos_historicos.items():
 for t, pontos in st.session_state.disparos.items():
     if pontos:
         xs, ys = zip(*pontos)
-        fig.add_trace(go.Scatter(x=xs, y=ys, mode="markers", name=f"Ativação {t}",
+        fig.add_trace(go.Scatter(x=xs, y=ys, mode="markers", name=f"Disparou {t}",
                                  marker=dict(symbol="star", size=12, line=dict(width=2, color="white"))))
 fig.update_layout(title="📉 Evolução dos Preços", template="plotly_dark")
 grafico.plotly_chart(fig, use_container_width=True)
