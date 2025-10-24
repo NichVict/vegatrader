@@ -239,6 +239,7 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
 def enviar_notificacao_curto(dest, assunto, corpo_email_html, rem, senha, tok_tg, chat_id, corpo_telegram=None):
     """
     Envia e-mail em HTML e mensagem Telegram (HTML), com compatibilidade retroativa.
+    Agora corrigida para funcionar dentro do loop do Streamlit.
     """
     # --- E-mail (em HTML) ---
     if senha and dest:
@@ -277,10 +278,20 @@ def enviar_notificacao_curto(dest, assunto, corpo_email_html, rem, senha, tok_tg
                     parse_mode="HTML",
                     disable_web_page_preview=True
                 )
+                st.session_state.log_monitoramento.append("📨 Mensagem enviada ao Telegram com sucesso.")
         except Exception as e:
             st.session_state.log_monitoramento.append(f"⚠️ Erro Telegram: {e}")
 
-    asyncio.run(send_tg())
+    # ✅ Compatibilidade com loop do Streamlit e ambientes assíncronos
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            loop.create_task(send_tg())
+        else:
+            loop.run_until_complete(send_tg())
+    except RuntimeError:
+        asyncio.run(send_tg())
+
 
 
 @st.cache_data(ttl=5)
