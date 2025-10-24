@@ -566,7 +566,6 @@ with log_container:
 # 🚫 DESATIVADO: LOOP DE MONITORAMENTO / ENVIO AUTOMÁTICO LOCAL
 # (Toda lógica de contagem, preço, disparo e logs fica na nuvem)
 # -----------------------------
-"""
 # EX-BLOCO (referência preservada):
 # if dentro_pregao(now):
 #     ... obter_preco_atual(...)
@@ -576,7 +575,6 @@ with log_container:
 #         # alerta_msg = notificar_preco_alvo_alcancado_curto(...)
 #         # st.warning(alerta_msg)
 #         ...
-"""
 
 # -----------------------------
 # DEBUG / BACKUP (somente leitura da nuvem)
