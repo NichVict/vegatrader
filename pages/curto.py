@@ -104,14 +104,16 @@ def _persist_now():
     }
 
     payload = {"k": STATE_KEY, "v": snapshot}
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?on_conflict=k"  # ✅ UPSERT
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?on_conflict=k"  # ✅ UPSERT automático
     try:
         r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
         if r.status_code not in (200, 201, 204):
             st.sidebar.error(f"Erro ao salvar estado remoto: {r.text}")
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
+
     st.session_state["__last_save_ts"] = agora_lx().timestamp()
+
 
 
 
