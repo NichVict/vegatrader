@@ -619,8 +619,8 @@ if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
 # LIMPAR MONITORAMENTO
 # -----------------------------------------
 if st.sidebar.button("🧹 Limpar Monitoramento"):
-    # Mantém tudo, só zera o log
     st.session_state["log_monitoramento"] = []
+    st.session_state["log_limpo_ts"] = agora_lx().strftime("%H:%M:%S")
     salvar_estado_duravel(force=True)
     st.sidebar.success("🧹 Log de monitoramento limpo com sucesso!")
 
