@@ -1,6 +1,6 @@
 # CURTO.PY - INTERFACE VISUAL (LEITURA/INSERÇÃO NA SUPABASE; SEM ALTERAR/DELETAR NA NUVEM)
-
 # -*- coding: utf-8 -*-
+
 import streamlit as st
 from yahooquery import Ticker
 import datetime
@@ -37,12 +37,14 @@ PALETTE = [
 ]
 
 # -----------------------------
-# SUPABASE (APENAS LEITURA/INSERÇÃO)
+# SUPABASE (LEITURA/INSERÇÃO EM kv_state_curto)
 # -----------------------------
 SUPABASE_URL   = st.secrets["supabase_url_curto"]
 SUPABASE_KEY   = st.secrets["supabase_key_curto"]
-# Nome da tabela com os ATIVOS (usada pelo robô da nuvem)
-SUPABASE_TABLE = st.secrets.get("supabase_table_curto", "curto_ativos")
+
+# Nome da tabela KV e chave do estado (confirmado por você)
+SUPABASE_TABLE = "kv_state_curto"
+STATE_KEY      = "curto_przo_v1"   # (atenção: é "przo" mesmo)
 
 def _sb_headers():
     return {
@@ -51,24 +53,25 @@ def _sb_headers():
         "Content-Type": "application/json",
     }
 
-def ler_ativos_da_supabase(max_rows: int = 1000) -> list[dict]:
+def ler_ativos_da_supabase() -> list[dict]:
     """
-    Lê os ativos da tabela de controle (que o robô da nuvem usa).
-    Não altera/remover nada. Apenas SELECT.
-    Espera colunas: ticker (str), operacao ('compra'|'venda'), preco (float)
+    Lê os ativos de v['ativos'] na linha (k) 'curto_przo_v1' da tabela kv_state_curto.
+    Espera cada item com: {"ticker": str, "operacao": "compra"|"venda", "preco": float}.
     """
-    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?select=ticker,operacao,preco&limit={max_rows}"
+    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}&select=v"
     try:
         r = requests.get(url, headers=_sb_headers(), timeout=15)
         r.raise_for_status()
         data = r.json()
-        # normaliza chaves e tipos
+        if not data:
+            return []
+        estado = data[0].get("v", {})
+        ativos = estado.get("ativos", [])
         norm = []
-        for row in data:
-            t = (row.get("ticker") or "").upper()
-            op = (row.get("operacao") or "").lower()
-            pr = row.get("preco")
-            # filtra entradas válidas
+        for a in ativos:
+            t = (a.get("ticker") or "").upper().strip()
+            op = (a.get("operacao") or "").lower().strip()
+            pr = a.get("preco")
             if t and op in ("compra", "venda") and isinstance(pr, (int, float)):
                 norm.append({"ticker": t, "operacao": op, "preco": float(pr)})
         return norm
@@ -76,22 +79,34 @@ def ler_ativos_da_supabase(max_rows: int = 1000) -> list[dict]:
         st.sidebar.error(f"⚠️ Erro ao ler Supabase: {e}")
         return []
 
-def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple[bool,str|None]:
+def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple[bool, str | None]:
     """
-    ÚNICA operação que “vai pra fora”.
-    Faz INSERT no Supabase para que o robô da nuvem monitore e dispare mensagens.
-    NÃO remove/atualiza nada.
+    Insere um novo ativo no array v['ativos'] (merge) da chave 'curto_przo_v1'.
+    NÃO remove/atualiza nada do que já existe. Apenas adiciona.
     """
-    url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}"
-    payload = {
-        "ticker": ticker.upper(),
-        "operacao": operacao.lower(),
-        "preco": float(preco),
-        "created_at": datetime.datetime.now(TZ).isoformat()
-    }
     try:
-        r = requests.post(url, headers=_sb_headers(), json=payload, timeout=15)
+        # 1) Lê estado atual
+        url_get = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}&select=v"
+        r = requests.get(url_get, headers=_sb_headers(), timeout=15)
         r.raise_for_status()
+        data = r.json()
+        estado = data[0].get("v", {}) if data else {}
+
+        # 2) Atualiza a lista de ativos local
+        ativos = estado.get("ativos", [])
+        novo = {"ticker": ticker.upper().strip(), "operacao": operacao.lower().strip(), "preco": float(preco)}
+        ativos.append(novo)
+        estado["ativos"] = ativos
+
+        # 3) Envia merge (não apaga nada)
+        payload = {"k": STATE_KEY, "v": estado}
+        r2 = requests.post(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
+            headers={**_sb_headers(), "Prefer": "resolution=merge-duplicates"},
+            json=payload,
+            timeout=15,
+        )
+        r2.raise_for_status()
         return True, None
     except Exception as e:
         return False, str(e)
@@ -321,8 +336,7 @@ if st.sidebar.button("🧹 Limpar Monitoramento"):
         time.sleep(3)
         placeholder_log.empty()
 
-# Filtro do log (com base no que vier da Supabase)
-# (preenchemos essa lista depois de carregar os ativos)
+# Filtro do log (preenchemos após ler os ativos)
 selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", [], default=[])
 
 # -----------------------------
@@ -341,7 +355,7 @@ st.write("Insira os dados abaixo para enviar **um novo ativo** ao robô (Supabas
 st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 
 # -----------------------------
-# FORM DE INSERÇÃO (INSERE NA SUPABASE)
+# FORM DE INSERÇÃO (INSERE NA SUPABASE via v['ativos'])
 # -----------------------------
 col1, col2, col3 = st.columns(3)
 with col1:
@@ -374,7 +388,7 @@ st.subheader("🕒 Monitoramento")
 log_container = st.empty()
 
 # 1) Lê ativos da Supabase para monitorar visualmente
-ativos = ler_ativos_da_supabase(max_rows=2000)
+ativos = ler_ativos_da_supabase()
 
 # Atualiza lista de filtros no sidebar (com os tickers encontrados)
 if ativos:
@@ -418,7 +432,6 @@ if ativos:
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | {t}.SA DISPARO VISUAL — nuvem é quem envia alertas reais."
                 )
-                # não zeramos nem removemos nada da tabela (nuvem decide)
         else:
             # saiu da zona => zera contagem local
             if st.session_state.em_contagem.get(t, False):
@@ -476,9 +489,9 @@ salvar_visual_state()
 # -----------------------------
 with st.expander("ℹ️ Como funciona esta interface?"):
     st.markdown("""
-- **Leitura** de ativos é feita na **Supabase** (tabela de ordens).  
-- **Inserção** de novo ativo também vai para a **Supabase** (o robô da nuvem monitora e envia alertas reais).  
+- **Leitura** de ativos é feita em **Supabase → kv_state_curto**, linha `k="curto_przo_v1"`, lendo `v["ativos"]`.  
+- **Inserção** adiciona novos itens ao array `v["ativos"]` via *merge* — **não apaga nem atualiza** entradas existentes.  
 - TUDO mais (gráfico, estrelas, contagens, log) é **local/visual** — **não altera a Supabase**.  
 - As estrelas de “Disparou” ficam **fixas** no gráfico até você clicar em **“🧹 Limpar Gráfico ⭐”**.
-- Esta interface **não remove** ativos e **não envia** mensagens reais — quem faz isso é o **robô da nuvem**.
+- A interface **não remove** ativos na nuvem nem envia mensagens reais — quem faz isso é o **robô da nuvem**.
     """)
