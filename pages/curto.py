@@ -28,8 +28,8 @@ import time
 st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)
+HORARIO_INICIO_PREGAO = datetime.time(3, 0, 0)
+HORARIO_FIM_PREGAO    = datetime.time(23, 59, 0)
 
 # Interface não fará monitoramento local; intervalos só afetam autorefresh visual
 INTERVALO_VERIFICACAO = 300
