@@ -655,7 +655,7 @@ st.markdown({
 st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
            f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}")
 
-
+st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 st.write("Insira os dados abaixo para iniciar o Monitoramento.")
 
 st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
