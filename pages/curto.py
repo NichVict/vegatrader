@@ -616,6 +616,16 @@ if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
 tickers_existentes = sorted(set(a["ticker"] for a in st.session_state.ativos)) if st.session_state.ativos else []
 selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_existentes, default=[])
 
+# -----------------------------------------
+# LIMPAR MONITORAMENTO
+# -----------------------------------------
+if st.sidebar.button("🧹 Limpar Monitoramento"):
+    # Mantém tudo, só zera o log
+    st.session_state["log_monitoramento"] = []
+    salvar_estado_duravel(force=True)
+    st.sidebar.success("🧹 Log de monitoramento limpo com sucesso!")
+
+
 # -----------------------------
 # INTERFACE PRINCIPAL
 # -----------------------------
