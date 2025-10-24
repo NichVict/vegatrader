@@ -616,13 +616,24 @@ if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
     st.sidebar.success("Marcadores e históricos antigos limpos!")
 
 # -----------------------------------------
-# LIMPAR MONITORAMENTO
+# LIMPAR MONITORAMENTO (aviso temporário no sidebar)
 # -----------------------------------------
 if st.sidebar.button("🧹 Limpar Monitoramento"):
     st.session_state["log_monitoramento"] = []
-    st.session_state["log_limpo_ts"] = agora_lx().strftime("%H:%M:%S")
+    st.session_state["log_limpo_sidebar_ts"] = agora_lx().strftime("%H:%M:%S")
     salvar_estado_duravel(force=True)
-    st.sidebar.success("🧹 Log de monitoramento limpo com sucesso!")
+    st.sidebar.success(f"🧹 Log limpo às {st.session_state['log_limpo_sidebar_ts']}")
+
+# 🔁 Remove o aviso automaticamente após ~5 segundos
+if "log_limpo_sidebar_ts" in st.session_state:
+    tempo_decorrido = (agora_lx() - datetime.datetime.strptime(
+        st.session_state["log_limpo_sidebar_ts"], "%H:%M:%S"
+    ).replace(year=agora_lx().year, month=agora_lx().month, day=agora_lx().day, tzinfo=TZ)).total_seconds()
+    
+    if tempo_decorrido > 5:
+        st.session_state.pop("log_limpo_sidebar_ts", None)
+        st.rerun()
+
 
 tickers_existentes = sorted(set(a["ticker"] for a in st.session_state.ativos)) if st.session_state.ativos else []
 selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_existentes, default=[])
