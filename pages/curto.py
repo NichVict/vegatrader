@@ -613,9 +613,6 @@ if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
     salvar_estado_duravel(force=True)
     st.sidebar.success("Marcadores e históricos antigos limpos!")
 
-tickers_existentes = sorted(set(a["ticker"] for a in st.session_state.ativos)) if st.session_state.ativos else []
-selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_existentes, default=[])
-
 # -----------------------------------------
 # LIMPAR MONITORAMENTO
 # -----------------------------------------
@@ -624,6 +621,11 @@ if st.sidebar.button("🧹 Limpar Monitoramento"):
     st.session_state["log_monitoramento"] = []
     salvar_estado_duravel(force=True)
     st.sidebar.success("🧹 Log de monitoramento limpo com sucesso!")
+
+tickers_existentes = sorted(set(a["ticker"] for a in st.session_state.ativos)) if st.session_state.ativos else []
+selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_existentes, default=[])
+
+
 
 
 # -----------------------------
