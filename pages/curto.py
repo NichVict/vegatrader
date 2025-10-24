@@ -858,20 +858,22 @@ else:
 
                 
                 
+             
                 # 🚀 Disparo de alerta quando atinge o tempo máximo
                 if (
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
                     and st.session_state.status.get(t) != "🚀 Disparado"
                 ):
                     st.session_state.status[t] = "🚀 Disparado"
-            
-                    # 🔹 Garante que histórico e estrela fiquem salvos no gráfico
+                
+                    # 🔹 Registra o preço e garante estrela fixa no gráfico
                     st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
                     st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
-            
-                    alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
-                    st.warning(alerta_msg)
-            
+                
+                    # 🔔 Notifica (robô da nuvem enviará)
+                    notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
+                
+                    # 🧾 Registra no histórico (visível para nuvem)
                     st.session_state.historico_alertas.append({
                         "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
                         "ticker": t,
@@ -879,11 +881,16 @@ else:
                         "preco_alvo": preco_alvo,
                         "preco_atual": preco_atual
                     })
-            
-                    # 🔸 Remove da tabela mas mantém no gráfico
+                
+                    # 💾 Salva o estado ANTES de remover o ativo
+                    salvar_estado_duravel(force=True)
+                    st.session_state.log_monitoramento.append(f"🚀 {t} atingiu o alvo e foi salvo no estado (nuvem notificará).")
+                
+                    # 🔸 Remove da tabela, mas mantém no gráfico
                     tickers_para_remover.append(t)
-                    salvar_estado_duravel(force=True)
-                    salvar_estado_duravel(force=True)
+
+
+                    
                     
             
             # 🔁 Continua para próxima verificação (só entra aqui se NÃO estiver em condicao)
@@ -900,28 +907,25 @@ else:
 
 
                     
-        if tickers_para_remover:
-            # 🧹 Remove da tabela, mas mantém os dados no gráfico
-            st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
         
+        if tickers_para_remover:
+            # 🧹 Remove da tabela, mas mantém os dados no gráfico e na Supabase
+            st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
+            
             for t in tickers_para_remover:
-                # Remove apenas dados operacionais, mantendo histórico e marcadores
                 st.session_state.tempo_acumulado.pop(t, None)
                 st.session_state.em_contagem.pop(t, None)
-                st.session_state.status[t] = "✅ Ativado (removido)"
+                st.session_state.status[t] = "✅ Disparo concluído (mantido no gráfico)"
                 st.session_state.ultimo_update_tempo.pop(t, None)
-        
-                # ❌ Não remover histórico nem disparos
-                # st.session_state.precos_historicos.pop(t, None)
-                # st.session_state.disparos.pop(t, None)
-        
-                # 🔧 Log de depuração
+                
+                # 💾 Garante que gráfico e histórico permanecem
                 st.session_state.log_monitoramento.append(
-                    f"{now.strftime('%H:%M:%S')} | 🟢 {t} removido da tabela (mantido no gráfico)"
+                    f"{now.strftime('%H:%M:%S')} | 🟢 {t} removido da tabela, mas histórico e estrela mantidos."
                 )
-        
-            # 🔒 Persistência imediata
+            
+            # 🔒 Persiste estado final após remoção
             salvar_estado_duravel(force=True)
+
 
 
         sleep_segundos = INTERVALO_VERIFICACAO
