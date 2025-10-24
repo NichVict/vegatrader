@@ -222,7 +222,14 @@ def inicializar_estado():
 
 inicializar_estado()
 carregar_estado_duravel()
-st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | Robô iniciado - Workflow GitHub ativo")
+st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | Robô iniciado - Monitoramento constante")
+# ✅ Garante que as estrelas (disparos) persistam entre recarregamentos
+if "disparos" not in st.session_state:
+    st.session_state.disparos = {}
+else:
+    # mantém os disparos existentes carregados da base
+    st.session_state.disparos = st.session_state.get("disparos", {})
+
 
 # -----------------------------
 # FUNÇÕES AUXILIARES
@@ -842,6 +849,8 @@ else:
                     # 🔸 Remove da tabela mas mantém no gráfico
                     tickers_para_remover.append(t)
                     salvar_estado_duravel(force=True)
+                    salvar_estado_duravel(force=True)
+                    
             
             # 🔁 Continua para próxima verificação (só entra aqui se NÃO estiver em condicao)
             else:
