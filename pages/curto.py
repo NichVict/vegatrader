@@ -651,13 +651,12 @@ st.markdown({
     "📁 Local": "🟠 **Origem dos dados:** Local",
 }.get(origem, "⚪ **Origem dos dados:** Desconhecida"))
 
-st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 
 st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
            f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}")
-st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 
-st.write("Robô automático da **CARTEIRA CURTO PRAZO** — dispara alerta após 25 min na zona de preço alvo.")
+
+st.write("Insira os dados abaixo para iniciar o Monitoramento.")
 
 st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
         
