@@ -456,24 +456,56 @@ if ativos:
             (a["operacao"] == "compra" and preco_atual != "-" and preco_atual >= preco_alvo) or
             (a["operacao"] == "venda"  and preco_atual != "-" and preco_atual <= preco_alvo)
         )
-        if condicao:
+        # contagem local (visual) baseada no momento em que ENTRA na zona
+        condicao = (
+            (a["operacao"] == "compra" and preco_atual != "-" and preco_atual >= preco_alvo) or
+            (a["operacao"] == "venda"  and preco_atual != "-" and preco_atual <= preco_alvo)
+        )
+        
+        # estado anterior (antes desta leitura)
+        prev_em_contagem = st.session_state.em_contagem.get(t, False)
+        
+        if preco_atual == "-":
+            # sem dado de preço: não conta
+            st.session_state.em_contagem[t] = False
+            st.session_state.contagem_inicio.pop(t, None)
+            st.session_state.tempo_acumulado[t] = 0
+            st.session_state.status[t] = "⚪ Sem dados"
+        
+        elif condicao:
+            # entrou/agora está na zona
+            if not prev_em_contagem:
+                # TRANSIÇÃO: fora -> dentro => inicia contagem AGORA (0s)
+                st.session_state.em_contagem[t] = True
+                st.session_state.contagem_inicio[t] = now
+                st.session_state.tempo_acumulado[t] = 0
+            else:
+                # já estava na zona: tempo real desde o início
+                start = st.session_state.contagem_inicio.get(t)
+                if isinstance(start, datetime.datetime):
+                    st.session_state.tempo_acumulado[t] = int((now - start).total_seconds())
+                else:
+                    # segurança: se não havia start salvo, inicia agora
+                    st.session_state.contagem_inicio[t] = now
+                    st.session_state.tempo_acumulado[t] = 0
+        
             st.session_state.status[t] = "🟡 Em contagem"
-            # inicia/continua contagem
-            st.session_state.em_contagem[t] = True
-            st.session_state.tempo_acumulado[t] = st.session_state.tempo_acumulado.get(t, 0) + INTERVALO_VERIFICACAO
-            # “disparo visual” (NÃO mexe na nuvem, NÃO remove da tabela)
+        
+            # “disparo visual” (NÃO mexe na nuvem)
             if st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO:
                 st.session_state.status[t] = "🚀 (visual) Disparo"
                 st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
                 st.session_state.log_monitoramento.append(
                     f"{now.strftime('%H:%M:%S')} | {t}.SA DISPARO VISUAL — nuvem é quem envia alertas reais."
                 )
+        
         else:
-            # saiu da zona => zera contagem local
-            if st.session_state.em_contagem.get(t, False):
-                st.session_state.em_contagem[t] = False
-                st.session_state.tempo_acumulado[t] = 0
-                st.session_state.status[t] = "🟢 Monitorando"
+            # saiu da zona (ou nunca esteve): zera contagem
+            st.session_state.em_contagem[t] = False
+            st.session_state.contagem_inicio.pop(t, None)
+            st.session_state.tempo_acumulado[t] = 0
+            st.session_state.status[t] = "🟢 Monitorando"
+
 
         minutos = int(st.session_state.tempo_acumulado.get(t, 0) / 60)
         linhas.append({
