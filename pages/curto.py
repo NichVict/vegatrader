@@ -492,23 +492,42 @@ if st.sidebar.button("📩 Testar mensagem"):
 st.sidebar.checkbox("⏸️ Pausar monitoramento", key="pausado")
 salvar_estado_duravel()
 
+# -----------------------------------------
+# HISTÓRICO DE ALERTAS (Somente Nuvem)
+# -----------------------------------------
 st.sidebar.header("📜 Histórico de Alertas")
-if st.session_state.historico_alertas:
-    for alerta in reversed(st.session_state.historico_alertas):
-        st.sidebar.write(f"**{alerta['ticker']}** - {alerta['operacao'].upper()}")
-        st.sidebar.caption(f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}")
-else:
-    st.sidebar.info("Nenhum alerta ainda.")
 
-if st.sidebar.button("🧹 Limpar Histórico"):
-    st.session_state.historico_alertas.clear()
-    salvar_estado_duravel(force=True)
-    st.sidebar.success("Histórico limpo!")
+# 🔄 Botão para atualizar manualmente da Supabase
+if st.sidebar.button("🔄 Atualizar histórico da nuvem"):
+    try:
+        carregar_estado_duravel()
+        st.sidebar.success("Histórico atualizado da Supabase!")
+    except Exception as e:
+        st.sidebar.error(f"Erro ao atualizar histórico: {e}")
+
+# 🧾 Renderização do histórico (vindo da nuvem)
+historico_nuvem = st.session_state.get("historico_alertas", [])
+if historico_nuvem:
+    for alerta in reversed(historico_nuvem):
+        st.sidebar.write(f"**{alerta['ticker']}** - {alerta['operacao'].upper()}")
+        st.sidebar.caption(
+            f"{alerta['hora']} | Alvo: {alerta['preco_alvo']:.2f} | Atual: {alerta['preco_atual']:.2f}"
+        )
+else:
+    st.sidebar.info("Nenhum alerta recebido da nuvem ainda.")
+
+# -----------------------------------------
+# AÇÕES DE LIMPEZA (sem afetar a nuvem)
+# -----------------------------------------
+if st.sidebar.button("🧹 Limpar Histórico (local)"):
+    st.session_state["historico_alertas"] = []
+    st.sidebar.info("🧹 Histórico local limpo. Dados da nuvem permanecem intactos.")
+
 if st.sidebar.button("🧹 Limpar Monitoramento"):
     st.session_state.log_monitoramento.clear()
     salvar_estado_duravel(force=True)
     st.sidebar.success("Log limpo!")
-    
+
 if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
     # Limpa estrelas de disparo
     st.session_state.disparos = {}
@@ -533,7 +552,6 @@ if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
     # Salva e confirma visualmente
     salvar_estado_duravel(force=True)
     st.sidebar.success("Marcadores e históricos antigos limpos!")
-
 
 tickers_existentes = sorted(set(a["ticker"] for a in st.session_state.ativos)) if st.session_state.ativos else []
 selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_existentes, default=[])
