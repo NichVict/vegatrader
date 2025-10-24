@@ -78,16 +78,32 @@ def carregar_estado_duravel():
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200 and r.json():
             estado = r.json()[0]["v"]
+
+            # ✅ Atualiza todos os campos locais
             for k, v in estado.items():
                 st.session_state[k] = v
+
+            # ✅ Garante que o log_monitoramento sempre exista e venha da nuvem
+            if "log_monitoramento" not in st.session_state:
+                st.session_state["log_monitoramento"] = []
+            else:
+                logs = st.session_state["log_monitoramento"]
+                if isinstance(logs, list):
+                    # mantém só últimas 500 linhas
+                    st.session_state["log_monitoramento"] = logs[-500:]
+                else:
+                    st.session_state["log_monitoramento"] = []
+
             origem = "☁️ Supabase"
-            st.sidebar.success("✅ Estado carregado da nuvem!")
+            st.sidebar.success("✅ Estado carregado da nuvem (com logs atualizados).")
         else:
             st.sidebar.info("ℹ️ Nenhum estado remoto encontrado.")
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
+
     st.session_state["origem_estado"] = origem
     st.session_state["__carregado_ok__"] = (origem == "☁️ Supabase")
+
 
 # -----------------------------
 # SALVAR ESTADO (DELETE + INSERT)
