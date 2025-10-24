@@ -39,7 +39,7 @@ PERSIST_DEBOUNCE_SECONDS = 60
 SUPABASE_URL = st.secrets["supabase_url_curto"]
 SUPABASE_KEY = st.secrets["supabase_key_curto"]
 TABLE = "kv_state_curto"
-STATE_KEY = "curto"  # ✅ alinha com o robô da nuvem
+STATE_KEY = "curto_przo_v1"
 
 LOCAL_STATE_FILE = "session_data/state_curto.json"
 
