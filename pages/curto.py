@@ -302,6 +302,35 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
+# -----------------------------
+# BOTÃO: LIMPAR TABELA SUPABASE
+# -----------------------------
+def limpar_tabela_supabase():
+    """
+    Apaga todos os dados da chave curto_przo_v1 na tabela kv_state_curto (Supabase).
+    Mantém a estrutura da linha, mas zera o campo v['ativos'].
+    """
+    try:
+        url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}"
+        payload = {"v": {"ativos": []}}
+        r = requests.patch(url, headers=_sb_headers(), json=payload, timeout=15)
+        r.raise_for_status()
+        return True, None
+    except Exception as e:
+        return False, str(e)
+
+if st.sidebar.button("🧹 Limpar Tabela (Supabase)"):
+    st.sidebar.warning("Apagando todos os ativos da tabela...")
+    ok, erro = limpar_tabela_supabase()
+    if ok:
+        st.sidebar.success("✅ Tabela limpa com sucesso na Supabase!")
+        st.session_state.log_monitoramento.append(
+            f"{agora_lx().strftime('%H:%M:%S')} | LIMPAR TABELA Supabase executado com sucesso."
+        )
+    else:
+        st.sidebar.error(f"❌ Falha ao limpar tabela: {erro}")
+
+
 # Teste manual (não interfere no robô da nuvem)
 async def testar_telegram():
     tok = st.secrets.get("telegram_token", "")
