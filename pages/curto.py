@@ -318,13 +318,16 @@ def notificar_preco_alvo_alcancado_curto(ticker, preco_alvo, preco_atual, operac
     chat_id = st.secrets.get("telegram_chat_id_curto", "")
 
     # --- Envio centralizado (função já existente no seu código) ---
-    try:
-        enviar_notificacao_curto(destinatario, assunto, msg_email_html, remetente, senha, token_tg, chat_id, msg_telegram)
-        st.session_state.log_monitoramento.append(f"📤 Alerta enviado: {tk_sem_ext} ({msg_op})")
-    except Exception as e:
-        st.session_state.log_monitoramento.append(f"⚠️ Erro no envio de alerta: {e}")
+    # --- trecho dentro da função notificar_preco_alvo_alcancado_curto ---
+    # try:
+    #     # 🔕 Envio desativado - o robô da nuvem já faz isso automaticamente.
+    #     enviar_notificacao_curto(destinatario, assunto, msg_email_html, remetente, senha, token_tg, chat_id, msg_telegram)
+    #     st.session_state.log_monitoramento.append(f"📤 Alerta enviado: {tk_sem_ext} ({msg_op})")
+    # except Exception as e:
+    #     st.session_state.log_monitoramento.append(f"⚠️ Erro no envio de alerta: {e}")
 
-    return f"💥 ALERTA de {msg_op} em {tk_sem_ext} enviado com sucesso!"
+    st.session_state.log_monitoramento.append(f"🔕 Envio de alerta desativado localmente (gerido pela nuvem).")
+
 
 
 def formatar_mensagem_alerta(ticker_symbol, preco_alvo, preco_atual, operacao):
@@ -742,22 +745,16 @@ else:
                     salvar_estado_duravel(force=True)
 
                 # 🚀 Disparo de alerta quando atinge o tempo máximo
+                # --- dentro do loop principal (onde o tempo é verificado) ---
                 if (
                     st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
                     and st.session_state.status.get(t) != "🚀 Disparado"
                 ):
-                    st.session_state.status[t] = "🚀 Disparado"
-                    alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
-                    st.warning(alerta_msg)
-                    st.session_state.historico_alertas.append({
-                        "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
-                        "ticker": t,
-                        "operacao": operacao_atv,
-                        "preco_alvo": preco_alvo,
-                        "preco_atual": preco_atual
-                    })
-                    st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
-                    tickers_para_remover.append(t)
+                    # 🚫 Desativado: envio e remoção delegados ao robô da nuvem
+                    st.session_state.status[t] = "🚀 Disparado (aguardando robô da nuvem)"
+                    st.session_state.log_monitoramento.append(
+                        f"🔕 {t} atingiu tempo máximo - envio e remoção delegados ao robô da nuvem."
+                    )
                     salvar_estado_duravel(force=True)
 
             else:
