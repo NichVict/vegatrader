@@ -1,8 +1,9 @@
 # CURTO.PY - ENVIO DE ORDENS
 
+
 # -*- coding: utf-8 -*-
 import streamlit as st
-# from yahooquery import Ticker  # ❌ removido: origem dos dados é a nuvem
+from yahooquery import Ticker
 import datetime
 import smtplib
 from email.mime.text import MIMEText
@@ -28,8 +29,8 @@ import time
 st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
 
 TZ = ZoneInfo("Europe/Lisbon")
-HORARIO_INICIO_PREGAO = datetime.time(3, 0, 0)
-HORARIO_FIM_PREGAO    = datetime.time(23, 59, 0)
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
+HORARIO_FIM_PREGAO    = datetime.time(21, 0, 0)
 
 INTERVALO_VERIFICACAO = 300
 TEMPO_ACUMULADO_MAXIMO = 1500
@@ -49,6 +50,7 @@ SUPABASE_KEY = st.secrets["supabase_key_curto"]
 TABLE = "kv_state_curto"
 STATE_KEY = "curto_przo_v1"
 LOCAL_STATE_FILE = "session_data/state_curto.json"  # fallback local
+
 
 def agora_lx():
     return datetime.datetime.now(TZ)
@@ -130,12 +132,6 @@ def carregar_estado_duravel():
         r = requests.get(url, headers=headers, timeout=15)
         if r.status_code == 200 and r.json():
             estado = r.json()[0]["v"]
-            # v pode vir como jsonb (dict) ou string JSON
-            if isinstance(estado, str):
-                try:
-                    estado = json.loads(estado)
-                except Exception:
-                    estado = {}
             for k, v in estado.items():
                 if k == "precos_historicos":
                     precos_reconv = {}
@@ -183,13 +179,14 @@ def carregar_estado_duravel():
         except Exception as e:
             st.sidebar.error(f"Erro no fallback local: {e}")
 
-    # 🔧 Consistência pós-carregamento (mantém compatibilidade da UI)
+    # 🔧 Consistência pós-carregamento (se havia tempo acumulado sem timestamp)
     for t in st.session_state.get("tempo_acumulado", {}):
         if st.session_state.tempo_acumulado.get(t, 0) > 0 and not st.session_state.ultimo_update_tempo.get(t):
             st.session_state.ultimo_update_tempo[t] = agora_lx().isoformat()
 
     st.session_state["origem_estado"] = origem
     st.session_state["__carregado_ok__"] = (origem in ("☁️ Supabase", "📁 Local"))
+
 
 def apagar_estado_remoto():
     headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
@@ -204,7 +201,7 @@ def apagar_estado_remoto():
     except Exception as e:
         st.session_state.log_monitoramento.append(f"{agora_lx().strftime('%H:%M:%S')} | DEBUG: apagar_estado_remoto erro = {e}")
         st.sidebar.error(f"Erro ao apagar estado remoto: {e}")
-
+        
 def ensure_color_map():
     if "ticker_colors" not in st.session_state:
         st.session_state.ticker_colors = {}
@@ -246,6 +243,7 @@ def enviar_notificacao_curto(dest, assunto, corpo_email_html, rem, senha, tok_tg
     # --- E-mail (em HTML) ---
     if senha and dest:
         try:
+            # Se o corpo não for HTML, envia como texto simples (compatibilidade)
             mensagem = MIMEMultipart()
             mensagem["From"] = rem
             mensagem["To"] = dest
@@ -284,6 +282,21 @@ def enviar_notificacao_curto(dest, assunto, corpo_email_html, rem, senha, tok_tg
 
     asyncio.run(send_tg())
 
+
+@st.cache_data(ttl=5)
+@retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
+       retry=retry_if_exception_type(requests.exceptions.HTTPError))
+def obter_preco_atual(ticker_symbol):
+    tk = Ticker(ticker_symbol)
+    try:
+        p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
+        if p is not None:
+            return float(p)
+    except Exception:
+        pass
+    preco_atual = tk.history(period="1d")["close"].iloc[-1]
+    return float(preco_atual)
+
 def notificar_preco_alvo_alcancado_curto(ticker, preco_alvo, preco_atual, operacao):
     """
     Gera e envia alertas (Telegram + e-mail) com template visual e compliance.
@@ -304,7 +317,7 @@ def notificar_preco_alvo_alcancado_curto(ticker, preco_alvo, preco_atual, operac
     token_tg = st.secrets.get("telegram_token", "")
     chat_id = st.secrets.get("telegram_chat_id_curto", "")
 
-    # --- Envio centralizado ---
+    # --- Envio centralizado (função já existente no seu código) ---
     try:
         enviar_notificacao_curto(destinatario, assunto, msg_email_html, remetente, senha, token_tg, chat_id, msg_telegram)
         st.session_state.log_monitoramento.append(f"📤 Alerta enviado: {tk_sem_ext} ({msg_op})")
@@ -312,6 +325,7 @@ def notificar_preco_alvo_alcancado_curto(ticker, preco_alvo, preco_atual, operac
         st.session_state.log_monitoramento.append(f"⚠️ Erro no envio de alerta: {e}")
 
     return f"💥 ALERTA de {msg_op} em {tk_sem_ext} enviado com sucesso!"
+
 
 def formatar_mensagem_alerta(ticker_symbol, preco_alvo, preco_atual, operacao):
     """
@@ -362,6 +376,7 @@ A Lista de Ações do 1milhao Invest é devidamente REGISTRADA.
 
     return mensagem_telegram, corpo_email_html
 
+
 async def testar_telegram():
     tok = st.secrets.get("telegram_token", "")
     chat = st.secrets.get("telegram_chat_id_curto", "")
@@ -390,7 +405,7 @@ def segundos_ate_abertura(dt):
         return 0, abre
 
 def notificar_abertura_pregao_uma_vez_por_dia():
-    """(mantido p/ compatibilidade visual; sem envio automático de loop)"""
+    """Envia notificação de pregão aberto no máximo uma vez por dia."""
     now = agora_lx()
     data_atual = now.date()
     ultima_data_envio = st.session_state.get("ultima_data_abertura_enviada")
@@ -434,7 +449,7 @@ if st.sidebar.button("🧹 Limpar Tabela"):
         st.session_state.clear()
         inicializar_estado()
 
-        # 4) Bloqueia aviso de 'Pregão Aberto' neste dia
+        # 4) 🔒 Bloqueia aviso de 'Pregão Aberto' neste dia (não enviar após reset)
         st.session_state["ultima_data_abertura_enviada"] = str(agora_lx().date())
 
         # 5) Log e persistência
@@ -446,11 +461,12 @@ if st.sidebar.button("🧹 Limpar Tabela"):
     except Exception as e:
         st.sidebar.error(f"Erro ao apagar estado: {e}")
 
+
+
 if st.sidebar.button("📤 Testar Envio Telegram"):
     st.sidebar.info("Enviando mensagem de teste...")
     ok, erro = asyncio.run(testar_telegram())
     st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
-
 # -----------------------------------------
 # TESTE COMPLETO DE ALERTA (com layout e compliance)
 # -----------------------------------------
@@ -515,6 +531,7 @@ if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
     salvar_estado_duravel(force=True)
     st.sidebar.success("Marcadores e históricos antigos limpos!")
 
+
 tickers_existentes = sorted(set(a["ticker"] for a in st.session_state.ativos)) if st.session_state.ativos else []
 selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_existentes, default=[])
 
@@ -546,18 +563,29 @@ if st.button("➕ Adicionar ativo"):
     if not ticker:
         st.error("Digite um ticker válido.")
     else:
-        # ✅ Inserção sem coleta de preço externo: apenas grava na nuvem
-        ativo = {"ticker": ticker, "operacao": operacao, "preco": float(preco)}
+        ativo = {"ticker": ticker, "operacao": operacao, "preco": preco}
         st.session_state.ativos.append(ativo)
-        st.session_state.tempo_acumulado[ticker] = st.session_state.tempo_acumulado.get(ticker, 0)
-        st.session_state.em_contagem[ticker] = st.session_state.em_contagem.get(ticker, False)
-        st.session_state.status[ticker] = st.session_state.status.get(ticker, "🟢 Monitorando")
-        st.session_state.precos_historicos.setdefault(ticker, [])
-        st.session_state.ultimo_update_tempo[ticker] = st.session_state.ultimo_update_tempo.get(ticker, None)
-
+        st.session_state.tempo_acumulado[ticker] = 0
+        st.session_state.em_contagem[ticker] = False
+        st.session_state.status[ticker] = "🟢 Monitorando"
+        st.session_state.precos_historicos[ticker] = []
+        st.session_state.ultimo_update_tempo[ticker] = None
+        try:
+            preco_inicial = obter_preco_atual(f"{ticker}.SA")
+            if preco_inicial != "-":
+                st.session_state.precos_historicos[ticker].append((now, preco_inicial))
+                time.sleep(1)
+                preco_seg = obter_preco_atual(f"{ticker}.SA")
+                if preco_seg != "-":
+                    st.session_state.precos_historicos[ticker].append((agora_lx(), preco_seg))
+                st.success(f"Ativo {ticker} adicionado e gráfico inicializado.")
+            else:
+                st.warning(f"Ativo {ticker} adicionado, sem preço inicial.")
+        except Exception as e:
+            st.error(f"Erro ao coletar preço de {ticker}: {e}")
         salvar_estado_duravel(force=True)
-        st.success(f"Ativo {ticker} adicionado e salvo na nuvem.")
-
+# -----------------------------
+# STATUS + GRÁFICO + LOG
 # -----------------------------
 # STATUS + GRÁFICO + LOG
 # -----------------------------
@@ -567,77 +595,233 @@ grafico = st.empty()
 st.subheader("🕒 Monitoramento")
 log_container = st.empty()
 
-# ----- Renderização de Tabela (sem coleta de preço em tempo real) -----
-if st.session_state.ativos:
-    data = []
-    for ativo in st.session_state.ativos:
-        t = ativo["ticker"]
-        preco_alvo = ativo["preco"]
-        oper = ativo["operacao"].upper()
-        tempo = st.session_state.tempo_acumulado.get(t, 0)
-        minutos = tempo / 60 if isinstance(tempo, (int, float)) else 0
-        preco_atual = "-"  # sem coleta de preço no modo leitura
-        data.append({
-            "Ticker": t,
-            "Operação": oper,
-            "Preço Alvo": f"R$ {preco_alvo:.2f}",
-            "Preço Atual": preco_atual,
-            "Status": st.session_state.status.get(t, "🟢 Monitorando"),
-            "Tempo Acumulado": f"{int(minutos)} min"
-        })
-    tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
+# -----------------------------
+# -----------------------------
+# LOOP DE MONITORAMENTO (VERSÃO CORRIGIDA + DEBUG)
+# -----------------------------
+sleep_segundos = 60
+if st.session_state.pausado:
+    st.info("⏸️ Monitoramento pausado.")
 else:
-    tabela_status.info("Nenhum ativo monitorado no momento.")
+    now = agora_lx()
+    # 🧩 Exibe a tabela mesmo fora do pregão (mantém última atualização)
+    if st.session_state.ativos:
+        data = []
+        now = agora_lx()
+        for ativo in st.session_state.ativos:
+            t = ativo["ticker"]
+            preco_alvo = ativo["preco"]
+            operacao = ativo["operacao"].upper()
+            tempo = st.session_state.tempo_acumulado.get(t, 0)
+            minutos = tempo / 60
+            preco_atual = "-"
+            try:
+                preco_atual = obter_preco_atual(f"{t}.SA")
+            except Exception:
+                pass
+    
+            data.append({
+                "Ticker": t,
+                "Operação": operacao,
+                "Preço Alvo": f"R$ {preco_alvo:.2f}",
+                "Preço Atual": f"R$ {preco_atual:.2f}" if preco_atual != "-" else "-",
+                "Status": st.session_state.status.get(t, "🟢 Monitorando"),
+                "Tempo Acumulado": f"{int(minutos)} min"
+            })
+    
+        tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
+    else:
+        tabela_status.info("Nenhum ativo monitorado no momento.")
 
-# (mantém bloco de pregão fechado visualmente)
-if not dentro_pregao(now):
-    st.session_state["avisou_abertura_pregao"] = False
-    faltam, prox_abertura = segundos_ate_abertura(now)
-    components.html(f"""
-    <div style="background:#0b1220;border:1px solid #1f2937;
-         border-radius:10px;padding:12px;margin-top:10px;
-         color:white;">
-        ⏸️ Pregão fechado. Reabre em 
-        <b style="color:#60a5fa;">{datetime.timedelta(seconds=faltam)}</b>
-        (às <span style="color:#60a5fa;">{prox_abertura.strftime('%H:%M')}</span>).
-    </div>""", height=70)
+    if dentro_pregao(now):
+        notificar_abertura_pregao_uma_vez_por_dia()
+        data = []
+        for ativo in st.session_state.ativos:
+            t = ativo["ticker"]
+            preco_atual = "-"
+            try:
+                preco_atual = obter_preco_atual(f"{t}.SA")
+            except Exception as e:
+                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro {t}: {e}")
+            if preco_atual != "-":
+                st.session_state.precos_historicos.setdefault(t, []).append((now, preco_atual))
+
+            tempo = st.session_state.tempo_acumulado.get(t, 0)
+            minutos = tempo / 60
+            data.append({
+                "Ticker": t,
+                "Operação": ativo["operacao"].upper(),
+                "Preço Alvo": f"R$ {ativo['preco']:.2f}",
+                "Preço Atual": f"R$ {preco_atual:.2f}" if preco_atual != "-" else "-",
+                "Status": st.session_state.status.get(t, "🟢 Monitorando"),
+                "Tempo Acumulado": f"{int(minutos)} min"
+            })
+        if data:
+            tabela_status.dataframe(pd.DataFrame(data), use_container_width=True, height=220)
+
+        tickers_para_remover = []
+        for ativo in st.session_state.ativos:
+            t = ativo["ticker"]
+            preco_alvo = ativo["preco"]
+            operacao_atv = ativo["operacao"]
+            tk_full = f"{t}.SA"
+
+            try:
+                preco_atual = obter_preco_atual(tk_full)
+            except Exception as e:
+                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | Erro {t}: {e}")
+                continue
+
+            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | {tk_full}: R$ {preco_atual:.2f}")
+
+            condicao = (
+                (operacao_atv == "compra" and preco_atual >= preco_alvo) or
+                (operacao_atv == "venda" and preco_atual <= preco_alvo)
+            )
+
+            # -----------------------------
+            # BLOCO PRINCIPAL DE CONTAGEM (CORRIGIDO + DEBUG)
+            # -----------------------------
+            if condicao:
+                st.session_state.status[t] = "🟡 Em contagem"
+
+                if not st.session_state.em_contagem.get(t, False):
+                    # Inicia contagem
+                    st.session_state.em_contagem[t] = True
+                    if not st.session_state.ultimo_update_tempo.get(t) and st.session_state.tempo_acumulado.get(t, 0) == 0:
+                        st.session_state.tempo_acumulado[t] = 0
+                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
+                    st.session_state.log_monitoramento.append(
+                        f"⚠️ {t} atingiu o alvo ({preco_alvo:.2f}). Iniciando/retomando contagem..."
+                    )
+                    salvar_estado_duravel(force=True)
+
+                else:
+                    # Continua contagem
+                    ultimo = st.session_state.ultimo_update_tempo.get(t)
+                    st.session_state.log_monitoramento.append(
+                        f"🐞 DEBUG {t}: ultimo_update_tempo bruto = {ultimo}"
+                    )
+
+                    # 🕒 Conversão robusta
+                    if ultimo:
+                        try:
+                            if isinstance(ultimo, str):
+                                dt_ultimo = datetime.datetime.fromisoformat(ultimo)
+                                if dt_ultimo.tzinfo is None:
+                                    dt_ultimo = dt_ultimo.replace(tzinfo=TZ)
+                            else:
+                                dt_ultimo = ultimo
+                        except Exception as e:
+                            st.session_state.log_monitoramento.append(
+                                f"🐞 DEBUG {t}: erro convertendo ultimo_update_tempo → {e}"
+                            )
+                            dt_ultimo = now
+                    else:
+                        dt_ultimo = now
+
+                    
+                   
+                    # 🧮 Calcula delta real entre o último update e agora
+                    delta = (now - dt_ultimo).total_seconds()
+                    
+                    # Proteção mínima: se der delta negativo, zera (ex: relógio do servidor muda)
+                    if delta < 0:
+                        delta = 0
+                    
+                    # Atualiza acumulador e timestamp
+                    st.session_state.tempo_acumulado[t] = float(st.session_state.tempo_acumulado.get(t, 0)) + float(delta)
+                    st.session_state.ultimo_update_tempo[t] = now.isoformat()
+                    
+                    # Loga o incremento real
+                    st.session_state.log_monitoramento.append(
+                        f"⌛ {t}: {int(st.session_state.tempo_acumulado[t])}s acumulados (+{int(delta)}s)"
+                    )
+                    
+                    # Salva imediatamente o estado
+                    salvar_estado_duravel(force=True)
+
+                # 🚀 Disparo de alerta quando atinge o tempo máximo
+                if (
+                    st.session_state.tempo_acumulado[t] >= TEMPO_ACUMULADO_MAXIMO
+                    and st.session_state.status.get(t) != "🚀 Disparado"
+                ):
+                    st.session_state.status[t] = "🚀 Disparado"
+                    alerta_msg = notificar_preco_alvo_alcancado_curto(tk_full, preco_alvo, preco_atual, operacao_atv)
+                    st.warning(alerta_msg)
+                    st.session_state.historico_alertas.append({
+                        "hora": now.strftime("%Y-%m-%d %H:%M:%S"),
+                        "ticker": t,
+                        "operacao": operacao_atv,
+                        "preco_alvo": preco_alvo,
+                        "preco_atual": preco_atual
+                    })
+                    st.session_state.disparos.setdefault(t, []).append((now, preco_atual))
+                    tickers_para_remover.append(t)
+                    salvar_estado_duravel(force=True)
+
+            else:
+                # Saiu da zona de preço
+                if st.session_state.em_contagem.get(t, False):
+                    st.session_state.em_contagem[t] = False
+                    st.session_state.tempo_acumulado[t] = 0
+                    st.session_state.status[t] = "🔴 Fora da zona"
+                    st.session_state.ultimo_update_tempo[t] = None
+                    st.session_state.log_monitoramento.append(f"❌ {t} saiu da zona de preço alvo.")
+                    salvar_estado_duravel(force=True)
+
+        if tickers_para_remover:
+            st.session_state.ativos = [a for a in st.session_state.ativos if a["ticker"] not in tickers_para_remover]
+            for t in tickers_para_remover:
+                st.session_state.tempo_acumulado.pop(t, None)
+                st.session_state.em_contagem.pop(t, None)
+                st.session_state.status[t] = "✅ Ativado (removido)"
+                st.session_state.ultimo_update_tempo.pop(t, None)
+            st.session_state.log_monitoramento.append(
+                f"{now.strftime('%H:%M:%S')} | 🧹 Removidos após ativação: {', '.join(tickers_para_remover)}"
+            )
+            salvar_estado_duravel(force=True)
+        sleep_segundos = INTERVALO_VERIFICACAO
+    else:
+        st.session_state["avisou_abertura_pregao"] = False
+        faltam, prox_abertura = segundos_ate_abertura(now)
+        components.html(f"""
+        <div style="background:#0b1220;border:1px solid #1f2937;
+             border-radius:10px;padding:12px;margin-top:10px;
+             color:white;">
+            ⏸️ Pregão fechado. Reabre em 
+            <b style="color:#60a5fa;">{datetime.timedelta(seconds=faltam)}</b>
+            (às <span style="color:#60a5fa;">{prox_abertura.strftime('%H:%M')}</span>).
+        </div>""", height=70)
+
+        try:
+            APP_URL = "https://curtoprazo.streamlit.app"
+            ultimo_ping = st.session_state.get("ultimo_ping_keepalive")
+            if isinstance(ultimo_ping, str):
+                ultimo_ping = datetime.datetime.fromisoformat(ultimo_ping)
+            if not ultimo_ping or (now - ultimo_ping).total_seconds() > 900:
+                requests.get(APP_URL, timeout=5)
+                st.session_state["ultimo_ping_keepalive"] = now.isoformat()
+                st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | 🔄 Hibernado e aguardando próximo pregão")
+                salvar_estado_duravel()
+        except Exception as e:
+            st.session_state.log_monitoramento.append(f"{now.strftime('%H:%M:%S')} | ⚠️ Erro keep-alive: {e}")
+        sleep_segundos = 300
 
 # -----------------------------
-# GRÁFICO FINAL (com fallback em historico_alertas)
+# GRÁFICO FINAL
 # -----------------------------
 fig = go.Figure()
-tem_series = False
-
-# Séries reais
 for t, dados in st.session_state.precos_historicos.items():
     if len(dados) > 0:
         xs, ys = zip(*dados)
         fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines+markers", name=t,
                                  line=dict(color=st.session_state.ticker_colors.get(t, "#3b82f6"), width=2)))
-        tem_series = True
-
-# Marcadores de disparo
 for t, pontos in st.session_state.disparos.items():
     if pontos:
         xs, ys = zip(*pontos)
         fig.add_trace(go.Scatter(x=xs, y=ys, mode="markers", name=f"Ativação {t}",
                                  marker=dict(symbol="star", size=12, line=dict(width=2, color="white"))))
-        tem_series = True
-
-# Fallback usando histórico de alertas (tudo)
-if not tem_series and st.session_state.historico_alertas:
-    df_alertas = pd.DataFrame(st.session_state.historico_alertas)
-    if not df_alertas.empty:
-        df_alertas["hora"] = pd.to_datetime(df_alertas["hora"], errors="coerce")
-        for tkr, df_tkr in df_alertas.groupby("ticker"):
-            xs = df_tkr["hora"]
-            ys = df_tkr["preco_atual"]
-            fig.add_trace(go.Scatter(
-                x=xs, y=ys, mode="lines+markers", name=f"{tkr} (alertas)",
-                line=dict(dash="dot")
-            ))
-        tem_series = True
-
 fig.update_layout(title="📉 Evolução dos Preços", template="plotly_dark")
 grafico.plotly_chart(fig, use_container_width=True)
 
@@ -647,8 +831,8 @@ grafico.plotly_chart(fig, use_container_width=True)
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
     salvar_estado_duravel()
-
 # ---------- LOG: cor por ticker + box rolável + ordem decrescente ----------
+
 PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
@@ -678,17 +862,8 @@ def extract_ticker(line):
 def render_log_html(lines, selected_tickers=None, max_lines=250):
     """Renderiza o log no mesmo estilo visual do clube.py (cores, badges, rolagem)."""
     if not lines:
-        # Fallback: gera a partir de historico_alertas
-        if st.session_state.historico_alertas:
-            lines = [
-                f"{h['hora']} | ALERTA {h['operacao'].upper()} | {h['ticker']} "
-                f"alvo R$ {h['preco_alvo']:.2f} | atual R$ {h['preco_atual']:.2f}"
-                for h in st.session_state.historico_alertas
-            ]
-        else:
-            st.write("—")
-            return
-
+        st.write("—")
+        return
     subset = lines[-max_lines:][::-1]
     if selected_tickers:
         subset = [l for l in subset if extract_ticker(l) in selected_tickers]
@@ -744,6 +919,8 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
 
     st.markdown("\n".join(html), unsafe_allow_html=True)
 
+
+
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
 
@@ -766,5 +943,6 @@ with st.expander("🧪 Debug / Backup do estado (JSON)", expanded=False):
     except Exception as e:
         st.error(f"Erro ao exibir JSON: {e}")
 
-refresh_ms = 300_000  # atualização visual a cada 5 minutos (não afeta lógica)
+
+refresh_ms = 300_000  # atualização visual a cada 50 segundos (não afeta lógica de tempo)
 st_autorefresh(interval=refresh_ms, limit=None, key="curto-refresh")
