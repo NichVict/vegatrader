@@ -642,14 +642,8 @@ selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_exis
 # INTERFACE PRINCIPAL
 # -----------------------------
 now = agora_lx()
-st.markdown(
-    """
-    <h1 style="font-size: 32px; color: white; font-weight: 700;">
-        🤖 CURTO PRAZO - COMPRA E VENDA
-    </h1>
-    """,
-    unsafe_allow_html=True
-)
+st.title("📡 CURTO PRAZO - COMPRA E VENDA")
+
 
 
 origem = st.session_state.get("origem_estado", "❓")
