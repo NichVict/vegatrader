@@ -643,8 +643,7 @@ selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", tickers_exis
 # -----------------------------
 now = agora_lx()
 st.title("📡 CURTO PRAZO - COMPRA E VENDA")
-
-
+st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 
 origem = st.session_state.get("origem_estado", "❓")
 st.markdown({
@@ -652,9 +651,16 @@ st.markdown({
     "📁 Local": "🟠 **Origem dos dados:** Local",
 }.get(origem, "⚪ **Origem dos dados:** Desconhecida"))
 
+st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
+
 st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
            f"{'🟩 Dentro do pregão' if dentro_pregao(now) else '🟥 Fora do pregão'}")
+st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
+
 st.write("Robô automático da **CARTEIRA CURTO PRAZO** — dispara alerta após 25 min na zona de preço alvo.")
+
+st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
+        
 
 col1, col2, col3 = st.columns(3)
 with col1:
