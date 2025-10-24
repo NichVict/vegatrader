@@ -52,6 +52,20 @@ def agora_lx():
     return datetime.datetime.now(TZ)
 
 # -----------------------------
+# UTILITÁRIOS DE TICKER
+# -----------------------------
+def normalizar_ticker(tk: str) -> str:
+    """Garante que o ticker tenha formato PADRÃO (com .SA)."""
+    tk = tk.strip().upper()
+    if "." not in tk:
+        tk = f"{tk}.SA"
+    return tk
+
+def mostrar_ticker(tk: str) -> str:
+    """Remove o sufixo .SA apenas para exibição."""
+    return tk.replace(".SA", "")
+
+# -----------------------------
 # ESTADO INICIAL
 # -----------------------------
 def inicializar_estado():
@@ -103,7 +117,6 @@ def carregar_estado_duravel():
 
     st.session_state["origem_estado"] = origem
     st.session_state["__carregado_ok__"] = (origem == "☁️ Supabase")
-
 
 # -----------------------------
 # SALVAR ESTADO (DELETE + INSERT)
@@ -187,7 +200,7 @@ def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
         s.send_message(msg)
 
 def formatar_mensagem_alerta(ticker, preco_alvo, preco_atual, operacao):
-    ticker_simples = ticker.replace(".SA", "")
+    ticker_simples = mostrar_ticker(ticker)
     tipo = "VENDA A DESCOBERTO" if operacao == "venda" else "COMPRA"
     msg_tg = f"""
 💥 <b>ALERTA DE {tipo.upper()} ATIVADA!</b>\n
@@ -266,7 +279,7 @@ if st.sidebar.button("📩 Testar mensagem"):
         msg_tg, msg_email = formatar_mensagem_alerta(tkr, preco_alvo, preco_atual, oper)
         enviar_notificacao_curto(
             st.secrets.get("email_recipient_curto", ""),
-            f"ALERTA CURTO PRAZO: {oper.upper()} em {tkr.replace('.SA','')}",
+            f"ALERTA CURTO PRAZO: {oper.upper()} em {mostrar_ticker(tkr)}",
             msg_email,
             st.secrets.get("email_sender", ""),
             st.secrets.get("gmail_app_password", ""),
@@ -278,7 +291,6 @@ if st.sidebar.button("📩 Testar mensagem"):
     except Exception as e:
         st.sidebar.error(f"Erro: {e}")
 
-# Botões de limpeza (sem exibir histórico em lugar nenhum)
 if st.sidebar.button("🧹 Limpar Histórico"):
     st.session_state["historico_alertas"] = []
     salvar_estado_duravel(force=True)
@@ -314,12 +326,13 @@ with col3:
 
 if st.button("➕ Adicionar ativo"):
     if ticker:
+        tk_norm = normalizar_ticker(ticker)
         novos = st.session_state.get("ativos", [])
-        if not any(a["ticker"] == ticker for a in novos):
-            novos.append({"ticker": ticker, "operacao": operacao, "preco": float(preco)})
+        if not any(a["ticker"] == tk_norm for a in novos):
+            novos.append({"ticker": tk_norm, "operacao": operacao, "preco": float(preco)})
             st.session_state["ativos"] = novos
             salvar_estado_duravel(force=True)
-            st.success(f"{ticker} enviado à nuvem.")
+            st.success(f"{tk_norm} enviado à nuvem.")
         else:
             st.warning("Ticker já adicionado.")
 
@@ -338,7 +351,7 @@ for ativo in st.session_state.get("ativos", []):
     raw = str(st.session_state.get("status", {}).get(t, "")).lower()
     status_fmt = status_map.get(raw, "⏳ Aguardando robô da nuvem")
     data.append({
-        "Ticker": t,
+        "Ticker": mostrar_ticker(t),
         "Operação": ativo["operacao"].upper(),
         "Preço Alvo": f"R$ {float(ativo['preco']):.2f}",
         "Status": status_fmt
@@ -356,7 +369,7 @@ ativos_set = {a["ticker"] for a in st.session_state.get("ativos", [])}
 fig = go.Figure()
 for t, dados in st.session_state.get("precos_historicos", {}).items():
     if not dados or t not in ativos_set:
-        continue  # ✅ filtra fantasmas
+        continue
     xs, ys = [], []
     for dtv, pv in dados:
         try:
@@ -364,7 +377,7 @@ for t, dados in st.session_state.get("precos_historicos", {}).items():
         except Exception:
             xs.append(dtv)
         ys.append(pv)
-    fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines+markers", name=t))
+    fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines+markers", name=mostrar_ticker(t)))
 fig.update_layout(template="plotly_dark")
 st.plotly_chart(fig, use_container_width=True)
 
@@ -375,8 +388,14 @@ st.subheader("🕒 Monitoramento (Robô da Nuvem)")
 log_lines = st.session_state.get("log_monitoramento", []) or []
 
 # Filtro por ativos (mantém somente linhas que mencionam algum ticker ativo)
-if ativos_set:
-    pat = re.compile(r"\b(" + "|".join(re.escape(t) for t in sorted(ativos_set)) + r")\b")
+ativos_fmt = set()
+for a in st.session_state.get("ativos", []):
+    tk = a["ticker"].upper()
+    ativos_fmt.add(tk)
+    ativos_fmt.add(tk.replace(".SA", ""))
+
+if ativos_fmt:
+    pat = re.compile(r"\b(" + "|".join(re.escape(t) for t in sorted(ativos_fmt)) + r")\b")
     log_lines = [l for l in log_lines if pat.search(l)]
 
 # Card estilizado
@@ -391,15 +410,11 @@ css = """
 st.markdown(css, unsafe_allow_html=True)
 
 if log_lines:
-    st.markdown("<div class='log-card'>"+ "<br>".join(
+    st.markdown("<div class='log-card'>" + "<br>".join(
         f"<div class='log-line'>{l}</div>" for l in log_lines[-300:][::-1]
     ) + "</div>", unsafe_allow_html=True)
 else:
     st.info("Sem entradas (ou nenhum log relacionado aos tickers atuais).")
-
-# -----------------------------
-# (Sem histórico de alertas renderizado)
-# -----------------------------
 
 # -----------------------------
 # AUTOREFRESH
