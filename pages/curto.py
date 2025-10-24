@@ -698,6 +698,11 @@ grafico = st.empty()
 st.subheader("🕒 Monitoramento")
 log_container = st.empty()
 
+# 🔧 Evita faixas 'None' no layout (placeholders inicializados vazios)
+tabela_status.empty()
+grafico.empty()
+log_container.empty()
+
 # -----------------------------
 # -----------------------------
 # LOOP DE MONITORAMENTO (VERSÃO CORRIGIDA + DEBUG)
