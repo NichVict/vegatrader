@@ -15,7 +15,6 @@ from zoneinfo import ZoneInfo
 import json
 import os
 from streamlit_autorefresh import st_autorefresh
-import time
 import re
 
 # -----------------------------
@@ -23,7 +22,6 @@ import re
 # -----------------------------
 st.set_page_config(page_title="CURTO PRAZO - COMPRA E VENDA", layout="wide")
 
-# 🔥 Limpa caches de dados e recursos (evita resquícios antigos)
 try:
     st.cache_data.clear()
     st.cache_resource.clear()
@@ -31,11 +29,9 @@ except Exception:
     pass
 
 # -----------------------------
-# CONSTANTES E CONFIGURAÇÕES
+# CONSTANTES
 # -----------------------------
 TZ = ZoneInfo("Europe/Lisbon")
-PERSIST_DEBOUNCE_SECONDS = 60
-
 SUPABASE_URL = st.secrets["supabase_url_curto"]
 SUPABASE_KEY = st.secrets["supabase_key_curto"]
 TABLE = "kv_state_curto"
@@ -43,30 +39,27 @@ STATE_KEY = "curto_przo_v1"
 
 LOCAL_STATE_FILE = "session_data/state_curto.json"
 
-PALETTE = [
-    "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
-    "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
-]
-
 def agora_lx():
     return datetime.datetime.now(TZ)
 
 # -----------------------------
-# UTILITÁRIOS DE TICKER
+# TICKERS – normalização e exibição
 # -----------------------------
 def normalizar_ticker(tk: str) -> str:
-    """Garante que o ticker tenha formato PADRÃO (com .SA)."""
+    """Garante formato padronizado (.SA)."""
+    if not tk:
+        return tk
     tk = tk.strip().upper()
     if "." not in tk:
         tk = f"{tk}.SA"
     return tk
 
 def mostrar_ticker(tk: str) -> str:
-    """Remove o sufixo .SA apenas para exibição."""
+    """Remove o sufixo .SA para exibição."""
     return tk.replace(".SA", "")
 
 # -----------------------------
-# ESTADO INICIAL
+# ESTADO LOCAL
 # -----------------------------
 def inicializar_estado():
     defaults = {
@@ -76,7 +69,6 @@ def inicializar_estado():
         "status": {},
         "precos_historicos": {},
         "disparos": {},
-        "__last_save_ts": None,
         "__carregado_ok__": False,
         "origem_estado": "❓"
     }
@@ -84,105 +76,71 @@ def inicializar_estado():
         st.session_state[k] = v
 
 def carregar_estado_duravel():
-    """Carrega o estado salvo na nuvem (Supabase) para a sessão."""
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}&select=v"
+    """Lê o estado atual do Supabase (tabela kv_state_curto, coluna v)."""
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Accept": "application/json"
+    }
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?select=v&k=eq.{STATE_KEY}"
     origem = "❌ Nenhum"
     try:
-        r = requests.get(url, headers=headers, timeout=15)
+        r = requests.get(url, headers=headers, timeout=10)
         if r.status_code == 200 and r.json():
-            estado = r.json()[0]["v"]
+            payload = r.json()[0]["v"]
 
-            # ✅ Atualiza todos os campos locais
-            for k, v in estado.items():
+            # Se vier como string, tenta decodificar
+            if isinstance(payload, str):
+                try:
+                    payload = json.loads(payload)
+                except Exception:
+                    payload = {}
+
+            # Normaliza tickers para padrão com .SA
+            ativos = payload.get("ativos", [])
+            for ativo in ativos:
+                ativo["ticker"] = normalizar_ticker(ativo.get("ticker", ""))
+
+            # Atualiza session_state
+            for k, v in payload.items():
                 st.session_state[k] = v
-
-            # ✅ Garante que o log_monitoramento sempre exista e venha da nuvem
-            if "log_monitoramento" not in st.session_state:
-                st.session_state["log_monitoramento"] = []
-            else:
-                logs = st.session_state["log_monitoramento"]
-                if isinstance(logs, list):
-                    # mantém só últimas 500 linhas
-                    st.session_state["log_monitoramento"] = logs[-500:]
-                else:
-                    st.session_state["log_monitoramento"] = []
-
-            origem = "☁️ Supabase"
-            st.sidebar.success("✅ Estado carregado da nuvem (com logs atualizados).")
+            st.session_state["ativos"] = ativos
+            st.session_state["origem_estado"] = "☁️ Supabase"
+            st.session_state["__carregado_ok__"] = True
+            st.sidebar.success("✅ Estado carregado da nuvem.")
         else:
-            st.sidebar.info("ℹ️ Nenhum estado remoto encontrado.")
+            st.sidebar.warning("ℹ️ Nenhum estado remoto encontrado.")
     except Exception as e:
         st.sidebar.error(f"Erro ao carregar estado remoto: {e}")
 
-    st.session_state["origem_estado"] = origem
-    st.session_state["__carregado_ok__"] = (origem == "☁️ Supabase")
-
 # -----------------------------
-# SALVAR ESTADO (DELETE + INSERT)
+# SALVAR ESTADO
 # -----------------------------
-def _persist_now():
-    """Salva o estado atual na nuvem, sobrescrevendo completamente."""
+def salvar_estado_duravel(force: bool = False):
+    """Salva o estado atual (delete + insert)."""
     snapshot = {
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
         "log_monitoramento": st.session_state.get("log_monitoramento", []),
         "status": st.session_state.get("status", {}),
         "precos_historicos": st.session_state.get("precos_historicos", {}),
-        "disparos": st.session_state.get("disparos", {}),
+        "disparos": st.session_state.get("disparos", {})
     }
-
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json",
+        "Content-Type": "application/json"
     }
-
-    # 1) apaga registro anterior (evita duplicate key)
-    try:
-        delete_url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
-        requests.delete(delete_url, headers=headers, timeout=10)
-    except Exception as e:
-        st.sidebar.warning(f"⚠️ Erro ao apagar estado anterior: {e}")
-
-    # 2) insere novamente
     payload = {"k": STATE_KEY, "v": snapshot}
-    insert_url = f"{SUPABASE_URL}/rest/v1/{TABLE}"
     try:
-        r = requests.post(insert_url, headers=headers, data=json.dumps(payload), timeout=15)
+        # Remove o registro anterior
+        requests.delete(f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}", headers=headers)
+        # Insere novamente
+        r = requests.post(f"{SUPABASE_URL}/rest/v1/{TABLE}", headers=headers, data=json.dumps(payload))
         if r.status_code not in (200, 201, 204):
             st.sidebar.error(f"Erro ao salvar estado remoto: {r.text}")
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
-
-    st.session_state["__last_save_ts"] = agora_lx().timestamp()
-
-def salvar_estado_duravel(force: bool = False):
-    if force:
-        _persist_now()
-        return
-    last = st.session_state.get("__last_save_ts")
-    now_ts = agora_lx().timestamp()
-    if not last or (now_ts - last) >= PERSIST_DEBOUNCE_SECONDS:
-        _persist_now()
-
-def apagar_estado_remoto():
-    """Apaga completamente o estado: nuvem + cache + sessão; e salva vazio."""
-    headers = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}"}
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
-    try:
-        # remoto
-        requests.delete(url, headers=headers, timeout=10)
-        # cache local
-        if os.path.exists(LOCAL_STATE_FILE):
-            os.remove(LOCAL_STATE_FILE)
-        # sessão
-        st.session_state.clear()
-        inicializar_estado()
-        salvar_estado_duravel(force=True)
-        st.sidebar.success("✅ Estado totalmente apagado (nuvem + cache + sessão).")
-    except Exception as e:
-        st.sidebar.error(f"Erro ao apagar estado remoto: {e}")
 
 # -----------------------------
 # NOTIFICAÇÕES / TESTES
@@ -190,10 +148,7 @@ def apagar_estado_remoto():
 def enviar_email(destinatario, assunto, corpo, remetente, senha_ou_token):
     msg = MIMEMultipart()
     msg["From"], msg["To"], msg["Subject"] = remetente, destinatario, assunto
-    if "<html" in corpo.lower():
-        msg.attach(MIMEText(corpo, "html"))
-    else:
-        msg.attach(MIMEText(corpo, "plain"))
+    msg.attach(MIMEText(corpo, "html" if "<html" in corpo.lower() else "plain"))
     with smtplib.SMTP("smtp.gmail.com", 587) as s:
         s.starttls()
         s.login(remetente, senha_ou_token)
@@ -260,20 +215,16 @@ carregar_estado_duravel()
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
-if st.sidebar.button("🧹 Limpar Tabela"):
-    apagar_estado_remoto()
-    st.rerun()
-
 if st.sidebar.button("📤 Testar Envio Telegram"):
-    st.sidebar.info("Enviando mensagem de teste...")
+    st.sidebar.info("Enviando teste...")
     ok, erro = asyncio.run(testar_telegram())
-    st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
+    st.sidebar.success("✅ Enviado!" if ok else f"❌ {erro}")
 
-if st.sidebar.button("📩 Testar mensagem"):
+if st.sidebar.button("📩 Testar Mensagem"):
     st.sidebar.info("Gerando alerta simulado...")
     try:
         tkr = "PETR4.SA"
-        preco_alvo = 37.50
+        preco_alvo = 37.5
         preco_atual = 37.52
         oper = "compra"
         msg_tg, msg_email = formatar_mensagem_alerta(tkr, preco_alvo, preco_atual, oper)
@@ -287,35 +238,21 @@ if st.sidebar.button("📩 Testar mensagem"):
             st.secrets.get("telegram_chat_id_curto", ""),
             msg_tg
         )
-        st.sidebar.success("✅ Mensagem de teste enviada.")
+        st.sidebar.success("✅ Mensagem enviada.")
     except Exception as e:
         st.sidebar.error(f"Erro: {e}")
 
-if st.sidebar.button("🧹 Limpar Histórico"):
-    st.session_state["historico_alertas"] = []
-    salvar_estado_duravel(force=True)
-    st.sidebar.success("Histórico limpo!")
-
-if st.sidebar.button("🧹 Limpar Log de Monitoramento"):
-    st.session_state["log_monitoramento"] = []
-    salvar_estado_duravel(force=True)
-    st.sidebar.success("Log limpo!")
-
-if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
-    st.session_state["precos_historicos"] = {}
-    st.session_state["disparos"] = {}
-    salvar_estado_duravel(force=True)
-    st.sidebar.success("Gráfico limpo!")
+if st.sidebar.button("🧹 Limpar Dados"):
+    inicializar_estado()
+    salvar_estado_duravel()
+    st.sidebar.success("🧹 Estado local e remoto limpo.")
 
 # -----------------------------
 # INTERFACE PRINCIPAL
 # -----------------------------
-now = agora_lx()
 st.title("📈 CURTO PRAZO - COMPRA E VENDA")
-origem = st.session_state.get("origem_estado", "❓")
-st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — Origem: {origem}")
+st.caption(f"Origem: {st.session_state.get('origem_estado', '❓')}")
 
-# Entrada de dados
 col1, col2, col3 = st.columns(3)
 with col1:
     ticker = st.text_input("Ticker (ex: PETR4)").upper()
@@ -327,25 +264,25 @@ with col3:
 if st.button("➕ Adicionar ativo"):
     if ticker:
         tk_norm = normalizar_ticker(ticker)
-        novos = st.session_state.get("ativos", [])
-        if not any(a["ticker"] == tk_norm for a in novos):
-            novos.append({"ticker": tk_norm, "operacao": operacao, "preco": float(preco)})
-            st.session_state["ativos"] = novos
-            salvar_estado_duravel(force=True)
+        ativos = st.session_state.get("ativos", [])
+        if not any(a["ticker"] == tk_norm for a in ativos):
+            ativos.append({"ticker": tk_norm, "operacao": operacao, "preco": float(preco)})
+            st.session_state["ativos"] = ativos
+            salvar_estado_duravel()
             st.success(f"{tk_norm} enviado à nuvem.")
         else:
-            st.warning("Ticker já adicionado.")
+            st.warning("Ticker já existe.")
 
 # -----------------------------
 # STATUS DOS ATIVOS
 # -----------------------------
-st.subheader("📊 Status dos Ativos (Nuvem)")
-data = []
+st.subheader("📊 Status dos Ativos")
 status_map = {
     "monitorando": "🟢 Monitorando",
     "em_contagem": "🟡 Em contagem",
-    "disparado": "🚀 Disparado",
+    "disparado": "🚀 Disparado"
 }
+data = []
 for ativo in st.session_state.get("ativos", []):
     t = ativo["ticker"]
     raw = str(st.session_state.get("status", {}).get(t, "")).lower()
@@ -362,7 +299,7 @@ else:
     st.info("Nenhum ativo cadastrado.")
 
 # -----------------------------
-# GRÁFICO – apenas tickers ATIVOS
+# GRÁFICO
 # -----------------------------
 st.subheader("📈 Evolução dos Preços (Robô da Nuvem)")
 ativos_set = {a["ticker"] for a in st.session_state.get("ativos", [])}
@@ -373,7 +310,7 @@ for t, dados in st.session_state.get("precos_historicos", {}).items():
     xs, ys = [], []
     for dtv, pv in dados:
         try:
-            xs.append(datetime.datetime.fromisoformat(dtv) if isinstance(dtv, str) else dtv)
+            xs.append(datetime.datetime.fromisoformat(dtv))
         except Exception:
             xs.append(dtv)
         ys.append(pv)
@@ -382,41 +319,32 @@ fig.update_layout(template="plotly_dark")
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# LOG – em CARD rolável + apenas tickers ATIVOS
+# LOG
 # -----------------------------
-st.subheader("🕒 Monitoramento (Robô da Nuvem)")
-log_lines = st.session_state.get("log_monitoramento", []) or []
-
-# Filtro por ativos (mantém somente linhas que mencionam algum ticker ativo)
-ativos_fmt = set()
-for a in st.session_state.get("ativos", []):
-    tk = a["ticker"].upper()
-    ativos_fmt.add(tk)
-    ativos_fmt.add(tk.replace(".SA", ""))
-
+st.subheader("🕒 Monitoramento")
+log_lines = st.session_state.get("log_monitoramento", [])
+ativos_fmt = set(a["ticker"] for a in st.session_state.get("ativos", []))
+ativos_fmt |= {t.replace(".SA", "") for t in ativos_fmt}
 if ativos_fmt:
-    pat = re.compile(r"\b(" + "|".join(re.escape(t) for t in sorted(ativos_fmt)) + r")\b")
+    pat = re.compile(r"\b(" + "|".join(re.escape(t) for t in ativos_fmt) + r")\b")
     log_lines = [l for l in log_lines if pat.search(l)]
 
-# Card estilizado
-css = """
+st.markdown("""
 <style>
   .log-card {background:#0b1220;border:1px solid #1f2937;border-radius:10px;
              padding:10px 12px;max-height:360px;overflow-y:auto;}
-  .log-line {font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-             font-size:13px;line-height:1.35;margin:2px 0;color:#e5e7eb;}
+  .log-line {font-family: monospace;font-size:13px;color:#e5e7eb;}
 </style>
-"""
-st.markdown(css, unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 if log_lines:
     st.markdown("<div class='log-card'>" + "<br>".join(
         f"<div class='log-line'>{l}</div>" for l in log_lines[-300:][::-1]
     ) + "</div>", unsafe_allow_html=True)
 else:
-    st.info("Sem entradas (ou nenhum log relacionado aos tickers atuais).")
+    st.info("Sem logs no momento.")
 
 # -----------------------------
 # AUTOREFRESH
 # -----------------------------
-st_autorefresh(interval=60_000, limit=None, key="curto-refresh")
+st_autorefresh(interval=60000, key="curto-refresh")
