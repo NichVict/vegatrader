@@ -100,19 +100,27 @@ def _persist_now():
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "resolution=replace",
     }
 
-    payload = {"k": STATE_KEY, "v": snapshot}
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?on_conflict=k"  # ✅ UPSERT automático
+    # 🔥 1️⃣ Apaga o registro existente antes de gravar
     try:
-        r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
+        delete_url = f"{SUPABASE_URL}/rest/v1/{TABLE}?k=eq.{STATE_KEY}"
+        requests.delete(delete_url, headers=headers, timeout=10)
+    except Exception as e:
+        st.sidebar.warning(f"⚠️ Erro ao apagar estado anterior: {e}")
+
+    # 🔥 2️⃣ Cria novamente o registro limpo (sem conflito)
+    payload = {"k": STATE_KEY, "v": snapshot}
+    insert_url = f"{SUPABASE_URL}/rest/v1/{TABLE}"
+    try:
+        r = requests.post(insert_url, headers=headers, data=json.dumps(payload), timeout=15)
         if r.status_code not in (200, 201, 204):
             st.sidebar.error(f"Erro ao salvar estado remoto: {r.text}")
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
 
     st.session_state["__last_save_ts"] = agora_lx().timestamp()
+
 
 
 
