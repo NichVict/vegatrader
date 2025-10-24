@@ -286,16 +286,58 @@ def enviar_notificacao_curto(dest, assunto, corpo_email_html, rem, senha, tok_tg
 @st.cache_data(ttl=5)
 @retry(stop=stop_after_attempt(5), wait=wait_exponential(multiplier=1, min=4, max=60),
        retry=retry_if_exception_type(requests.exceptions.HTTPError))
-def obter_preco_atual(ticker_symbol):
+def obter_preco_atual(ticker_symbol: str):
+    """
+    Retorna float com o preço atual ou "-" quando não houver dado.
+    Trata respostas inconsistentes do yahooquery (price como str, dict aninhado, MultiIndex no history).
+    """
+    # Garante sufixo .SA apenas uma vez
+    if not ticker_symbol.endswith(".SA"):
+        ticker_symbol = f"{ticker_symbol}.SA"
+
     tk = Ticker(ticker_symbol)
+
+    # 1️⃣ Tentativa principal: tk.price
     try:
-        p = tk.price.get(ticker_symbol, {}).get("regularMarketPrice")
-        if p is not None:
-            return float(p)
-    except Exception:
-        pass
-    preco_atual = tk.history(period="1d")["close"].iloc[-1]
-    return float(preco_atual)
+        price_data = tk.price  # pode ser dict ou str
+        if isinstance(price_data, dict):
+            symbol_data = price_data.get(ticker_symbol)
+            if not isinstance(symbol_data, dict) and price_data:
+                for v in price_data.values():
+                    if isinstance(v, dict):
+                        symbol_data = v
+                        break
+            if isinstance(symbol_data, dict):
+                p = (
+                    symbol_data.get("regularMarketPrice")
+                    or symbol_data.get("postMarketPrice")
+                    or symbol_data.get("preMarketPrice")
+                )
+                if isinstance(p, (int, float)):
+                    return float(p)
+    except Exception as e:
+        st.session_state.log_monitoramento.append(f"⚠️ {ticker_symbol}: erro ao ler price ({e})")
+
+    # 2️⃣ Fallback: histórico de 1 dia
+    try:
+        hist = tk.history(period="1d")
+        if isinstance(hist, pd.DataFrame) and not hist.empty and "close" in hist.columns:
+            if isinstance(hist.index, pd.MultiIndex):
+                try:
+                    df_sym = hist.xs(ticker_symbol, level=0, drop_level=False)
+                except Exception:
+                    df_sym = hist
+                if not df_sym.empty:
+                    return float(df_sym["close"].dropna().iloc[-1])
+            else:
+                return float(hist["close"].dropna().iloc[-1])
+    except Exception as e:
+        st.session_state.log_monitoramento.append(f"⚠️ {ticker_symbol}: erro histórico ({e})")
+
+    # 3️⃣ Sem dados
+    st.session_state.log_monitoramento.append(f"⚠️ {ticker_symbol}: sem dados disponíveis no Yahoo")
+    return "-"
+
 
 def notificar_preco_alvo_alcancado_curto(ticker, preco_alvo, preco_atual, operacao):
     """
