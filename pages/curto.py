@@ -692,7 +692,7 @@ if st.button("➕ Adicionar ativo"):
 # -----------------------------
 # STATUS + GRÁFICO + LOG
 # -----------------------------
-st.subheader("📊 Status dos Ativos Monitorados")
+st.subheader("🧠 Status dos Ativos Monitorados")
 tabela_status = st.empty()
 grafico = st.empty()
 st.subheader("🕒 Monitoramento")
