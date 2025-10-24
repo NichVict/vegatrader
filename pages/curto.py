@@ -86,7 +86,6 @@ def carregar_estado_duravel():
 
 
 def _persist_now():
-    # sobrescreve integralmente o estado no Supabase
     snapshot = {
         "ativos": st.session_state.get("ativos", []),
         "historico_alertas": st.session_state.get("historico_alertas", []),
@@ -96,14 +95,16 @@ def _persist_now():
         "disparos": st.session_state.get("disparos", {}),
         "ultima_data_abertura_enviada": st.session_state.get("ultima_data_abertura_enviada", None),
     }
+
     headers = {
         "apikey": SUPABASE_KEY,
         "Authorization": f"Bearer {SUPABASE_KEY}",
         "Content-Type": "application/json",
-        "Prefer": "resolution=replace",  # 🔥 sobrescreve o JSON v por completo
+        "Prefer": "resolution=replace",
     }
+
     payload = {"k": STATE_KEY, "v": snapshot}
-    url = f"{SUPABASE_URL}/rest/v1/{TABLE}"
+    url = f"{SUPABASE_URL}/rest/v1/{TABLE}?on_conflict=k"  # ✅ UPSERT
     try:
         r = requests.post(url, headers=headers, data=json.dumps(payload), timeout=15)
         if r.status_code not in (200, 201, 204):
@@ -111,6 +112,7 @@ def _persist_now():
     except Exception as e:
         st.sidebar.error(f"Erro ao salvar estado remoto: {e}")
     st.session_state["__last_save_ts"] = agora_lx().timestamp()
+
 
 
 def salvar_estado_duravel(force: bool = False):
