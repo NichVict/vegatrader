@@ -379,7 +379,7 @@ selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", [], default=
 # CABEÇALHO / LAYOUT
 # -----------------------------
 now = agora_lx()
-st.title("🤖 CURTO PRAZO - COMPRA E VENDA")
+st.title("⚡ CURTO PRAZO - COMPRA E VENDA")
 st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 
 st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
