@@ -21,17 +21,24 @@ st.set_page_config(page_title="Painel Visual 1Milhão", layout="wide")
 # ============================
 # LOGO NO TOPO
 # ============================
-LOGO_PATH = "static/logo_1milhao.png"  # caminho da sua imagem (pode ajustar)
-if os.path.exists(LOGO_PATH):
+# ============================
+# LOGO NO TOPO
+# ============================
+import base64
+
+logo_path = "Logo-canal-1milhao.png"
+if os.path.exists(logo_path):
+    with open(logo_path, "rb") as f:
+        logo_data = base64.b64encode(f.read()).decode()
     st.markdown(
         f"""
-        <div style='text-align: center; margin-bottom: 10px;'>
-            <img src='data:image/png;base64,{open(LOGO_PATH, "rb").read().encode("base64").decode()}' 
-                 alt='Logo 1Milhão' style='width:180px;'>
+        <div style='text-align: center; margin-top: -20px; margin-bottom: 10px;'>
+            <img src='data:image/png;base64,{logo_data}' alt='Logo 1Milhão' style='width:200px;'>
         </div>
         """,
         unsafe_allow_html=True
     )
+
 
 
 TZ = ZoneInfo("Europe/Lisbon")
