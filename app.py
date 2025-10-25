@@ -17,7 +17,22 @@ from streamlit_autorefresh import st_autorefresh
 # ============================
 # CONFIGURAÇÕES GERAIS
 # ============================
-st.set_page_config(page_title="Painel Visual 1Milhão", layout="wide", page_icon="📊")
+st.set_page_config(page_title="Painel Visual 1Milhão", layout="wide")
+# ============================
+# LOGO NO TOPO
+# ============================
+LOGO_PATH = "static/logo_1milhao.png"  # caminho da sua imagem (pode ajustar)
+if os.path.exists(LOGO_PATH):
+    st.markdown(
+        f"""
+        <div style='text-align: center; margin-bottom: 10px;'>
+            <img src='data:image/png;base64,{open(LOGO_PATH, "rb").read().encode("base64").decode()}' 
+                 alt='Logo 1Milhão' style='width:180px;'>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
 
 TZ = ZoneInfo("Europe/Lisbon")
 REFRESH_SECONDS = 60
