@@ -89,31 +89,28 @@ def ler_ativos_da_supabase() -> list[dict]:
 
 def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple[bool, str | None]:
     """
-    Insere um novo ativo no array v['ativos'] da chave 'loss_curto_przo_v1'.
-    Substitui o ativo se o ticker já existir (sem apagar outros campos do estado).
+    Insere um novo ativo no array v['ativos'] (merge) da chave 'loss_curto_przo_v1'.
+    NÃO remove/atualiza nada do que já existe. Apenas adiciona.
     """
     try:
-        # 1️⃣ Lê o estado atual
+        # 1️⃣ Lê estado atual
         url_get = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}&select=v"
         r = requests.get(url_get, headers=_sb_headers(), timeout=15)
         r.raise_for_status()
         data = r.json()
         estado = data[0].get("v", {}) if data else {}
 
-        # 2️⃣ Atualiza os ativos (deduplicando por ticker)
+        # 2️⃣ Atualiza a lista de ativos local
         ativos = estado.get("ativos", [])
         novo = {
             "ticker": ticker.upper().strip(),
             "operacao": operacao.lower().strip(),
-            "preco": float(preco),
+            "preco": float(preco)
         }
-
-        # Substitui se já existir
-        ativos = [a for a in ativos if a.get("ticker") != novo["ticker"]]
         ativos.append(novo)
         estado["ativos"] = ativos
 
-        # 3️⃣ Reenvia o estado completo atualizado (merge total)
+        # 3️⃣ Envia merge (não apaga nada)
         payload = {"k": STATE_KEY, "v": estado}
         r2 = requests.post(
             f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
@@ -126,6 +123,7 @@ def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple
 
     except Exception as e:
         return False, str(e)
+
 
 
 # -----------------------------
