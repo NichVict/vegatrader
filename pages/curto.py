@@ -416,7 +416,7 @@ if st.button("➕ Adicionar ativo"):
 # -----------------------------
 # BLOCO PRINCIPAL (TABELA + GRÁFICO + LOG)
 # -----------------------------
-st.subheader("🧠 Banco de Dados - Ativos não disparados)")
+st.subheader("🧠 Banco de Dados")
 tabela_status = st.empty()
 grafico = st.empty()
 st.subheader("🕒 Monitoramento")
@@ -542,12 +542,16 @@ for t, pontos in st.session_state.disparos.items():
             marker=dict(symbol="star", size=12, line=dict(width=2, color="white"))
         ))
 
-fig.update_layout(title="📉 Evolução dos Preços (visual/local)", template="plotly_dark")
+fig.update_layout(title="📉 Evolução dos Preços", template="plotly_dark")
 grafico.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
 # MONITORAMENTO VISUAL (NO ESTILO DO LOG)
 # -----------------------------
+
+
+
+
 
 # Atualiza automaticamente a cada 2 minutos (120.000 ms)
 if ativos:
@@ -614,13 +618,12 @@ if ativos:
 else:
     st.info("Nenhum ativo para monitorar.")
 
-# 4) LOG (com filtro opcional)
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
 
+# 4) LOG (com filtro opcional)
 with log_container:
     render_log_html(st.session_state.log_monitoramento, selected_tickers, 250)
-
 
 # 5) SALVA PERSISTÊNCIA LOCAL DO GRÁFICO (não mexe na nuvem)
 salvar_visual_state()
