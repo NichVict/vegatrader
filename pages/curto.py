@@ -326,7 +326,7 @@ def limpar_tabela_supabase():
     except Exception as e:
         return False, str(e)
 
-if st.sidebar.button("🧹 Limpar Tabela (Supabase)"):
+if st.sidebar.button("🧹 Limpar Banco de Dados"):
     st.sidebar.warning("Apagando todos os ativos da tabela...")
     ok, erro = limpar_tabela_supabase()
     if ok:
