@@ -634,6 +634,8 @@ salvar_visual_state()
 # -----------------------------
 # Rodapé / Ajuda rápida
 # -----------------------------
+
+st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 with st.expander("ℹ️ Como funciona esta interface?"):
     st.markdown("""
 - **Leitura** de ativos é feita em **Supabase → kv_state_curto**, linha `k="curto_przo_v1"`, lendo `v["ativos"]`.  
