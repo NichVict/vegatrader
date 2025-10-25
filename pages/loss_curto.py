@@ -350,12 +350,32 @@ if st.sidebar.button("🧹 Limpar Banco de Dados (LOSS)"):
     st.sidebar.warning("Apagando todos os ativos da tabela (LOSS)...")
     ok, erro = limpar_tabela_supabase()
     if ok:
-        st.sidebar.success("✅ Tabela limpa com sucesso na Supabase (LOSS)!")
-        st.session_state.log_monitoramento.append(
-            f"{agora_lx().strftime('%H:%M:%S')} | LIMPAR TABELA (LOSS) executado com sucesso."
-        )
+        # ✅ 1. Limpa a memória local (st.session_state)
+        for key in [
+            "log_monitoramento", "ticker_colors", "tempo_acumulado",
+            "em_contagem", "status", "precos_historicos", "disparos",
+            "contagem_inicio"
+        ]:
+            if key in st.session_state:
+                del st.session_state[key]
+
+        # ✅ 2. Limpa caches de dados (caso exista cache_data)
+        st.cache_data.clear()
+
+        # ✅ 3. Remove arquivo de persistência local (gráfico)
+        try:
+            if os.path.exists(VIS_STATE_FILE):
+                os.remove(VIS_STATE_FILE)
+        except Exception as e:
+            st.sidebar.warning(f"Erro ao remover arquivo local: {e}")
+
+        st.sidebar.success("✅ Tabela limpa e memória local resetada com sucesso!")
+        st.session_state["log_monitoramento"] = [
+            f"{agora_lx().strftime('%H:%M:%S')} | 🔄 LIMPEZA COMPLETA executada."
+        ]
     else:
         st.sidebar.error(f"❌ Falha ao limpar tabela: {erro}")
+
 
 if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
     # Limpa apenas o estado LOCAL do gráfico
