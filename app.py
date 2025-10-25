@@ -1,14 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-app_visual.py
-Painel Central 1Milhão — Monitor Visual dos Robôs
-
-Versão simplificada:
-- Lê apenas arquivos locais gerados pelos robôs (visual_state_*.json)
-- Não acessa Supabase nem session_state dos robôs
-- Mostra status (🟢🟡🔴), contagem de ativos, disparos e gráfico
-
-Seguro, leve e isolado dos processos de produção.
+📊 Painel Visual 1Milhão — versão final (somente leitura local)
+Lê os snapshots dos robôs gerados em:
+session_data/visual_state_*.json
+e exibe tudo com indicadores visuais e status.
 """
 
 import os
@@ -16,29 +11,25 @@ import json
 import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict, Any, List, Optional
-
 import streamlit as st
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
-
 # ============================
-# CONFIGURAÇÕES
+# CONFIGURAÇÕES GERAIS
 # ============================
 st.set_page_config(page_title="Painel Visual 1Milhão", layout="wide", page_icon="📊")
 
 TZ = ZoneInfo("Europe/Lisbon")
 REFRESH_SECONDS = 60
 SPARK_MAX_POINTS = 300
-
 PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
     "#06b6d4", "#84cc16", "#f97316", "#ec4899", "#22c55e"
 ]
 
-
 # ============================
-# LISTA DE ROBÔS (VISUAIS)
+# ROBÔS MONITORADOS (VISUAIS)
 # ============================
 ROBOS = [
     {"key": "curto", "title": "CURTO PRAZO", "emoji": "⚡", "file": "session_data/visual_state_curto.json"},
@@ -49,16 +40,13 @@ ROBOS = [
     {"key": "loss_clube", "title": "LOSS CLUBE", "emoji": "🏛️🛑", "file": "session_data/visual_state_lossclube.json"},
 ]
 
-
 # ============================
 # FUNÇÕES AUXILIARES
 # ============================
 def agora_lx() -> datetime.datetime:
     return datetime.datetime.now(TZ)
 
-
 def try_load_state(path: str) -> Optional[Dict[str, Any]]:
-    """Tenta carregar um arquivo JSON de estado visual."""
     if not os.path.exists(path):
         return None
     try:
@@ -67,17 +55,12 @@ def try_load_state(path: str) -> Optional[Dict[str, Any]]:
     except Exception:
         return None
 
-
 def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
-    """Extrai resumo visual do arquivo visual_state_*.json."""
     precos = state.get("precos_historicos", {})
     disparos = state.get("disparos", {})
-
     total_tickers = len(precos)
     total_disparos = sum(len(v) for v in disparos.values()) if isinstance(disparos, dict) else 0
     tickers = list(precos.keys())
-
-    # Encontra último timestamp conhecido
     last_update = None
     for pts in precos.values():
         if pts:
@@ -88,21 +71,12 @@ def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
                     last_update = dt
             except Exception:
                 continue
-
-    return {
-        "ativos_monitorados": total_tickers,
-        "tickers": tickers,
-        "total_disparos": total_disparos,
-        "last_update": last_update,
-    }
-
+    return {"ativos_monitorados": total_tickers, "tickers": tickers, "total_disparos": total_disparos, "last_update": last_update}
 
 def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
-    """Desenha gráfico compacto com os históricos visuais."""
     precos = state.get("precos_historicos") or {}
     if not isinstance(precos, dict) or not precos:
         return None
-
     fig = go.Figure()
     i = 0
     for ticker, pts in precos.items():
@@ -127,10 +101,8 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
                                      line=dict(color=color, width=2)))
         except Exception:
             continue
-
     if not fig.data:
         return None
-
     fig.update_layout(
         margin=dict(l=10, r=10, t=30, b=10),
         height=180,
@@ -141,7 +113,6 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
     fig.update_yaxes(title="")
     return fig
 
-
 def nice_dt(dt: Optional[datetime.datetime]) -> str:
     if not dt:
         return "—"
@@ -149,26 +120,22 @@ def nice_dt(dt: Optional[datetime.datetime]) -> str:
         dt = dt.replace(tzinfo=TZ)
     return dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
 
-
-def badge_status_tempo(last_dt: Optional[datetime.datetime]) -> str:
-    """Retorna badge 🟢🟡🔴 baseado no tempo desde último update."""
+def badge_status_tempo(last_dt: Optional[datetime.datetime]) -> tuple[str, str]:
     if not last_dt:
-        return "🔴 Sem atualização"
+        return ("🔴 Sem atualização", "red")
     delta_min = (agora_lx() - last_dt).total_seconds() / 60
     if delta_min < 5:
-        return "🟢 Atualizado há poucos minutos"
+        return ("🟢 Atualizado há poucos minutos", "green")
     elif delta_min < 30:
-        return f"🟡 Último update há {int(delta_min)} min"
+        return (f"🟡 Último update há {int(delta_min)} min", "yellow")
     else:
-        return f"🔴 Inativo há {int(delta_min)} min"
-
+        return (f"🔴 Inativo há {int(delta_min)} min", "red")
 
 # ============================
 # INTERFACE PRINCIPAL
 # ============================
 st.title("📊 Painel Visual — 1Milhão")
 st.caption(f"Atualiza automaticamente a cada {REFRESH_SECONDS}s")
-
 st_autorefresh(interval=REFRESH_SECONDS * 1000, key="painel-visual-refresh")
 
 colh1, colh2 = st.columns([3, 2])
@@ -178,7 +145,6 @@ with colh2:
     st.markdown("📁 Fonte: `session_data/visual_state_*.json` (local)")
 
 st.markdown("---")
-
 
 # ============================
 # RESUMO GERAL
@@ -202,9 +168,7 @@ col1, col2, col3 = st.columns(3)
 col1.metric("Robôs com dados", f"{apps_ok}/{total_apps}")
 col2.metric("Ativos monitorados", total_ativos)
 col3.metric("Disparos visuais", total_disparos)
-
 st.markdown("---")
-
 
 # ============================
 # RENDERIZAÇÃO DOS CARDS
@@ -214,26 +178,35 @@ def render_robot_card(robo: Dict[str, Any], container):
     title = robo["title"]
     emoji = robo["emoji"]
     path = robo["file"]
-
     with container:
-        st.markdown(f"### {emoji} {title}")
-
         state = loaded_states.get(key)
         if not state:
+            st.markdown(f"### {emoji} {title}")
             if not os.path.exists(path):
                 st.warning("⛔ Arquivo visual ainda não gerado.")
             else:
                 st.warning("⚠️ Arquivo encontrado, mas sem dados válidos.")
+            st.markdown("---")
             return
 
         summary = summarize_robot_state(state)
         last_dt = summary["last_update"]
+        status_txt, color = badge_status_tempo(last_dt)
+
+        # card visual com borda colorida
+        st.markdown(
+            f"""
+            <div style="border-left: 8px solid {color}; padding-left: 12px; border-radius: 8px;">
+            <h3>{emoji} {title}</h3>
+            <p>{status_txt} — Última atualização: <b>{nice_dt(last_dt)}</b></p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
 
         c1, c2 = st.columns(2)
         c1.metric("Ativos monitorados", summary["ativos_monitorados"])
         c2.metric("Disparos", summary["total_disparos"])
-
-        st.caption(f"{badge_status_tempo(last_dt)} — Última atualização: **{nice_dt(last_dt)}**")
 
         tickers = summary["tickers"]
         if tickers:
@@ -247,7 +220,6 @@ def render_robot_card(robo: Dict[str, Any], container):
 
         st.markdown("---")
 
-
 # ============================
 # EXIBE OS ROBÔS EM DUAS COLUNAS
 # ============================
@@ -258,4 +230,4 @@ for i in range(0, len(ROBOS), 2):
         render_robot_card(ROBOS[i + 1], col_right)
 
 st.markdown("---")
-st.caption("© Painel Visual 1Milhão — leitura apenas dos estados visuais locais (sem Supabase).")
+st.caption("© Painel Visual 1Milhão — leitura apenas dos estados locais (sem Supabase).")
