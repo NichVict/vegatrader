@@ -19,7 +19,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
-import streamlit as st
 
 # --- Query params (compatível com versões antigas e novas) ---
 try:
@@ -32,6 +31,7 @@ if "ping" in q and (q["ping"] in ([], None) or str(q["ping"]).lower() in ("1", "
     st.write("ok")
     st.stop()
 
+
 # --- Tick leve chamado pelo ?ping=1 ---
 import datetime as _dt
 from zoneinfo import ZoneInfo as _ZoneInfo
@@ -41,13 +41,8 @@ _TZ = _ZoneInfo("Europe/Lisbon")
 def run_all_ticks():
     """Executa um ciclo rápido dos robôs. Mantenha idempotente e leve."""
     now = _dt.datetime.now(_TZ)
-
-    # 1) Marcar última execução (útil p/ ver no painel)
     st.session_state["_last_tick"] = now.isoformat()
 
-    # 2) (Opcional) chamar ticks específicos se já existir
-    # Tente importar funções de tick dos seus módulos/páginas.
-    # Se ainda não tiver, deixamos para o próximo passo.
     for mod, fn in [
         ("pages.clube", "run_tick"),
         ("pages.curtissimo", "run_tick"),
@@ -59,11 +54,9 @@ def run_all_ticks():
         try:
             _m = __import__(mod, fromlist=[fn])
             if hasattr(_m, fn):
-                getattr(_m, fn)()  # chama pages/<mod>.py: def run_tick(): ...
+                getattr(_m, fn)()
         except Exception as e:
-            # não quebrar o ping se algum módulo não tiver tick ainda
             st.session_state.setdefault("_tick_errors", []).append(f"{mod}.{fn}: {e}")
-
 
 
 # ============================
@@ -106,21 +99,10 @@ body {
     box-shadow: 0 0 8px rgba(0,0,0,0.4);
 }
 
-/* cores e pulsar */
-.status-green {
-    background-color: #22c55e;
-    animation: pulse-green 1.4s infinite;
-}
-.status-yellow {
-    background-color: #facc15;
-    animation: pulse-yellow 2s infinite;
-}
-.status-red {
-    background-color: #ef4444;
-    animation: pulse-red 3s infinite;
-}
+.status-green { background-color: #22c55e; animation: pulse-green 1.4s infinite; }
+.status-yellow { background-color: #facc15; animation: pulse-yellow 2s infinite; }
+.status-red { background-color: #ef4444; animation: pulse-red 3s infinite; }
 
-/* Animações */
 @keyframes pulse-green {
   0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
   70% { box-shadow: 0 0 0 12px rgba(34,197,94,0); }
@@ -137,44 +119,29 @@ body {
   100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
 }
 
-/* Ajuste dos títulos e badges */
-h3 {
-    color: #f9fafb;
-}
+h3 { color: #f9fafb; }
 </style>
 """, unsafe_allow_html=True)
 
 
 # ============================
-# CABEÇALHO COM LOGO E TÍTULO (VERSÃO FUNCIONAL)
+# CABEÇALHO
 # ============================
-
-logo_path = "Logo-canal-1milhao.png"  # certifique-se de que o arquivo está na mesma pasta que o app.py
+logo_path = "Logo-canal-1milhao.png"
 
 header_col1, header_col2 = st.columns([1, 6])
-
 with header_col1:
     try:
         st.image(logo_path, width=120)
     except Exception:
-        st.warning("⚠️ Logo não encontrado: verifique o nome do arquivo e a pasta.")
-
-with header_col2:
-    st.markdown(
-        """
-        <h1 style="color:#10B981; font-size: 2.2em; margin-bottom:0;">
-        </h1>
-        """,
-        unsafe_allow_html=True,
-    )
+        st.warning("⚠️ Logo não encontrado.")
 
 TZ = ZoneInfo("Europe/Lisbon")
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)  # Lisboa
-HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)    # Lisboa
-
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
 REFRESH_SECONDS = 60
-LOG_PREVIEW_LINES = 5   # linhas de log por robô
-SPARK_MAX_POINTS = 300  # limita pontos da sparkline por robô
+LOG_PREVIEW_LINES = 5
+SPARK_MAX_POINTS = 300
 
 PALETTE = [
     "#10b981", "#3b82f6", "#f59e0b", "#ef4444", "#8b5cf6",
@@ -182,75 +149,23 @@ PALETTE = [
 ]
 
 # ============================
-# MAPEAMENTO DOS ROBÔS (ORDENADOS E ALINHADOS)
+# MAPEAMENTO DOS ROBÔS
 # ============================
 ROBOS = [
-    # LINHA 1
-    {
-        "key": "curto",
-        "title": "CURTO PRAZO",
-        "emoji": "⚡",
-        "files": [
-            "session_data/state_curto.json",
-            "state_curto.json"
-        ],
-        "app_url": None
-    },
-    {
-        "key": "loss_curto",
-        "title": "LOSS CURTO",
-        "emoji": "🛑",
-        "files": [
-            "session_data/state_losscurto.json",
-            "state_losscurto.json"
-        ],
-        "app_url": None
-    },
-
-    # LINHA 2
-    {
-        "key": "curtissimo",
-        "title": "CURTÍSSIMO PRAZO",
-        "emoji": "⚡",
-        "files": [
-            "session_data/state_curtissimo.json",
-            "state_curtissimo.json"
-        ],
-        "app_url": None
-    },
-    {
-        "key": "loss_curtissimo",
-        "title": "LOSS CURTÍSSIMO",
-        "emoji": "🛑",
-        "files": [
-            "session_data/state_losscurtissimo.json",
-            "state_losscurtissimo.json"
-        ],
-        "app_url": None
-    },
-
-    # LINHA 3
-    {
-        "key": "clube",
-        "title": "CLUBE",
-        "emoji": "🏛️",
-        "files": [
-            "session_data/state_clube.json",
-            "state_clube.json"
-        ],
-        "app_url": None
-    },
-    {
-        "key": "loss_clube",
-        "title": "LOSS CLUBE",
-        "emoji": "🏛️🛑",
-        "files": [
-            "session_data/state_lossclube.json",
-            "state_lossclube.json"
-        ],
-        "app_url": None
-    },
+    {"key": "curto", "title": "CURTO PRAZO", "emoji": "⚡",
+     "files": ["session_data/state_curto.json", "state_curto.json"], "app_url": None},
+    {"key": "loss_curto", "title": "LOSS CURTO", "emoji": "🛑",
+     "files": ["session_data/state_losscurto.json", "state_losscurto.json"], "app_url": None},
+    {"key": "curtissimo", "title": "CURTÍSSIMO PRAZO", "emoji": "⚡",
+     "files": ["session_data/state_curtissimo.json", "state_curtissimo.json"], "app_url": None},
+    {"key": "loss_curtissimo", "title": "LOSS CURTÍSSIMO", "emoji": "🛑",
+     "files": ["session_data/state_losscurtissimo.json", "state_losscurtissimo.json"], "app_url": None},
+    {"key": "clube", "title": "CLUBE", "emoji": "🏛️",
+     "files": ["session_data/state_clube.json", "state_clube.json"], "app_url": None},
+    {"key": "loss_clube", "title": "LOSS CLUBE", "emoji": "🏛️🛑",
+     "files": ["session_data/state_lossclube.json", "state_lossclube.json"], "app_url": None},
 ]
+
 
 # ============================
 # FUNÇÕES AUXILIARES
@@ -287,12 +202,10 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
     precos = state.get("precos_historicos") or {}
     if not isinstance(precos, dict) or not precos:
         return None
-
     fig = go.Figure()
     color_map = {}
     i = 0
     added_any = False
-
     for ticker, pts in precos.items():
         try:
             if not isinstance(pts, list) or len(pts) < 2:
@@ -312,58 +225,65 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
                     ys.append(float(price))
             if len(xs) < 2:
                 continue
-
             if ticker not in color_map:
                 color_map[ticker] = PALETTE[i % len(PALETTE)]
                 i += 1
-
-            fig.add_trace(go.Scatter(
-                x=xs, y=ys, mode="lines", name=str(ticker),
-                line=dict(color=color_map[ticker], width=2)
-            ))
+            fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", name=str(ticker),
+                                     line=dict(color=color_map[ticker], width=2)))
             added_any = True
         except Exception:
             continue
-
     if not added_any:
         return None
-
-    fig.update_layout(
-        margin=dict(l=10, r=10, t=30, b=10),
-        height=160,
-        template="plotly_dark",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
-    )
-    fig.update_xaxes(title="")
-    fig.update_yaxes(title="")
+    fig.update_layout(margin=dict(l=10, r=10, t=30, b=10),
+                      height=160, template="plotly_dark",
+                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0))
+    fig.update_xaxes(title=""); fig.update_yaxes(title="")
     return fig
 
+
+# === FUNÇÃO AJUSTADA ===
 def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
+    """Resumo compatível com o novo formato de estado dos robôs (pós-alterações)."""
     ativos = state.get("ativos") or []
     status = state.get("status") or {}
     historico_alertas = state.get("historico_alertas") or []
     pausado = bool(state.get("pausado", False))
     disparos = state.get("disparos") or {}
     total_disparos = sum(len(v or []) for v in disparos.values()) if isinstance(disparos, dict) else 0
-    ultimo_update_map = state.get("ultimo_update_tempo") or {}
+
+    # --- novo timestamp ---
+    last_update_str = state.get("_last_writer_ts") or None
     last_update_dt = None
-    if isinstance(ultimo_update_map, dict) and ultimo_update_map:
+    if last_update_str:
         try:
-            last_iso = max((v for v in ultimo_update_map.values() if v), default=None)
-            if last_iso:
-                last_update_dt = datetime.datetime.fromisoformat(last_iso)
+            last_update_dt = datetime.datetime.fromisoformat(last_update_str)
         except Exception:
             last_update_dt = None
 
+    tickers_status = list(status.keys())
+    total_ativos = len(tickers_status) or len(ativos)
+
+    last_alert = historico_alertas[-1] if historico_alertas else None
+    last_alert_ticker = last_alert.get("ticker") if last_alert else None
+    last_alert_operacao = last_alert.get("operacao") if last_alert else None
+    last_alert_hora = last_alert.get("hora") if last_alert else None
+
     return {
-        "ativos_monitorados": len(ativos),
-        "tickers": [a.get("ticker") for a in ativos if isinstance(a, dict)],
+        "ativos_monitorados": total_ativos,
+        "tickers": tickers_status,
         "pausado": pausado,
         "status_por_ticker": status,
         "total_alertas": len(historico_alertas),
         "total_disparos": total_disparos,
-        "last_update": last_update_dt
+        "last_update": last_update_dt,
+        "ultimo_alerta": {
+            "ticker": last_alert_ticker,
+            "operacao": last_alert_operacao,
+            "hora": last_alert_hora,
+        },
     }
+
 
 def badge_pregao(now_dt: datetime.datetime) -> str:
     if dentro_pregao(now_dt):
@@ -385,7 +305,6 @@ def nice_dt(dt: Optional[datetime.datetime]) -> str:
     return dt.astimezone(TZ).strftime("%Y-%m-%d %H:%M:%S %Z")
 
 def badge_status_tempo(last_dt: Optional[datetime.datetime]) -> str:
-    """Gera um badge visual de status com base no tempo desde o último update."""
     if not last_dt:
         return format_badge("Sem atualização", color="#991b1b", bg="#fee2e2")
     delta_min = (agora_lx() - last_dt).total_seconds() / 60
@@ -397,7 +316,6 @@ def badge_status_tempo(last_dt: Optional[datetime.datetime]) -> str:
         return format_badge(f"🔴 Inativo há {int(delta_min)} min", color="#7f1d1d", bg="#fee2e2")
 
 def status_dot_html(last_dt: Optional[datetime.datetime]) -> str:
-    """HTML da bolinha flutuante de status (verde, amarela ou vermelha)."""
     if not last_dt:
         cor = "status-red"
     else:
@@ -410,11 +328,11 @@ def status_dot_html(last_dt: Optional[datetime.datetime]) -> str:
             cor = "status-red"
     return f"<div class='status-dot {cor}'></div>"
 
+
 # ============================
 # TÍTULO + AUTO-REFRESH
 # ============================
 st.title("Painel Central")
-
 colh, colr = st.columns([3, 1])
 with colh:
     st.caption(
@@ -424,8 +342,8 @@ with colh:
 with colr:
     st.caption(f"🔄 Auto-refresh: a cada **{REFRESH_SECONDS}s**")
 
-# 🔁 Auto-refresh real
 st_autorefresh(interval=REFRESH_SECONDS * 1000, key="painel-central-refresh")
+
 
 # ============================
 # CARDS RESUMO (TOPO)
@@ -436,9 +354,7 @@ total_ativos = 0
 total_disparos = 0
 total_alertas = 0
 
-loaded_states: Dict[str, Dict[str, Any]] = {}
-resolved_paths: Dict[str, str] = {}
-errors: Dict[str, str] = {}
+loaded_states, resolved_paths, errors = {}, {}, {}
 
 for robo in ROBOS:
     data, path, err = try_load_state(robo["files"])
@@ -459,35 +375,25 @@ col2.metric("Ativos monitorados (total)", total_ativos)
 col3.metric("Disparos acumulados", total_disparos)
 col4.metric("Alertas (histórico)", total_alertas)
 
-# ============================
-# GRID DE CARDS POR ROBÔ (ALINHADO)
-# ============================
-st.markdown("---")
 
-left_col, right_col = st.columns(2)
-
+# ============================
+# GRID DE CARDS POR ROBÔ
+# ============================
 st.markdown("---")
 
 def render_robot_card(robo: Dict[str, Any], container):
-    """Renderiza um card individual de robô dentro do container fornecido."""
     key = robo["key"]
     title = robo["title"]
     emoji = robo.get("emoji", "")
     app_url = robo.get("app_url")
 
     with container:
-        # === Card estilizado ===
         st.markdown("<div class='robot-card'>", unsafe_allow_html=True)
-
-        # Título
         st.markdown(f"### {emoji} {title}", unsafe_allow_html=True)
 
-        # Estado e badges
         state = loaded_states.get(key)
         if state is None:
-            # bolinha como "sem atualização"
             st.markdown(status_dot_html(None), unsafe_allow_html=True)
-
             err = errors.get(key)
             if err:
                 st.error(err)
@@ -495,35 +401,32 @@ def render_robot_card(robo: Dict[str, Any], container):
                 st.warning("Arquivo de estado ainda não foi criado por este robô.")
             if app_url:
                 st.link_button("Abrir app", app_url, type="primary")
-
             st.markdown("</div>", unsafe_allow_html=True)
             return
 
-        # Bolinha flutuante (usa last_update real)
-        last_dt = summarize_robot_state(state)["last_update"]
+        summary = summarize_robot_state(state)
+        last_dt = summary["last_update"]
         st.markdown(status_dot_html(last_dt), unsafe_allow_html=True)
 
         now_dt = agora_lx()
-        status_badge = badge_status_tempo(last_dt)
-        badges = (
-            f"{badge_pregao(now_dt)} &nbsp;&nbsp; "
-            f"{badge_pause(bool(state.get('pausado', False)))} &nbsp;&nbsp; "
-            f"{status_badge}"
-        )
+        badges = f"{badge_pregao(now_dt)} &nbsp;&nbsp; {badge_pause(summary['pausado'])} &nbsp;&nbsp; {badge_status_tempo(last_dt)}"
         st.markdown(badges, unsafe_allow_html=True)
-
-        summary = summarize_robot_state(state)
 
         c1, c2, c3 = st.columns(3)
         c1.metric("Ativos monitorados", summary["ativos_monitorados"])
         c2.metric("Disparos (sessão)", summary["total_disparos"])
         c3.metric("Alertas (histórico)", summary["total_alertas"])
 
+        # NOVO: mostra último alerta
+        ultimo_alerta = summary.get("ultimo_alerta") or {}
+        if ultimo_alerta.get("ticker"):
+            st.caption(
+                f"🕒 Último alerta: **{ultimo_alerta['hora']}** — "
+                f"{ultimo_alerta['operacao'].upper()} em {ultimo_alerta['ticker']}"
+            )
+
         tickers = summary["tickers"] or []
-        if tickers:
-            st.caption("Tickers: " + ", ".join([str(t) for t in tickers]))
-        else:
-            st.caption("Tickers: —")
+        st.caption("Tickers: " + (", ".join(tickers) if tickers else "—"))
 
         fig = build_sparkline(state)
         if fig:
@@ -549,26 +452,19 @@ def render_robot_card(robo: Dict[str, Any], container):
         if app_url:
             st.link_button("Abrir app", app_url, type="primary")
 
-
-        # Fecha a <div> do card
         st.markdown("</div>", unsafe_allow_html=True)
 
-# ============================
-# RENDERIZAÇÃO EM PARES (ESQ ↔ DIR)
-# ============================
+
 for i in range(0, len(ROBOS), 2):
     with st.container():
         col_left, col_right = st.columns(2)
         render_robot_card(ROBOS[i], col_left)
         if i + 1 < len(ROBOS):
             render_robot_card(ROBOS[i + 1], col_right)
-    # divisória entre linhas
     st.markdown("---")
+
 
 # ============================
 # RODAPÉ
 # ============================
-st.caption(
-    "© Painel Central 1Milhão — consolidado dos robôs. "
-    "Mantenha cada app em execução para dados atualizados."
-)
+st.caption("© Painel Central 1Milhão — consolidado dos robôs. Mantenha cada app em execução para dados atualizados.")
