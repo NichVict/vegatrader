@@ -411,7 +411,7 @@ if st.button("➕ Adicionar ativo"):
         if ok:
             st.success(f"Ativo {ticker_input} inserido na Supabase. O robô da nuvem cuidará dos disparos.")
             st.session_state.log_monitoramento.append(
-                f"{agora_lx().strftime('%H:%M:%S')} | INSERT Supabase: {ticker_input} {operacao_input} R$ {preco_input:.2f}"
+                f"{agora_lx().strftime('%H:%M:%S')} | Inserido no Banco de Dados: {ticker_input} {operacao_input} R$ {preco_input:.2f}"
             )
         else:
             st.error(f"Falha ao inserir na Supabase: {erro}")
@@ -551,10 +551,6 @@ grafico.plotly_chart(fig, use_container_width=True)
 # -----------------------------
 # MONITORAMENTO VISUAL (NO ESTILO DO LOG)
 # -----------------------------
-
-
-
-
 
 # Atualiza automaticamente a cada 2 minutos (120.000 ms)
 if ativos:
