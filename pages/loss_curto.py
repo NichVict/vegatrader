@@ -182,6 +182,10 @@ def salvar_visual_state():
     except Exception as e:
         st.sidebar.warning(f"⚠️ Erro salvando visual state: {e}")
 
+# ==================================================
+# INICIALIZAÇÃO ROBUSTA — mantém dados entre reruns
+# ==================================================
+
 def inicializar_estado():
     defaults = {
         "log_monitoramento": [],
@@ -191,14 +195,21 @@ def inicializar_estado():
         "status": {},                # string por ticker (visual)
         "precos_historicos": {},     # {ticker: [(dt, preco), ...]}
         "disparos": {},              # {ticker: [(dt, preco), ...]}  -> estrelas
+        "ultimo_estado_validado": [],  # mantém cópia do último v['ativos'] válido da Supabase
     }
+
     for k, v in defaults.items():
         if k not in st.session_state:
             st.session_state[k] = v
-    # carrega gráfico persistente local
-    carregar_visual_state()
 
+    # 🔒 Carrega gráfico persistente local apenas uma vez
+    if "visual_state_carregado" not in st.session_state:
+        carregar_visual_state()
+        st.session_state["visual_state_carregado"] = True
+
+# ⚙️ Chama a inicialização antes de qualquer leitura do banco
 inicializar_estado()
+
 
 # -----------------------------
 # UTILITÁRIOS
