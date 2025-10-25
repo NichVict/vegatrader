@@ -13,6 +13,38 @@ from typing import Dict, Any, Optional
 import streamlit as st
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
+from zoneinfo import ZoneInfo
+
+# ==========================
+# 🔐 LOGIN SIMPLES
+# ==========================
+def login_page():
+    """Login básico com usuário e senha fixos"""
+    if "logged_in" not in st.session_state:
+        st.session_state.logged_in = False
+
+    if not st.session_state.logged_in:
+        st.markdown("<h2 style='text-align:center;'>🔐 Acesso Restrito</h2>", unsafe_allow_html=True)
+        st.markdown("<p style='text-align:center;'>Insira suas credenciais para continuar.</p>", unsafe_allow_html=True)
+        user = st.text_input("Usuário:")
+        pwd = st.text_input("Senha:", type="password")
+        if st.button("Entrar"):
+            if user == "robot" and pwd == "123":
+                st.session_state.logged_in = True
+                st.success("✅ Login realizado com sucesso!")
+                st.rerun()
+            else:
+                st.error("❌ Usuário ou senha incorretos.")
+        st.stop()  # Interrompe execução até login
+    else:
+        st.sidebar.markdown("### 👤 Usuário logado: `robot`")
+        if st.sidebar.button("Sair"):
+            st.session_state.logged_in = False
+            st.experimental_rerun()
+
+# Executa login antes de carregar o resto do app
+login_page()
+
 
 # ============================
 # CONFIGURAÇÕES GERAIS
