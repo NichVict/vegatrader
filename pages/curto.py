@@ -416,7 +416,7 @@ if st.button("➕ Adicionar ativo"):
 # -----------------------------
 # BLOCO PRINCIPAL (TABELA + GRÁFICO + LOG)
 # -----------------------------
-st.subheader("🧠 Status dos Ativos (lidos da Supabase)")
+st.subheader("🧠 Banco de Dados - Ativos não disparados)")
 tabela_status = st.empty()
 grafico = st.empty()
 st.subheader("🕒 Monitoramento")
@@ -551,7 +551,7 @@ grafico.plotly_chart(fig, use_container_width=True)
 
 # Atualiza automaticamente a cada 2 minutos (120.000 ms)
 if ativos:
-    st.markdown("### 📡 Status Visual dos Ativos")
+    st.markdown("### 📡 Monitoramento dos Ativos")
 
     monitor_lines = []
     for a in ativos:
