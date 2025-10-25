@@ -1,16 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-📊 Painel Visual 1Milhão — versão final (somente leitura local)
-Lê os snapshots dos robôs gerados em:
-session_data/visual_state_*.json
-e exibe tudo com indicadores visuais e status.
+📊 Painel Visual 1Milhão — versão final com fallback automático para arquivos LOSS
+Visual idêntico ao anterior, mas agora compatível com robôs que salvam
+'visual_state_loss_curto.json' ou 'visual_state_losscurto.json' (etc).
 """
 
 import os
 import json
 import datetime
 from zoneinfo import ZoneInfo
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 import streamlit as st
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
@@ -32,12 +31,26 @@ PALETTE = [
 # ROBÔS MONITORADOS (VISUAIS)
 # ============================
 ROBOS = [
-    {"key": "curto", "title": "CURTO PRAZO", "emoji": "⚡", "file": "session_data/visual_state_curto.json"},
-    {"key": "loss_curto", "title": "LOSS CURTO", "emoji": "🛑", "file": "session_data/visual_state_losscurto.json"},
-    {"key": "curtissimo", "title": "CURTÍSSIMO PRAZO", "emoji": "⚡", "file": "session_data/visual_state_curtissimo.json"},
-    {"key": "loss_curtissimo", "title": "LOSS CURTÍSSIMO", "emoji": "🛑", "file": "session_data/visual_state_losscurtissimo.json"},
-    {"key": "clube", "title": "CLUBE", "emoji": "🏛️", "file": "session_data/visual_state_clube.json"},
-    {"key": "loss_clube", "title": "LOSS CLUBE", "emoji": "🏛️🛑", "file": "session_data/visual_state_lossclube.json"},
+    {"key": "curto", "title": "CURTO PRAZO", "emoji": "⚡",
+     "files": ["session_data/visual_state_curto.json"]},
+
+    {"key": "loss_curto", "title": "LOSS CURTO", "emoji": "🛑",
+     "files": ["session_data/visual_state_losscurto.json",
+               "session_data/visual_state_loss_curto.json"]},
+
+    {"key": "curtissimo", "title": "CURTÍSSIMO PRAZO", "emoji": "⚡",
+     "files": ["session_data/visual_state_curtissimo.json"]},
+
+    {"key": "loss_curtissimo", "title": "LOSS CURTÍSSIMO", "emoji": "🛑",
+     "files": ["session_data/visual_state_losscurtissimo.json",
+               "session_data/visual_state_loss_curtissimo.json"]},
+
+    {"key": "clube", "title": "CLUBE", "emoji": "🏛️",
+     "files": ["session_data/visual_state_clube.json"]},
+
+    {"key": "loss_clube", "title": "LOSS CLUBE", "emoji": "🏛️🛑",
+     "files": ["session_data/visual_state_lossclube.json",
+               "session_data/visual_state_loss_clube.json"]},
 ]
 
 # ============================
@@ -71,7 +84,8 @@ def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
                     last_update = dt
             except Exception:
                 continue
-    return {"ativos_monitorados": total_tickers, "tickers": tickers, "total_disparos": total_disparos, "last_update": last_update}
+    return {"ativos_monitorados": total_tickers, "tickers": tickers,
+            "total_disparos": total_disparos, "last_update": last_update}
 
 def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
     precos = state.get("precos_historicos") or {}
@@ -143,7 +157,6 @@ with colh1:
     st.markdown(f"🕒 Agora: **{agora_lx().strftime('%Y-%m-%d %H:%M:%S %Z')}**")
 with colh2:
     st.markdown("📁 Fonte: `session_data/visual_state_*.json` (local)")
-
 st.markdown("---")
 
 # ============================
@@ -156,7 +169,11 @@ total_disparos = 0
 loaded_states: Dict[str, Dict[str, Any]] = {}
 
 for robo in ROBOS:
-    state = try_load_state(robo["file"])
+    state = None
+    for f in robo["files"]:
+        state = try_load_state(f)
+        if state:
+            break
     if state:
         loaded_states[robo["key"]] = state
         s = summarize_robot_state(state)
@@ -177,15 +194,11 @@ def render_robot_card(robo: Dict[str, Any], container):
     key = robo["key"]
     title = robo["title"]
     emoji = robo["emoji"]
-    path = robo["file"]
     with container:
         state = loaded_states.get(key)
         if not state:
             st.markdown(f"### {emoji} {title}")
-            if not os.path.exists(path):
-                st.warning("⛔ Arquivo visual ainda não gerado.")
-            else:
-                st.warning("⚠️ Arquivo encontrado, mas sem dados válidos.")
+            st.warning("⛔ Arquivo visual ainda não gerado.")
             st.markdown("---")
             return
 
@@ -193,7 +206,6 @@ def render_robot_card(robo: Dict[str, Any], container):
         last_dt = summary["last_update"]
         status_txt, color = badge_status_tempo(last_dt)
 
-        # card visual com borda colorida
         st.markdown(
             f"""
             <div style="border-left: 8px solid {color}; padding-left: 12px; border-radius: 8px;">
