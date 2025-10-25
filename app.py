@@ -43,7 +43,15 @@ def login_page():
             st.experimental_rerun()
 
 # Executa login antes de carregar o resto do app
-login_page()
+# Executa login antes de carregar o resto do app
+if "logged_in" not in st.session_state or not st.session_state.logged_in:
+    login_page()
+else:
+    st.sidebar.markdown("### 👤 Usuário logado: `robot`")
+    if st.sidebar.button("Sair"):
+        st.session_state.logged_in = False
+        st.experimental_rerun()
+
 
 
 # ============================
