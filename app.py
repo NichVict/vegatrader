@@ -178,7 +178,7 @@ def badge_status_tempo(last_dt: Optional[datetime.datetime]) -> tuple[str, str]:
 # ============================
 # INTERFACE PRINCIPAL
 # ============================
-st.title("📊 Painel Visual — 1Milhão")
+st.title("Painel Visual — 1milhao Invest")
 st.caption(f"Atualiza automaticamente a cada {REFRESH_SECONDS}s")
 st_autorefresh(interval=REFRESH_SECONDS * 1000, key="painel-visual-refresh")
 
