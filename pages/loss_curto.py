@@ -62,19 +62,23 @@ def _sb_headers():
 
 def ler_ativos_da_supabase() -> list[dict]:
     """
-    Lê os ativos de v['ativos'] na linha (k) 'loss_curto_przo_v1' da tabela kv_state_losscurto.
-    Espera cada item com: {"ticker": str, "operacao": "compra"|"venda", "preco": float}.
-    Para LOSS, 'preco' representa o PREÇO STOP.
+    Lê os ativos de v['ativos'] na linha (k) da tabela Supabase.
+    Mantém os dados anteriores caso a Supabase retorne vazio ou erro temporário.
     """
     url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}&select=v"
     try:
         r = requests.get(url, headers=_sb_headers(), timeout=15)
         r.raise_for_status()
         data = r.json()
-        if not data:
+        if not data or not isinstance(data[0].get("v"), dict):
+            # mantém os dados antigos se a resposta for vazia
+            if "ultimo_estado_validado" in st.session_state:
+                return st.session_state["ultimo_estado_validado"]
             return []
-        estado = data[0].get("v", {})
+
+        estado = data[0]["v"]
         ativos = estado.get("ativos", [])
+
         norm = []
         for a in ativos:
             t = (a.get("ticker") or "").upper().strip()
@@ -82,10 +86,18 @@ def ler_ativos_da_supabase() -> list[dict]:
             pr = a.get("preco")
             if t and op in ("compra", "venda") and isinstance(pr, (int, float)):
                 norm.append({"ticker": t, "operacao": op, "preco": float(pr)})
+
+        # salva último estado válido
+        st.session_state["ultimo_estado_validado"] = norm
         return norm
+
     except Exception as e:
-        st.sidebar.error(f"⚠️ Erro ao ler Supabase: {e}")
+        # se erro, mantém o último estado
+        st.sidebar.warning(f"⚠️ Erro ao ler Supabase: {e}")
+        if "ultimo_estado_validado" in st.session_state:
+            return st.session_state["ultimo_estado_validado"]
         return []
+
 
 def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple[bool, str | None]:
     """
