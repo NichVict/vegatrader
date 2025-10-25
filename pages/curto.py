@@ -422,8 +422,7 @@ if st.button("➕ Adicionar ativo"):
 st.subheader("🧠 Banco de Dados")
 tabela_status = st.empty()
 grafico = st.empty()
-st.subheader("🕒 Monitoramento")
-log_container = st.empty()
+
 
 # 1) Lê ativos da Supabase para monitorar visualmente
 ativos = ler_ativos_da_supabase()
@@ -616,6 +615,9 @@ if ativos:
     st.markdown("\n".join(html_monitor), unsafe_allow_html=True)
 else:
     st.info("Nenhum ativo para monitorar.")
+
+st.subheader("🕒 Dados Inseridos")
+log_container = st.empty()
 
 if len(st.session_state.log_monitoramento) > LOG_MAX_LINHAS:
     st.session_state.log_monitoramento = st.session_state.log_monitoramento[-LOG_MAX_LINHAS:]
