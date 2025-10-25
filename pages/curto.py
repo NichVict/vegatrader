@@ -550,7 +550,7 @@ grafico.plotly_chart(fig, use_container_width=True)
 # -----------------------------
 # MONITORAMENTO VISUAL (NO ESTILO DO LOG)
 # -----------------------------
-
+st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 # Atualiza automaticamente a cada 2 minutos (120.000 ms)
 if ativos:
     st.markdown("### 📡 Monitoramento dos Ativos")
@@ -615,6 +615,8 @@ if ativos:
     st.markdown("\n".join(html_monitor), unsafe_allow_html=True)
 else:
     st.info("Nenhum ativo para monitorar.")
+
+st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 
 st.subheader("🕒 Dados Inseridos")
 log_container = st.empty()
