@@ -19,7 +19,7 @@ import streamlit.components.v1 as components
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
-st.set_page_config(page_title="🤖 CURTO PRAZO - COMPRA E VENDA", layout="wide")
+st.set_page_config(page_title="⚡ CURTO PRAZO - COMPRA E VENDA", layout="wide")
 
 # ✅ Atualiza tudo a cada 2 minutos — seguro e sem conflito
 try:
