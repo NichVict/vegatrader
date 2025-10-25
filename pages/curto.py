@@ -372,8 +372,7 @@ if st.sidebar.button("🧹 Limpar Monitoramento"):
         time.sleep(3)
         placeholder_log.empty()
 
-# Filtro do log (preenchemos após ler os ativos)
-selected_tickers = st.sidebar.multiselect("Filtrar tickers no log", [], default=[])
+
 
 # -----------------------------
 # CABEÇALHO / LAYOUT
