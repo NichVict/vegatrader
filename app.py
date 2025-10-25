@@ -24,6 +24,9 @@ st.set_page_config(page_title="Painel Visual 1Milhão", layout="wide")
 # ============================
 # LOGO NO TOPO
 # ============================
+# ============================
+# LOGO NO TOPO (COM MOLDURA)
+# ============================
 import base64
 
 logo_path = "Logo-canal-1milhao.png"
@@ -33,11 +36,18 @@ if os.path.exists(logo_path):
     st.markdown(
         f"""
         <div style='text-align: center; margin-top: -20px; margin-bottom: 10px;'>
-            <img src='data:image/png;base64,{logo_data}' alt='Logo 1Milhão' style='width:200px;'>
+            <img src='data:image/png;base64,{logo_data}' alt='Logo 1Milhão'
+                 style='width:200px;
+                        border: 3px solid #facc15;        /* moldura amarela */
+                        border-radius: 18px;              /* cantos arredondados */
+                        box-shadow: 0 0 10px rgba(250, 204, 21, 0.4); /* brilho sutil */
+                        background-color: #0b1220;        /* fundo escuro harmônico */
+                        padding: 6px;'>
         </div>
         """,
         unsafe_allow_html=True
     )
+
 
 
 
