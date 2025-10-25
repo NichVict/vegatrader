@@ -46,8 +46,8 @@ PALETTE = [
 # -----------------------------
 # SUPABASE (LEITURA/INSERÇÃO EM kv_state_losscurto)
 # -----------------------------
-SUPABASE_URL   = st.secrets["supabase_url_losscurto"]
-SUPABASE_KEY   = st.secrets["supabase_key_losscurto"]
+SUPABASE_URL   = st.secrets["supabase_url_loss_curto"]
+SUPABASE_KEY   = st.secrets["supabase_key_loss_curto"]
 
 # Nome da tabela KV e chave do estado (confirmado por você)
 SUPABASE_TABLE = "kv_state_losscurto"
