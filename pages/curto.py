@@ -309,6 +309,26 @@ def render_log_html(lines, selected_tickers=None, max_lines=250):
 # -----------------------------
 st.sidebar.header("⚙️ Configurações")
 
+
+# Teste manual (não interfere no robô da nuvem)
+async def testar_telegram():
+    tok = st.secrets.get("telegram_token", "")
+    chat = st.secrets.get("telegram_chat_id_curto", "")
+    try:
+        if tok and chat:
+            bot = Bot(token=tok)
+            await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
+            return True, None
+        return False, "token/chat_id não configurado"
+    except Exception as e:
+        return False, str(e)
+
+if st.sidebar.button("📤 Testar Envio Telegram"):
+    st.sidebar.info("Enviando mensagem de teste...")
+    ok, erro = asyncio.run(testar_telegram())
+    st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
+
+
 # -----------------------------
 # BOTÃO: LIMPAR TABELA SUPABASE
 # -----------------------------
@@ -338,23 +358,6 @@ if st.sidebar.button("🧹 Limpar Banco de Dados"):
         st.sidebar.error(f"❌ Falha ao limpar tabela: {erro}")
 
 
-# Teste manual (não interfere no robô da nuvem)
-async def testar_telegram():
-    tok = st.secrets.get("telegram_token", "")
-    chat = st.secrets.get("telegram_chat_id_curto", "")
-    try:
-        if tok and chat:
-            bot = Bot(token=tok)
-            await bot.send_message(chat_id=chat, text="✅ Teste de alerta CURTO PRAZO funcionando!")
-            return True, None
-        return False, "token/chat_id não configurado"
-    except Exception as e:
-        return False, str(e)
-
-if st.sidebar.button("📤 Testar Envio Telegram"):
-    st.sidebar.info("Enviando mensagem de teste...")
-    ok, erro = asyncio.run(testar_telegram())
-    st.sidebar.success("✅ Mensagem enviada!" if ok else f"❌ Falha: {erro}")
 
 if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
     # Limpa apenas o estado LOCAL do gráfico
