@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-📊 Painel Visual 1Milhão — versão final com fallback automático para arquivos LOSS
+Painel Visual 1Milhão — versão final com fallback automático para arquivos LOSS
 Visual idêntico ao anterior, mas agora compatível com robôs que salvam
 'visual_state_loss_curto.json' ou 'visual_state_losscurto.json' (etc).
 """
@@ -21,12 +21,7 @@ st.set_page_config(page_title="Painel Visual 1Milhão", layout="wide")
 # ============================
 # LOGO NO TOPO
 # ============================
-# ============================
-# LOGO NO TOPO
-# ============================
-# ============================
-# LOGO NO TOPO (COM MOLDURA)
-# ============================
+
 import base64
 
 logo_path = "Logo-canal-1milhao.png"
@@ -35,18 +30,21 @@ if os.path.exists(logo_path):
         logo_data = base64.b64encode(f.read()).decode()
     st.markdown(
         f"""
-        <div style='text-align: center; margin-top: -20px; margin-bottom: 10px;'>
+        <div style='display: flex; align-items: center; justify-content: flex-start;
+                    margin-top: -10px; margin-bottom: 10px;'>
             <img src='data:image/png;base64,{logo_data}' alt='Logo 1Milhão'
-                 style='width:200px;
+                 style='width:180px;
                         border: 3px solid #facc15;        /* moldura amarela */
                         border-radius: 18px;              /* cantos arredondados */
                         box-shadow: 0 0 10px rgba(250, 204, 21, 0.4); /* brilho sutil */
                         background-color: #0b1220;        /* fundo escuro harmônico */
-                        padding: 6px;'>
+                        padding: 6px;
+                        margin-left: 6px;'>
         </div>
         """,
         unsafe_allow_html=True
     )
+
 
 
 
