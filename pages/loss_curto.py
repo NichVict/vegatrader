@@ -332,6 +332,9 @@ if st.sidebar.button("📤 Testar Envio Telegram (LOSS)"):
 # -----------------------------
 # BOTÃO: LIMPAR TABELA SUPABASE (SOMENTE ATIVOS)
 # -----------------------------
+# -----------------------------
+# BOTÃO: LIMPAR TABELA SUPABASE (com reset completo e seguro)
+# -----------------------------
 def limpar_tabela_supabase():
     """
     Apaga todos os dados da chave loss_curto_przo_v1 na tabela kv_state_losscurto (Supabase).
@@ -346,25 +349,51 @@ def limpar_tabela_supabase():
     except Exception as e:
         return False, str(e)
 
+
 if st.sidebar.button("🧹 Limpar Banco de Dados (LOSS)"):
-    st.sidebar.warning("Apagando todos os ativos da tabela (LOSS)...")
+    st.sidebar.warning("Apagando todos os ativos da tabela e limpando memória local...")
+
     ok, erro = limpar_tabela_supabase()
     if ok:
-        # limpa memória local
+        # 🧠 1. Limpa completamente o estado local
         for key in list(st.session_state.keys()):
-            del st.session_state[key]
-        st.cache_data.clear()
+            try:
+                del st.session_state[key]
+            except Exception:
+                pass
+
+        # 💾 2. Limpa caches (dados de funções cacheadas)
         try:
-            if os.path.exists(VIS_STATE_FILE):
-                os.remove(VIS_STATE_FILE)
+            st.cache_data.clear()
         except Exception:
             pass
 
-        st.sidebar.success("✅ Tudo limpo! Recarregando app...")
-        time.sleep(1)
-        st.rerun()  # 🚀 força recarregar do zero
+        # 🗑️ 3. Remove arquivos locais (persistência de gráfico)
+        try:
+            if os.path.exists(VIS_STATE_FILE):
+                os.remove(VIS_STATE_FILE)
+        except Exception as e:
+            st.sidebar.warning(f"Erro ao remover arquivo local: {e}")
+
+        # ✅ 4. Confirma Supabase limpa antes de recarregar
+        try:
+            url_check = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}&select=v"
+            r = requests.get(url_check, headers=_sb_headers(), timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            ativos_restantes = data[0].get("v", {}).get("ativos", []) if data else []
+        except Exception:
+            ativos_restantes = ["erro"]
+
+        if not ativos_restantes:
+            st.sidebar.success("✅ Limpeza completa concluída! Recarregando interface...")
+            time.sleep(1.2)
+            st.rerun()  # 🔁 Reinicia apenas a interface Streamlit (não afeta robô da nuvem)
+        else:
+            st.sidebar.warning("⚠️ Supabase ainda contém dados residuais. Atualize manualmente.")
     else:
         st.sidebar.error(f"❌ Falha ao limpar tabela: {erro}")
+
 
 
 if st.sidebar.button("🧹 Limpar Gráfico ⭐"):
