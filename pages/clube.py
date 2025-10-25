@@ -19,7 +19,7 @@ import streamlit.components.v1 as components
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
-st.set_page_config(page_title="⚡ clube PRAZO - COMPRA E VENDA", layout="wide")
+st.set_page_config(page_title="⚡ CLUBE - COMPRA E VENDA", layout="wide")
 
 # ✅ Atualiza tudo a cada 2 minutos — seguro e sem conflito
 try:
@@ -317,7 +317,7 @@ async def testar_telegram():
     try:
         if tok and chat:
             bot = Bot(token=tok)
-            await bot.send_message(chat_id=chat, text="✅ Teste de alerta clube PRAZO funcionando!")
+            await bot.send_message(chat_id=chat, text="✅ Teste de alerta clube funcionando!")
             return True, None
         return False, "token/chat_id não configurado"
     except Exception as e:
@@ -381,7 +381,7 @@ if st.sidebar.button("🧹 Limpar Monitoramento"):
 # CABEÇALHO / LAYOUT
 # -----------------------------
 now = agora_lx()
-st.title("⚡ clube PRAZO - COMPRA E VENDA")
+st.title("⚡ CLUBE - COMPRA E VENDA")
 st.markdown("<hr style='border:1px solid #2e2e2e;'>", unsafe_allow_html=True)
 
 st.caption(f"Agora: {now.strftime('%Y-%m-%d %H:%M:%S %Z')} — "
