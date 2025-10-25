@@ -337,17 +337,28 @@ if st.sidebar.button("📤 Testar Envio Telegram (LOSS)"):
 # -----------------------------
 def limpar_tabela_supabase():
     """
-    Apaga todos os dados da chave loss_curto_przo_v1 na tabela kv_state_losscurto (Supabase).
-    Mantém a estrutura da linha, mas zera o campo v['ativos'].
+    Zera completamente o campo v (estado completo) da chave loss_curto_przo_v1
+    na tabela kv_state_losscurto, preservando apenas a estrutura básica.
     """
     try:
         url = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}"
-        payload = {"v": {"ativos": []}}
+        payload = {
+            "v": {
+                "ativos": [],
+                "tempo_acumulado": {},
+                "em_contagem": {},
+                "status": {},
+                "historico_alertas": [],
+                "ultima_data_abertura_enviada": None,
+                "eventos_enviados": {}
+            }
+        }
         r = requests.patch(url, headers=_sb_headers(), json=payload, timeout=15)
         r.raise_for_status()
         return True, None
     except Exception as e:
         return False, str(e)
+
 
 
 if st.sidebar.button("🧹 Limpar Banco de Dados (LOSS)"):
