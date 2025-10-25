@@ -89,32 +89,41 @@ def ler_ativos_da_supabase() -> list[dict]:
 
 def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple[bool, str | None]:
     """
-    Insere novo ativo dentro de v['ativos'] via PATCH (merge profundo).
-    Mantém intactas as demais chaves que o robô usa (tempo_acumulado, status etc).
+    Insere novo ativo em v['ativos'] via PATCH (merge profundo),
+    preservando todo o restante da estrutura que o robô usa.
     """
     try:
-        # Lê estado atual
+        # 1️⃣ Lê o estado atual completo
         url_get = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}&select=v"
         r = requests.get(url_get, headers=_sb_headers(), timeout=15)
         r.raise_for_status()
         data = r.json()
         estado = data[0].get("v", {}) if data else {}
-        ativos = estado.get("ativos", [])
 
-        # Adiciona o novo ativo
-        novo = {"ticker": ticker.upper().strip(), "operacao": operacao.lower().strip(), "preco": float(preco)}
-        ativos.append(novo)
+        # 2️⃣ Atualiza apenas o array "ativos"
+        ativos = estado.get("ativos", [])
+        novo = {
+            "ticker": ticker.upper().strip(),
+            "operacao": operacao.lower().strip(),
+            "preco": float(preco)
+        }
+
+        # Evita duplicatas (mesmo ticker e operação)
+        if not any(a["ticker"] == novo["ticker"] and a["operacao"] == novo["operacao"] for a in ativos):
+            ativos.append(novo)
         estado["ativos"] = ativos
 
-        # Envia PATCH para atualizar somente v
+        # 3️⃣ PATCH — preserva as demais chaves (status, eventos_enviados, etc.)
         url_patch = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}"
         payload = {"v": estado}
         r2 = requests.patch(url_patch, headers=_sb_headers(), json=payload, timeout=15)
         r2.raise_for_status()
 
         return True, None
+
     except Exception as e:
         return False, str(e)
+
 
 
 # -----------------------------
