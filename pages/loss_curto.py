@@ -101,11 +101,16 @@ def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple
         data = r.json()
         estado = data[0].get("v", {}) if data else {}
 
+        
         # 2) Atualiza a lista de ativos local
         ativos = estado.get("ativos", [])
         novo = {"ticker": ticker.upper().strip(), "operacao": operacao.lower().strip(), "preco": float(preco)}
+        
+        # 🔁 Substitui ativo existente se já houver mesmo ticker
+        ativos = [a for a in ativos if a.get("ticker") != novo["ticker"]]
         ativos.append(novo)
         estado["ativos"] = ativos
+
 
         # 3) Envia merge (não apaga nada)
         payload = {"k": STATE_KEY, "v": estado}
