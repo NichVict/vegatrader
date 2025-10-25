@@ -19,7 +19,6 @@ import pandas as pd
 import plotly.graph_objects as go
 from streamlit_autorefresh import st_autorefresh
 
-
 # --- Query params (compatível com versões antigas e novas) ---
 try:
     q = dict(st.query_params)  # Streamlit ≥ 1.29
@@ -30,7 +29,6 @@ except Exception:
 if "ping" in q and (q["ping"] in ([], None) or str(q["ping"]).lower() in ("1", "true", "ok")):
     st.write("ok")
     st.stop()
-
 
 # --- Tick leve chamado pelo ?ping=1 ---
 import datetime as _dt
@@ -58,7 +56,6 @@ def run_all_ticks():
         except Exception as e:
             st.session_state.setdefault("_tick_errors", []).append(f"{mod}.{fn}: {e}")
 
-
 # ============================
 # CONFIGURAÇÕES GERAIS
 # ============================
@@ -67,78 +64,39 @@ st.set_page_config(page_title="Painel Central 1Milhão", layout="wide", page_ico
 # Estilos globais (cards e bolinha flutuante)
 st.markdown("""
 <style>
-body {
-    background-color: #050915;
-    color: #e5e7eb;
-}
-
+body { background-color: #050915; color: #e5e7eb; }
 .robot-card {
-    position: relative;
-    background: linear-gradient(145deg, #0c1424 0%, #111827 100%);
-    border: 1px solid #1f2937;
-    border-radius: 16px;
-    padding: 18px 22px;
-    margin-bottom: 28px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
-    transition: all 0.25s ease-in-out;
+    position: relative; background: linear-gradient(145deg, #0c1424 0%, #111827 100%);
+    border: 1px solid #1f2937; border-radius: 16px; padding: 18px 22px; margin-bottom: 28px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.35); transition: all 0.25s ease-in-out;
 }
-
-.robot-card:hover {
-    box-shadow: 0 0 15px rgba(16,185,129,0.3);
-    border-color: #10b981;
-    transform: translateY(-2px);
-}
-
-.status-dot {
-    position: absolute;
-    top: 16px;
-    right: 16px;
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    box-shadow: 0 0 8px rgba(0,0,0,0.4);
-}
-
+.robot-card:hover { box-shadow: 0 0 15px rgba(16,185,129,0.3); border-color: #10b981; transform: translateY(-2px); }
+.status-dot { position: absolute; top: 16px; right: 16px; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 8px rgba(0,0,0,0.4); }
 .status-green { background-color: #22c55e; animation: pulse-green 1.4s infinite; }
 .status-yellow { background-color: #facc15; animation: pulse-yellow 2s infinite; }
 .status-red { background-color: #ef4444; animation: pulse-red 3s infinite; }
-
-@keyframes pulse-green {
-  0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6); }
-  70% { box-shadow: 0 0 0 12px rgba(34,197,94,0); }
-  100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); }
-}
-@keyframes pulse-yellow {
-  0% { box-shadow: 0 0 0 0 rgba(250,204,21,0.6); }
-  70% { box-shadow: 0 0 0 12px rgba(250,204,21,0); }
-  100% { box-shadow: 0 0 0 0 rgba(250,204,21,0); }
-}
-@keyframes pulse-red {
-  0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
-  70% { box-shadow: 0 0 0 12px rgba(239,68,68,0); }
-  100% { box-shadow: 0 0 0 0 rgba(239,68,68,0); }
-}
-
+@keyframes pulse-green { 0% { box-shadow: 0 0 0 0 rgba(34,197,94,0.6);} 70% { box-shadow: 0 0 0 12px rgba(34,197,94,0);} 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0);} }
+@keyframes pulse-yellow { 0% { box-shadow: 0 0 0 0 rgba(250,204,21,0.6);} 70% { box-shadow: 0 0 0 12px rgba(250,204,21,0);} 100% { box-shadow: 0 0 0 0 rgba(250,204,21,0);} }
+@keyframes pulse-red { 0% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6);} 70% { box-shadow: 0 0 0 12px rgba(239,68,68,0);} 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0);} }
 h3 { color: #f9fafb; }
 </style>
 """, unsafe_allow_html=True)
-
 
 # ============================
 # CABEÇALHO
 # ============================
 logo_path = "Logo-canal-1milhao.png"
-
 header_col1, header_col2 = st.columns([1, 6])
 with header_col1:
     try:
         st.image(logo_path, width=120)
     except Exception:
-        st.warning("⚠️ Logo não encontrado.")
+        st.warning("⚠️ Logo não encontrado. Coloque 'Logo-canal-1milhao.png' na raiz do app.")
 
 TZ = ZoneInfo("Europe/Lisbon")
-HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)
-HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)
+HORARIO_INICIO_PREGAO = datetime.time(14, 0, 0)  # Lisboa
+HORARIO_FIM_PREGAO = datetime.time(21, 0, 0)    # Lisboa
+
 REFRESH_SECONDS = 60
 LOG_PREVIEW_LINES = 5
 SPARK_MAX_POINTS = 300
@@ -165,7 +123,6 @@ ROBOS = [
     {"key": "loss_clube", "title": "LOSS CLUBE", "emoji": "🏛️🛑",
      "files": ["session_data/state_lossclube.json", "state_lossclube.json"], "app_url": None},
 ]
-
 
 # ============================
 # FUNÇÕES AUXILIARES
@@ -202,10 +159,12 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
     precos = state.get("precos_historicos") or {}
     if not isinstance(precos, dict) or not precos:
         return None
+
     fig = go.Figure()
     color_map = {}
     i = 0
     added_any = False
+
     for ticker, pts in precos.items():
         try:
             if not isinstance(pts, list) or len(pts) < 2:
@@ -221,26 +180,48 @@ def build_sparkline(state: Dict[str, Any]) -> Optional[go.Figure]:
                             dt = datetime.datetime.fromtimestamp(float(ts), tz=TZ)
                         except Exception:
                             continue
-                    xs.append(dt)
-                    ys.append(float(price))
+                    xs.append(dt); ys.append(float(price))
             if len(xs) < 2:
                 continue
             if ticker not in color_map:
-                color_map[ticker] = PALETTE[i % len(PALETTE)]
-                i += 1
+                color_map[ticker] = PALETTE[i % len(PALETTE)]; i += 1
             fig.add_trace(go.Scatter(x=xs, y=ys, mode="lines", name=str(ticker),
                                      line=dict(color=color_map[ticker], width=2)))
             added_any = True
         except Exception:
             continue
+
     if not added_any:
         return None
-    fig.update_layout(margin=dict(l=10, r=10, t=30, b=10),
-                      height=160, template="plotly_dark",
-                      legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0))
+
+    fig.update_layout(
+        margin=dict(l=10, r=10, t=30, b=10),
+        height=160,
+        template="plotly_dark",
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0)
+    )
     fig.update_xaxes(title=""); fig.update_yaxes(title="")
     return fig
 
+def _parse_last_update(state: Dict[str, Any]) -> Optional[datetime.datetime]:
+    """Novo timestamp principal: _last_writer_ts. Fallback para formatos antigos."""
+    # 1) novo campo
+    ts = state.get("_last_writer_ts")
+    if ts:
+        try:
+            return datetime.datetime.fromisoformat(str(ts))
+        except Exception:
+            pass
+    # 2) fallback antigo: dict de iso strings
+    ultimo_update_map = state.get("ultimo_update_tempo")
+    if isinstance(ultimo_update_map, dict) and ultimo_update_map:
+        try:
+            last_iso = max((v for v in ultimo_update_map.values() if v), default=None)
+            if last_iso:
+                return datetime.datetime.fromisoformat(str(last_iso))
+        except Exception:
+            pass
+    return None
 
 # === FUNÇÃO AJUSTADA ===
 def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -252,14 +233,7 @@ def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
     disparos = state.get("disparos") or {}
     total_disparos = sum(len(v or []) for v in disparos.values()) if isinstance(disparos, dict) else 0
 
-    # --- novo timestamp ---
-    last_update_str = state.get("_last_writer_ts") or None
-    last_update_dt = None
-    if last_update_str:
-        try:
-            last_update_dt = datetime.datetime.fromisoformat(last_update_str)
-        except Exception:
-            last_update_dt = None
+    last_update_dt = _parse_last_update(state)
 
     tickers_status = list(status.keys())
     total_ativos = len(tickers_status) or len(ativos)
@@ -283,7 +257,6 @@ def summarize_robot_state(state: Dict[str, Any]) -> Dict[str, Any]:
             "hora": last_alert_hora,
         },
     }
-
 
 def badge_pregao(now_dt: datetime.datetime) -> str:
     if dentro_pregao(now_dt):
@@ -328,11 +301,11 @@ def status_dot_html(last_dt: Optional[datetime.datetime]) -> str:
             cor = "status-red"
     return f"<div class='status-dot {cor}'></div>"
 
-
 # ============================
 # TÍTULO + AUTO-REFRESH
 # ============================
 st.title("Painel Central")
+
 colh, colr = st.columns([3, 1])
 with colh:
     st.caption(
@@ -344,7 +317,6 @@ with colr:
 
 st_autorefresh(interval=REFRESH_SECONDS * 1000, key="painel-central-refresh")
 
-
 # ============================
 # CARDS RESUMO (TOPO)
 # ============================
@@ -354,7 +326,9 @@ total_ativos = 0
 total_disparos = 0
 total_alertas = 0
 
-loaded_states, resolved_paths, errors = {}, {}, {}
+loaded_states: Dict[str, Dict[str, Any]] = {}
+resolved_paths: Dict[str, str] = {}
+errors: Dict[str, str] = {}
 
 for robo in ROBOS:
     data, path, err = try_load_state(robo["files"])
@@ -374,7 +348,6 @@ col1.metric("Robôs ativos (com estado)", f"{apps_ok}/{total_apps}")
 col2.metric("Ativos monitorados (total)", total_ativos)
 col3.metric("Disparos acumulados", total_disparos)
 col4.metric("Alertas (histórico)", total_alertas)
-
 
 # ============================
 # GRID DE CARDS POR ROBÔ
@@ -422,11 +395,11 @@ def render_robot_card(robo: Dict[str, Any], container):
         if ultimo_alerta.get("ticker"):
             st.caption(
                 f"🕒 Último alerta: **{ultimo_alerta['hora']}** — "
-                f"{ultimo_alerta['operacao'].upper()} em {ultimo_alerta['ticker']}"
+                f"{(ultimo_alerta['operacao'] or '').upper()} em {ultimo_alerta['ticker']}"
             )
 
         tickers = summary["tickers"] or []
-        st.caption("Tickers: " + (", ".join(tickers) if tickers else "—"))
+        st.caption("Tickers: " + (", ".join([str(t) for t in tickers]) if tickers else "—"))
 
         fig = build_sparkline(state)
         if fig:
@@ -454,7 +427,7 @@ def render_robot_card(robo: Dict[str, Any], container):
 
         st.markdown("</div>", unsafe_allow_html=True)
 
-
+# Render em pares
 for i in range(0, len(ROBOS), 2):
     with st.container():
         col_left, col_right = st.columns(2)
@@ -462,7 +435,6 @@ for i in range(0, len(ROBOS), 2):
         if i + 1 < len(ROBOS):
             render_robot_card(ROBOS[i + 1], col_right)
     st.markdown("---")
-
 
 # ============================
 # RODAPÉ
