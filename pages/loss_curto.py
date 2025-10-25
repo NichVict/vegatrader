@@ -16,6 +16,13 @@ import os
 import time
 import streamlit.components.v1 as components
 
+# ==================================================
+# 🧹 Limpa cache local para evitar sobrescrita indevida
+# ==================================================
+if "ativos" in st.session_state or "precos_historicos" in st.session_state:
+    st.session_state.clear()
+    st.toast("🧹 Cache local limpo automaticamente para sincronizar com Supabase.")
+
 # -----------------------------
 # CONFIGURAÇÕES
 # -----------------------------
@@ -49,7 +56,7 @@ PALETTE = [
 SUPABASE_URL   = st.secrets["supabase_url_loss_curto"]
 SUPABASE_KEY   = st.secrets["supabase_key_loss_curto"]
 
-# Nome da tabela KV e chave do estado (confirmado por você)
+# Nome da tabela KV e chave do estado
 SUPABASE_TABLE = "kv_state_losscurto"
 STATE_KEY      = "loss_curto_przo_v1"
 
@@ -89,11 +96,11 @@ def ler_ativos_da_supabase() -> list[dict]:
 
 def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple[bool, str | None]:
     """
-    Insere novo ativo em v['ativos'] via PATCH (merge profundo),
-    preservando todo o restante da estrutura que o robô usa.
+    Insere novo ativo no array v['ativos'] (merge) da chave 'loss_curto_przo_v1'.
+    NÃO remove/atualiza nada do que já existe. Apenas adiciona.
     """
     try:
-        # 1️⃣ Lê o estado atual completo
+        # 1️⃣ Lê estado atual completo
         url_get = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}&select=v"
         r = requests.get(url_get, headers=_sb_headers(), timeout=15)
         r.raise_for_status()
@@ -113,16 +120,20 @@ def inserir_ativo_na_supabase(ticker: str, operacao: str, preco: float) -> tuple
             ativos.append(novo)
         estado["ativos"] = ativos
 
-        # 3️⃣ PATCH — preserva as demais chaves (status, eventos_enviados, etc.)
-        url_patch = f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}?k=eq.{STATE_KEY}"
-        payload = {"v": estado}
-        r2 = requests.patch(url_patch, headers=_sb_headers(), json=payload, timeout=15)
+        # 3️⃣ Envia merge (não apaga nada)
+        payload = {"k": STATE_KEY, "v": estado}
+        r2 = requests.post(
+            f"{SUPABASE_URL}/rest/v1/{SUPABASE_TABLE}",
+            headers={**_sb_headers(), "Prefer": "resolution=merge-duplicates"},
+            json=payload,
+            timeout=15,
+        )
         r2.raise_for_status()
-
         return True, None
 
     except Exception as e:
         return False, str(e)
+
 
 
 
